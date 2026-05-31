@@ -1,0 +1,498 @@
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  AccountStatus,
+  PlatformPayoutStatus,
+  Prisma,
+  SupportTicketStatus,
+} from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { BlockUserDto } from './dto/block-user.dto';
+import { CreatePlatformFeePayoutDto } from './dto/create-platform-fee-payout.dto';
+import { CreatePlatformStaffDto } from './dto/create-platform-staff.dto';
+import { CreateSupportTicketDto } from './dto/create-support-ticket.dto';
+import { UpdatePlatformStaffPermissionsDto } from './dto/update-platform-staff-permissions.dto';
+import { UpdateSupportTicketStatusDto } from './dto/update-support-ticket-status.dto';
+
+type DirectoryType = 'companies' | 'students' | 'teachers';
+
+@Injectable()
+export class PlatformAdminService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async dashboard() {
+    const [
+      companies,
+      students,
+      teachers,
+      courses,
+      openTickets,
+      blockedUsers,
+      platformRevenue,
+      platformPayouts,
+    ] = await this.prisma.withPlatformAdmin((tx) =>
+      Promise.all([
+        tx.tenant.count(),
+        tx.user.count({ where: { role: 'STUDENT' } }),
+        tx.user.count({ where: { role: 'ADMIN' } }),
+        tx.course.count(),
+        tx.supportTicket.count({
+          where: { status: { in: ['OPEN', 'ASSIGNED'] } },
+        }),
+        tx.user.count({ where: { status: AccountStatus.BLOCKED } }),
+        tx.courseSale.aggregate({
+          where: { status: 'PAID' },
+          _sum: { platformFeeCents: true, grossAmountCents: true },
+        }),
+        tx.platformFeePayout.aggregate({
+          where: {
+            status: {
+              in: [
+                PlatformPayoutStatus.REQUESTED,
+                PlatformPayoutStatus.PROCESSING,
+                PlatformPayoutStatus.PAID,
+              ],
+            },
+          },
+          _sum: { amountCents: true },
+        }),
+      ]),
+    );
+    const platformRevenueCents = platformRevenue._sum.platformFeeCents ?? 0;
+    const platformPayoutsCents = platformPayouts._sum.amountCents ?? 0;
+
+    return {
+      companies,
+      students,
+      teachers,
+      courses,
+      openTickets,
+      blockedUsers,
+      grossSalesCents: platformRevenue._sum.grossAmountCents ?? 0,
+      platformRevenueCents,
+      platformPayoutsCents,
+      platformAvailableBalanceCents: Math.max(
+        platformRevenueCents - platformPayoutsCents,
+        0,
+      ),
+    };
+  }
+
+  listPlatformFeePayouts() {
+    return this.prisma.withPlatformAdmin((tx) =>
+      tx.platformFeePayout.findMany({
+        orderBy: { requestedAt: 'desc' },
+        include: {
+          requestedBy: { select: { id: true, name: true, email: true } },
+        },
+      }),
+    );
+  }
+
+  async createPlatformFeePayout(
+    dto: CreatePlatformFeePayoutDto,
+    actorStaffId?: string,
+  ) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const [platformRevenue, platformPayouts, actorStaff] = await Promise.all([
+        tx.courseSale.aggregate({
+          where: { status: 'PAID' },
+          _sum: { platformFeeCents: true },
+        }),
+        tx.platformFeePayout.aggregate({
+          where: {
+            status: {
+              in: [
+                PlatformPayoutStatus.REQUESTED,
+                PlatformPayoutStatus.PROCESSING,
+                PlatformPayoutStatus.PAID,
+              ],
+            },
+          },
+          _sum: { amountCents: true },
+        }),
+        actorStaffId
+          ? tx.platformStaff.findUnique({ where: { id: actorStaffId } })
+          : Promise.resolve(null),
+      ]);
+
+      const availableBalanceCents =
+        (platformRevenue._sum.platformFeeCents ?? 0) -
+        (platformPayouts._sum.amountCents ?? 0);
+
+      if (dto.amountCents > availableBalanceCents) {
+        throw new BadRequestException('Insufficient platform fee balance');
+      }
+
+      const payout = await tx.platformFeePayout.create({
+        data: {
+          requestedByStaffId: actorStaff?.id,
+          amountCents: dto.amountCents,
+          pixKeyType: dto.pixKeyType,
+          pixKey: dto.pixKey,
+          accountHolderName: dto.accountHolderName,
+          accountDocument: dto.accountDocument,
+        },
+      });
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'PLATFORM_FEE_PIX_PAYOUT_REQUESTED',
+        targetType: 'PlatformFeePayout',
+        targetId: payout.id,
+        metadata: {
+          amountCents: dto.amountCents,
+          pixKeyType: dto.pixKeyType,
+          accountHolderName: dto.accountHolderName,
+        },
+      });
+
+      return payout;
+    });
+  }
+
+  listDirectory(type: DirectoryType, search = '') {
+    const query = search.trim();
+    if (type === 'companies') {
+      return this.prisma.withPlatformAdmin((tx) => this.listCompanies(tx, query));
+    }
+    if (type === 'students') {
+      return this.prisma.withPlatformAdmin((tx) =>
+        this.listUsers(tx, 'STUDENT', query),
+      );
+    }
+    if (type === 'teachers') {
+      return this.prisma.withPlatformAdmin((tx) =>
+        this.listUsers(tx, 'ADMIN', query),
+      );
+    }
+    throw new BadRequestException('Invalid directory type');
+  }
+
+  listStaff() {
+    return this.prisma.withPlatformAdmin((tx) => tx.platformStaff.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { permissions: true },
+    }));
+  }
+
+  async createStaff(dto: CreatePlatformStaffDto, actorStaffId?: string) {
+    const staff = await this.prisma.withPlatformAdmin(async (tx) => {
+      const created = await tx.platformStaff.create({
+        data: {
+          name: dto.name,
+          email: dto.email.toLowerCase(),
+          role: dto.role ?? 'SUPPORT',
+          permissions: {
+            createMany: {
+              data: dto.permissions.map((permission) => ({ permission })),
+              skipDuplicates: true,
+            },
+          },
+        },
+        include: { permissions: true },
+      });
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'PLATFORM_STAFF_CREATED',
+        targetType: 'PlatformStaff',
+        targetId: created.id,
+        metadata: { email: created.email, permissions: dto.permissions },
+      });
+
+      return created;
+    });
+
+    return staff;
+  }
+
+  async updateStaffPermissions(
+    staffId: string,
+    dto: UpdatePlatformStaffPermissionsDto,
+    actorStaffId?: string,
+  ) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const existing = await tx.platformStaff.findUnique({
+        where: { id: staffId },
+      });
+      if (!existing) throw new NotFoundException('Platform staff not found');
+
+      await tx.platformStaffPermission.deleteMany({ where: { staffId } });
+      const updated = await tx.platformStaff.update({
+        where: { id: staffId },
+        data: {
+          isActive: dto.isActive ?? existing.isActive,
+          permissions: {
+            createMany: {
+              data: dto.permissions.map((permission) => ({ permission })),
+              skipDuplicates: true,
+            },
+          },
+        },
+        include: { permissions: true },
+      });
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'PLATFORM_STAFF_PERMISSIONS_UPDATED',
+        targetType: 'PlatformStaff',
+        targetId: staffId,
+        metadata: { permissions: dto.permissions, isActive: updated.isActive },
+      });
+
+      return updated;
+    });
+  }
+
+  createTicket(dto: CreateSupportTicketDto) {
+    return this.prisma.withPlatformAdmin((tx) => tx.supportTicket.create({
+      data: {
+        subject: dto.subject,
+        description: dto.description,
+        priority: dto.priority ?? 'MEDIUM',
+        tenantId: dto.tenantId,
+        userId: dto.userId,
+      },
+    }));
+  }
+
+  listTickets(status?: SupportTicketStatus) {
+    return this.prisma.withPlatformAdmin((tx) => tx.supportTicket.findMany({
+      where: status ? { status } : undefined,
+      orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+      include: {
+        tenant: { select: { id: true, name: true, subdomain: true } },
+        user: { select: { id: true, email: true, role: true, status: true } },
+        assignedTo: { select: { id: true, name: true, email: true } },
+      },
+    }));
+  }
+
+  async assumeTicket(ticketId: string, actorStaffId: string) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const staff = await tx.platformStaff.findUnique({
+        where: { id: actorStaffId },
+      });
+      if (!staff || !staff.isActive) {
+        throw new BadRequestException('Active platform staff is required');
+      }
+
+      const updated = await tx.supportTicket.update({
+        where: { id: ticketId },
+        data: {
+          assignedToId: actorStaffId,
+          status: 'ASSIGNED',
+        },
+        include: { assignedTo: true },
+      });
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'SUPPORT_TICKET_ASSIGNED',
+        targetType: 'SupportTicket',
+        targetId: ticketId,
+        metadata: { subject: updated.subject },
+      });
+
+      return updated;
+    });
+  }
+
+  async updateTicketStatus(
+    ticketId: string,
+    dto: UpdateSupportTicketStatusDto,
+    actorStaffId?: string,
+  ) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const updated = await tx.supportTicket.update({
+        where: { id: ticketId },
+        data: {
+          status: dto.status,
+          resolvedAt:
+            dto.status === 'RESOLVED' || dto.status === 'CLOSED'
+              ? new Date()
+              : null,
+        },
+      });
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'SUPPORT_TICKET_STATUS_UPDATED',
+        targetType: 'SupportTicket',
+        targetId: ticketId,
+        metadata: { status: dto.status },
+      });
+
+      return updated;
+    });
+  }
+
+  async blockUser(userId: string, dto: BlockUserDto, actorStaffId?: string) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (!user) throw new NotFoundException('User not found');
+
+      const updated = await tx.user.update({
+        where: { id: userId },
+        data: {
+          status: AccountStatus.BLOCKED,
+          blockedAt: new Date(),
+          blockedReason: dto.reason,
+        },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          tenantId: true,
+          status: true,
+          blockedAt: true,
+          blockedReason: true,
+        },
+      });
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'USER_BLOCKED',
+        targetType: 'User',
+        targetId: userId,
+        metadata: { reason: dto.reason, tenantId: user.tenantId },
+      });
+
+      return updated;
+    });
+  }
+
+  async unblockUser(userId: string, actorStaffId?: string) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (!user) throw new NotFoundException('User not found');
+
+      const updated = await tx.user.update({
+        where: { id: userId },
+        data: {
+          status: AccountStatus.ACTIVE,
+          blockedAt: null,
+          blockedReason: null,
+        },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          tenantId: true,
+          status: true,
+        },
+      });
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'USER_UNBLOCKED',
+        targetType: 'User',
+        targetId: userId,
+        metadata: { tenantId: user.tenantId },
+      });
+
+      return updated;
+    });
+  }
+
+  private listCompanies(tx: Prisma.TransactionClient, search: string) {
+    return tx.tenant.findMany({
+      where: search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { subdomain: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : undefined,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: {
+            users: true,
+            courses: true,
+            supportTickets: true,
+          },
+        },
+      },
+    });
+  }
+
+  private listUsers(
+    tx: Prisma.TransactionClient,
+    role: 'ADMIN' | 'STUDENT',
+    search: string,
+  ) {
+    return tx.user.findMany({
+      where: {
+        role,
+        ...(search
+          ? {
+              OR: [
+                { email: { contains: search, mode: 'insensitive' } },
+                { tenant: { name: { contains: search, mode: 'insensitive' } } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        tenantId: true,
+        createdAt: true,
+        tenant: { select: { id: true, name: true, subdomain: true } },
+        _count: {
+          select: {
+            enrollments: true,
+            supportTickets: true,
+          },
+        },
+      },
+    });
+  }
+
+  private audit(
+    tx: Prisma.TransactionClient,
+    data: {
+      actorStaffId?: string;
+      action: string;
+      targetType: string;
+      targetId?: string;
+      metadata?: Prisma.InputJsonValue;
+    },
+  ) {
+    return this.createAuditLog(tx, data);
+  }
+
+  private async createAuditLog(
+    tx: Prisma.TransactionClient,
+    data: {
+      actorStaffId?: string;
+      action: string;
+      targetType: string;
+      targetId?: string;
+      metadata?: Prisma.InputJsonValue;
+    },
+  ) {
+    const actorStaff = data.actorStaffId
+      ? await tx.platformStaff.findUnique({ where: { id: data.actorStaffId } })
+      : null;
+
+    return tx.platformAuditLog.create({
+      data: {
+        actorStaffId: actorStaff?.id,
+        action: data.action,
+        targetType: data.targetType,
+        targetId: data.targetId,
+        metadata: data.metadata,
+      },
+    });
+  }
+}

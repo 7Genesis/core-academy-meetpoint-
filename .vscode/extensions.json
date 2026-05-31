@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "prisma.prisma",
+    "nestjs.nestjs-files",
+    "ms-vscode.vscode-typescript-next",
+    "eamodio.gitlens",
+    "ms-vscode.live-server",
+    "humao.rest-client",
+    "antfu.vscode-browser-preview"
+  ]
+}

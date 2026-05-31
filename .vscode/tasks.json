@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "NestJS: Build",
+      "type": "shell",
+      "command": "npm run build",
+      "group": "build",
+      "problemMatcher": "$tsc"
+    },
+    {
+      "label": "NestJS: Dev",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "isBackground": true,
+      "problemMatcher": "$tsc-watch"
+    },
+    {
+      "label": "Open API Docs",
+      "type": "shell",
+      "command": "open http://localhost:3000/docs",
+      "problemMatcher": [],
+      "dependsOn": ["NestJS: Dev"]
+    },
+    {
+      "label": "Prisma: Generate Client",
+      "type": "shell",
+      "command": "npx prisma generate",
+      "problemMatcher": []
+    },
+    {
+      "label": "Prisma: Validate Schema",
+      "type": "shell",
+      "command": "npx prisma validate",
+      "problemMatcher": []
+    }
+  ]
+}

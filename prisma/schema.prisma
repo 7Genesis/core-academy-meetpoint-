@@ -1,0 +1,419 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  STUDENT
+}
+
+enum AccountStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum PlatformRole {
+  OWNER
+  SUPPORT
+  OPERATIONS
+  MAINTENANCE
+}
+
+enum PlatformPermission {
+  USERS_WRITE
+  COMPANIES_WRITE
+  COURSES_WRITE
+  PAYMENTS_READ
+  SUPPORT_WRITE
+  MAINTENANCE_WRITE
+}
+
+enum SupportTicketStatus {
+  OPEN
+  ASSIGNED
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SaleStatus {
+  PAID
+  REFUNDED
+  CHARGEBACK
+}
+
+enum PixKeyType {
+  CPF
+  CNPJ
+  EMAIL
+  PHONE
+  RANDOM
+}
+
+enum PlatformPayoutStatus {
+  REQUESTED
+  PROCESSING
+  PAID
+  FAILED
+  CANCELED
+}
+
+enum LessonCompletionRequirement {
+  VIDEO_WATCHED
+  TASK_SUBMITTED
+  MANUAL_CONFIRMATION
+  ANY
+}
+
+enum EnrollmentPaymentStatus {
+  FREE
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  subdomain String   @unique
+  createdAt DateTime @default(now())
+
+  users           User[]
+  courses         Course[]
+  modules         Module[]
+  lessons         Lesson[]
+  enrollments     Enrollment[]
+  lessonProgress  LessonProgress[]
+  certificates    Certificate[]
+  supportTickets   SupportTicket[]
+  courseSales      CourseSale[]
+  paymentWebhookEvents PaymentWebhookEvent[]
+
+  @@map("tenants")
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String
+  password  String
+  role      UserRole @default(STUDENT)
+  status    AccountStatus @default(ACTIVE)
+  tenantId  String   @db.Uuid
+  createdAt DateTime @default(now())
+  blockedAt DateTime?
+  blockedReason String?
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enrollments     Enrollment[]
+  lessonProgress  LessonProgress[]
+  certificates    Certificate[]
+  supportTickets  SupportTicket[]
+  courseSales      CourseSale[]
+  paymentWebhookEvents PaymentWebhookEvent[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([status])
+  @@map("users")
+}
+
+model Course {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String
+  topic       String?
+  description String?
+  coverUrl    String?
+  instructorName String?
+  publisherType  String?
+  linkedCompanyName String?
+  creatorUserId String? @db.Uuid
+  priceCents   Int      @default(0)
+  currency     String   @default("BRL")
+  platformFeeBps Int    @default(1000)
+  tenantId    String   @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  modules      Module[]
+  enrollments  Enrollment[]
+  certificates Certificate[]
+  sales        CourseSale[]
+  paymentWebhookEvents PaymentWebhookEvent[]
+
+  @@index([tenantId])
+  @@index([tenantId, topic])
+  @@map("courses")
+}
+
+model Module {
+  id        String   @id @default(uuid()) @db.Uuid
+  title     String
+  order     Int
+  courseId  String   @db.Uuid
+  tenantId  String   @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@unique([courseId, order])
+  @@index([tenantId])
+  @@index([courseId])
+  @@map("modules")
+}
+
+model Lesson {
+  id            String   @id @default(uuid()) @db.Uuid
+  title         String
+  order         Int
+  videoUrl      String?
+  attachmentUrl String?
+  completionRequirement LessonCompletionRequirement @default(VIDEO_WATCHED)
+  requiredVideoPercent  Int      @default(80)
+  progressWeight        Int      @default(1)
+  moduleId      String   @db.Uuid
+  tenantId      String   @db.Uuid
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  module          Module           @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lessonProgress  LessonProgress[]
+
+  @@unique([moduleId, order])
+  @@index([tenantId])
+  @@index([moduleId])
+  @@map("lessons")
+}
+
+model Enrollment {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @db.Uuid
+  courseId           String   @db.Uuid
+  tenantId           String   @db.Uuid
+  progressPercentage Int      @default(0)
+  isCompleted        Boolean  @default(false)
+  paymentStatus       EnrollmentPaymentStatus @default(PENDING)
+  purchaseAmountCents Int     @default(0)
+  platformFeeCents    Int     @default(0)
+  producerNetCents    Int     @default(0)
+  gatewayPaymentId    String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, courseId])
+  @@unique([tenantId, gatewayPaymentId])
+  @@index([tenantId])
+  @@index([courseId])
+  @@map("enrollments")
+}
+
+model LessonProgress {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  lessonId  String   @db.Uuid
+  tenantId  String   @db.Uuid
+  isWatched Boolean  @default(false)
+  videoWatchedPercent Int     @default(0)
+  taskSubmittedAt     DateTime?
+  evidenceUrl         String?
+  completionNote      String?
+  completedAt         DateTime?
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, lessonId])
+  @@index([tenantId])
+  @@index([lessonId])
+  @@map("lesson_progress")
+}
+
+model Certificate {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @db.Uuid
+  courseId         String   @db.Uuid
+  tenantId         String   @db.Uuid
+  verificationCode String   @unique @default(uuid()) @db.Uuid
+  issuedAt         DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, courseId])
+  @@index([tenantId])
+  @@map("certificates")
+}
+
+model PlatformStaff {
+  id        String       @id @default(uuid()) @db.Uuid
+  name      String
+  email     String       @unique
+  role      PlatformRole @default(SUPPORT)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  permissions PlatformStaffPermission[]
+  assignedTickets SupportTicket[] @relation("AssignedSupportTickets")
+  auditLogs PlatformAuditLog[]
+  requestedPayouts PlatformFeePayout[]
+
+  @@index([role])
+  @@index([isActive])
+  @@map("platform_staff")
+}
+
+model PlatformStaffPermission {
+  id           String             @id @default(uuid()) @db.Uuid
+  staffId      String             @db.Uuid
+  permission   PlatformPermission
+  createdAt    DateTime           @default(now())
+
+  staff PlatformStaff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, permission])
+  @@index([permission])
+  @@map("platform_staff_permissions")
+}
+
+model SupportTicket {
+  id          String                @id @default(uuid()) @db.Uuid
+  tenantId    String?               @db.Uuid
+  userId      String?               @db.Uuid
+  assignedToId String?              @db.Uuid
+  subject     String
+  description String?
+  priority    SupportTicketPriority @default(MEDIUM)
+  status      SupportTicketStatus   @default(OPEN)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  resolvedAt  DateTime?
+
+  tenant     Tenant?        @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user       User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  assignedTo PlatformStaff? @relation("AssignedSupportTickets", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([priority])
+  @@map("support_tickets")
+}
+
+model PlatformAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorStaffId String? @db.Uuid
+  action      String
+  targetType  String
+  targetId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  actorStaff PlatformStaff? @relation(fields: [actorStaffId], references: [id], onDelete: SetNull)
+
+  @@index([actorStaffId])
+  @@index([targetType])
+  @@index([createdAt])
+  @@map("platform_audit_logs")
+}
+
+model CourseSale {
+  id                 String     @id @default(uuid()) @db.Uuid
+  tenantId           String     @db.Uuid
+  userId             String     @db.Uuid
+  courseId           String     @db.Uuid
+  gateway            String
+  gatewayPaymentId   String     @unique
+  grossAmountCents   Int
+  platformFeeBps     Int
+  platformFeeCents   Int
+  producerNetCents   Int
+  currency           String     @default("BRL")
+  status             SaleStatus @default(PAID)
+  createdAt          DateTime   @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([courseId])
+  @@index([userId])
+  @@index([status])
+  @@map("course_sales")
+}
+
+model PaymentWebhookEvent {
+  id               String    @id @default(uuid()) @db.Uuid
+  gateway          String
+  gatewayEventId   String
+  eventType        String
+  tenantId         String?   @db.Uuid
+  userId           String?   @db.Uuid
+  courseId         String?   @db.Uuid
+  gatewayPaymentId String?
+  status           String    @default("RECEIVED")
+  payload          Json
+  errorMessage     String?
+  receivedAt       DateTime  @default(now())
+  processedAt      DateTime?
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  course Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@unique([gateway, gatewayEventId])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([courseId])
+  @@index([gatewayPaymentId])
+  @@index([status])
+  @@index([receivedAt])
+  @@map("payment_webhook_events")
+}
+
+model PlatformFeePayout {
+  id                 String               @id @default(uuid()) @db.Uuid
+  requestedByStaffId String?              @db.Uuid
+  amountCents        Int
+  currency           String               @default("BRL")
+  pixKeyType         PixKeyType
+  pixKey             String
+  accountHolderName  String
+  accountDocument    String?
+  status             PlatformPayoutStatus @default(REQUESTED)
+  requestedAt        DateTime             @default(now())
+  paidAt             DateTime?
+  failureReason      String?
+
+  requestedBy PlatformStaff? @relation(fields: [requestedByStaffId], references: [id], onDelete: SetNull)
+
+  @@index([requestedByStaffId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("platform_fee_payouts")
+}
