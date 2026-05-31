@@ -10,6 +10,7 @@ import { CoursesModule } from './courses/courses.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { TenantGuard } from './common/guards/tenant.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { SecurityModule } from './common/security/security.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { ModulesModule } from './modules/modules.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -28,6 +29,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
         limit: 120,
       },
     ]),
+    SecurityModule,
     PrismaModule,
     AuthModule,
     TenantsModule,

@@ -1,9 +1,10 @@
-import { Body, Controller, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { DemoLoginDto } from './dto/demo-login.dto';
+import { JwtPayload } from './jwt.strategy';
 
 @Controller('auth')
 export class AuthController {
@@ -22,5 +23,20 @@ export class AuthController {
       path: '/',
     });
     return login;
+  }
+
+  @Post('logout')
+  async logout(
+    @Req() request: Request & { user?: JwtPayload },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    response.clearCookie('access_token', { path: '/' });
+    return this.authService.logout(request.user);
+  }
+
+  @Public()
+  @Get('jwks.json')
+  jwks() {
+    return this.authService.jwks();
   }
 }

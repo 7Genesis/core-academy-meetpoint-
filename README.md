@@ -140,7 +140,12 @@ Use `.env.example` como referencia. Nunca suba `.env` para o GitHub.
 Principais variaveis:
 
 - `DATABASE_URL`: conexao PostgreSQL;
-- `JWT_SECRET`: chave de assinatura JWT;
+- `JWT_ALGORITHM`: use `RS256` em producao;
+- `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `JWT_KID`: assinatura assimetrica de JWT e JWKS;
+- `JWT_ISSUER`, `JWT_AUDIENCE`: validacao estrita do emissor e publico do token;
+- `JWT_SECRET`: fallback local de desenvolvimento quando nao houver chave RSA;
+- `REDIS_URL`: revogacao/blacklist de `jti` de JWT;
+- `PII_ENCRYPTION_KEY`: chave AES-256-GCM para criptografia de dados sensiveis;
 - `WEBHOOK_SECRET`: segredo de webhook generico;
 - `STRIPE_SECRET_KEY`: chave secreta Stripe;
 - `STRIPE_WEBHOOK_SECRET`: segredo de webhook Stripe;
@@ -161,10 +166,15 @@ O projeto possui camadas iniciais de seguranca:
 - CORS configuravel;
 - throttling;
 - webhooks com validacao de assinatura;
+- JWT com suporte a RS256, `kid`, JWKS, `issuer`, `audience` e revogacao via Redis;
+- criptografia de campo AES-256-GCM para dados sensiveis;
+- mascaramento dinamico de PII em retornos administrativos e logs de auditoria;
 - RLS preparado para PostgreSQL;
 - arquivos sensiveis ignorados no Git.
 
 Ponto importante: bloqueios de inspecionar elemento, copia ou clique direito no frontend sao apenas barreiras visuais. Eles nao substituem seguranca real. Conteudos privados, videos, materiais e dados sensiveis precisam ser protegidos no backend com autorizacao, URLs assinadas, expiracao e validacao por usuario/tenant.
+
+O plano tecnico completo de hardening, vetores OWASP e Terraform AWS fica em [`docs/security-hardening.md`](docs/security-hardening.md).
 
 ## Multi-tenant e RLS
 

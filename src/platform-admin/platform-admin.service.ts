@@ -9,6 +9,8 @@ import {
   Prisma,
   SupportTicketStatus,
 } from '@prisma/client';
+import { DataMaskingService } from '../common/security/data-masking.service';
+import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BlockUserDto } from './dto/block-user.dto';
 import { CreatePlatformFeePayoutDto } from './dto/create-platform-fee-payout.dto';
@@ -21,7 +23,11 @@ type DirectoryType = 'companies' | 'students' | 'teachers';
 
 @Injectable()
 export class PlatformAdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly dataMasking: DataMaskingService,
+    private readonly fieldEncryption: FieldEncryptionService,
+  ) {}
 
   async dashboard() {
     const [
@@ -81,8 +87,8 @@ export class PlatformAdminService {
     };
   }
 
-  listPlatformFeePayouts() {
-    return this.prisma.withPlatformAdmin((tx) =>
+  async listPlatformFeePayouts() {
+    const payouts = await this.prisma.withPlatformAdmin((tx) =>
       tx.platformFeePayout.findMany({
         orderBy: { requestedAt: 'desc' },
         include: {
@@ -90,6 +96,18 @@ export class PlatformAdminService {
         },
       }),
     );
+
+    return payouts.map((payout) => ({
+      ...payout,
+      pixKey: this.maskEncryptedValue(payout.pixKey),
+      accountDocument: this.maskEncryptedValue(payout.accountDocument),
+      requestedBy: payout.requestedBy
+        ? {
+            ...payout.requestedBy,
+            email: this.dataMasking.maskEmail(payout.requestedBy.email),
+          }
+        : null,
+    }));
   }
 
   async createPlatformFeePayout(
@@ -132,9 +150,9 @@ export class PlatformAdminService {
           requestedByStaffId: actorStaff?.id,
           amountCents: dto.amountCents,
           pixKeyType: dto.pixKeyType,
-          pixKey: dto.pixKey,
+          pixKey: this.fieldEncryption.encryptString(dto.pixKey) ?? '',
           accountHolderName: dto.accountHolderName,
-          accountDocument: dto.accountDocument,
+          accountDocument: this.fieldEncryption.encryptString(dto.accountDocument),
         },
       });
 
@@ -147,10 +165,15 @@ export class PlatformAdminService {
           amountCents: dto.amountCents,
           pixKeyType: dto.pixKeyType,
           accountHolderName: dto.accountHolderName,
+          pixKey: '[encrypted]',
         },
       });
 
-      return payout;
+      return {
+        ...payout,
+        pixKey: this.maskEncryptedValue(payout.pixKey),
+        accountDocument: this.maskEncryptedValue(payout.accountDocument),
+      };
     });
   }
 
@@ -173,10 +196,17 @@ export class PlatformAdminService {
   }
 
   listStaff() {
-    return this.prisma.withPlatformAdmin((tx) => tx.platformStaff.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: { permissions: true },
-    }));
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const staff = await tx.platformStaff.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { permissions: true },
+      });
+
+      return staff.map((member) => ({
+        ...member,
+        email: this.dataMasking.maskEmail(member.email),
+      }));
+    });
   }
 
   async createStaff(dto: CreatePlatformStaffDto, actorStaffId?: string) {
@@ -201,10 +231,13 @@ export class PlatformAdminService {
         action: 'PLATFORM_STAFF_CREATED',
         targetType: 'PlatformStaff',
         targetId: created.id,
-        metadata: { email: created.email, permissions: dto.permissions },
+        metadata: {
+          email: this.dataMasking.maskEmail(created.email),
+          permissions: dto.permissions,
+        },
       });
 
-      return created;
+      return { ...created, email: this.dataMasking.maskEmail(created.email) };
     });
 
     return staff;
@@ -244,24 +277,28 @@ export class PlatformAdminService {
         metadata: { permissions: dto.permissions, isActive: updated.isActive },
       });
 
-      return updated;
+      return { ...updated, email: this.dataMasking.maskEmail(updated.email) };
     });
   }
 
-  createTicket(dto: CreateSupportTicketDto) {
-    return this.prisma.withPlatformAdmin((tx) => tx.supportTicket.create({
-      data: {
-        subject: dto.subject,
-        description: dto.description,
-        priority: dto.priority ?? 'MEDIUM',
-        tenantId: dto.tenantId,
-        userId: dto.userId,
-      },
-    }));
+  async createTicket(dto: CreateSupportTicketDto) {
+    const ticket = await this.prisma.withPlatformAdmin((tx) =>
+      tx.supportTicket.create({
+        data: {
+          subject: this.dataMasking.sanitizeText(dto.subject) ?? dto.subject,
+          description: this.fieldEncryption.encryptString(dto.description) ?? '',
+          priority: dto.priority ?? 'MEDIUM',
+          tenantId: dto.tenantId,
+          userId: dto.userId,
+        },
+      }),
+    );
+
+    return this.maskSupportTicket(ticket);
   }
 
-  listTickets(status?: SupportTicketStatus) {
-    return this.prisma.withPlatformAdmin((tx) => tx.supportTicket.findMany({
+  async listTickets(status?: SupportTicketStatus) {
+    const tickets = await this.prisma.withPlatformAdmin((tx) => tx.supportTicket.findMany({
       where: status ? { status } : undefined,
       orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
       include: {
@@ -270,6 +307,8 @@ export class PlatformAdminService {
         assignedTo: { select: { id: true, name: true, email: true } },
       },
     }));
+
+    return tickets.map((ticket) => this.maskSupportTicket(ticket));
   }
 
   async assumeTicket(ticketId: string, actorStaffId: string) {
@@ -298,7 +337,7 @@ export class PlatformAdminService {
         metadata: { subject: updated.subject },
       });
 
-      return updated;
+      return this.maskSupportTicket(updated);
     });
   }
 
@@ -327,7 +366,7 @@ export class PlatformAdminService {
         metadata: { status: dto.status },
       });
 
-      return updated;
+      return this.maskSupportTicket(updated);
     });
   }
 
@@ -341,7 +380,7 @@ export class PlatformAdminService {
         data: {
           status: AccountStatus.BLOCKED,
           blockedAt: new Date(),
-          blockedReason: dto.reason,
+          blockedReason: this.dataMasking.sanitizeText(dto.reason),
         },
         select: {
           id: true,
@@ -359,10 +398,13 @@ export class PlatformAdminService {
         action: 'USER_BLOCKED',
         targetType: 'User',
         targetId: userId,
-        metadata: { reason: dto.reason, tenantId: user.tenantId },
+        metadata: {
+          reason: this.dataMasking.sanitizeText(dto.reason),
+          tenantId: user.tenantId,
+        },
       });
 
-      return updated;
+      return { ...updated, email: this.dataMasking.maskEmail(updated.email) };
     });
   }
 
@@ -395,7 +437,7 @@ export class PlatformAdminService {
         metadata: { tenantId: user.tenantId },
       });
 
-      return updated;
+      return { ...updated, email: this.dataMasking.maskEmail(updated.email) };
     });
   }
 
@@ -422,12 +464,12 @@ export class PlatformAdminService {
     });
   }
 
-  private listUsers(
+  private async listUsers(
     tx: Prisma.TransactionClient,
     role: 'ADMIN' | 'STUDENT',
     search: string,
   ) {
-    return tx.user.findMany({
+    const users = await tx.user.findMany({
       where: {
         role,
         ...(search
@@ -456,6 +498,11 @@ export class PlatformAdminService {
         },
       },
     });
+
+    return users.map((user) => ({
+      ...user,
+      email: this.dataMasking.maskEmail(user.email),
+    }));
   }
 
   private audit(
@@ -491,8 +538,47 @@ export class PlatformAdminService {
         action: data.action,
         targetType: data.targetType,
         targetId: data.targetId,
-        metadata: data.metadata,
+        metadata: this.dataMasking.redactObject(
+          data.metadata,
+        ) as Prisma.InputJsonValue,
       },
     });
+  }
+
+  private maskEncryptedValue(value: string | null | undefined) {
+    const decrypted = this.fieldEncryption.decryptString(value);
+    if (!decrypted) return decrypted ?? null;
+    if (decrypted.includes('@')) return this.dataMasking.maskEmail(decrypted);
+    if (/\d/.test(decrypted)) return this.dataMasking.maskDocument(decrypted);
+    return '[protected]';
+  }
+
+  private maskSupportTicket<
+    T extends {
+      description?: string | null;
+      user?: { email?: string | null } | null;
+      assignedTo?: { email?: string | null } | null;
+    },
+  >(ticket: T) {
+    const decryptedDescription = this.fieldEncryption.decryptString(
+      ticket.description,
+    );
+
+    return {
+      ...ticket,
+      description: this.dataMasking.redactText(decryptedDescription) ?? '',
+      user: ticket.user
+        ? {
+            ...ticket.user,
+            email: this.dataMasking.maskEmail(ticket.user.email),
+          }
+        : ticket.user,
+      assignedTo: ticket.assignedTo
+        ? {
+            ...ticket.assignedTo,
+            email: this.dataMasking.maskEmail(ticket.assignedTo.email),
+          }
+        : ticket.assignedTo,
+    };
   }
 }

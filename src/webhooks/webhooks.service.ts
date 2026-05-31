@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { EnrollmentPaymentStatus, Prisma } from '@prisma/client';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { DataMaskingService } from '../common/security/data-masking.service';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -42,6 +43,7 @@ export class WebhooksService {
   constructor(
     private readonly enrollmentsService: EnrollmentsService,
     private readonly prisma: PrismaService,
+    private readonly dataMasking: DataMaskingService,
   ) {}
 
   async handleStripeEvent(
@@ -272,7 +274,7 @@ export class WebhooksService {
           courseId: payment.courseId,
           gatewayPaymentId: payment.gatewayPaymentId,
           status: 'RECEIVED',
-          payload: event as Prisma.InputJsonValue,
+          payload: this.dataMasking.redactObject(event) as Prisma.InputJsonValue,
         },
       });
 

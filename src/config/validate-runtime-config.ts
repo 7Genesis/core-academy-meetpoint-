@@ -9,12 +9,31 @@ function isWeakSecret(value: string | undefined) {
 export function validateRuntimeConfig() {
   if (process.env.NODE_ENV !== 'production') return;
 
-  const requiredSecrets = [
-    'JWT_SECRET',
+  const requiredValues = [
+    'JWT_PRIVATE_KEY',
+    'JWT_PUBLIC_KEY',
+    'JWT_KID',
+    'JWT_ISSUER',
+    'JWT_AUDIENCE',
+    'PII_ENCRYPTION_KEY',
+    'REDIS_URL',
     'WEBHOOK_SECRET',
     'STRIPE_WEBHOOK_SECRET',
   ];
-  const weakSecrets = requiredSecrets.filter((key) =>
+
+  const missingValues = requiredValues.filter((key) => !process.env[key]);
+  if (missingValues.length > 0) {
+    throw new Error(
+      `Production startup blocked: configure ${missingValues.join(', ')}`,
+    );
+  }
+
+  const weakSecrets = [
+    'JWT_PRIVATE_KEY',
+    'PII_ENCRYPTION_KEY',
+    'WEBHOOK_SECRET',
+    'STRIPE_WEBHOOK_SECRET',
+  ].filter((key) =>
     isWeakSecret(process.env[key]),
   );
 
@@ -26,6 +45,21 @@ export function validateRuntimeConfig() {
 
   if (!process.env.DATABASE_URL) {
     throw new Error('Production startup blocked: DATABASE_URL is required');
+  }
+
+  if (process.env.JWT_ALGORITHM && process.env.JWT_ALGORITHM !== 'RS256') {
+    throw new Error('Production startup blocked: JWT_ALGORITHM must be RS256');
+  }
+
+  const piiKey = process.env.PII_ENCRYPTION_KEY;
+  const piiKeyLengths = [
+    Buffer.from(piiKey ?? '', 'base64').length,
+    Buffer.from(piiKey ?? '', 'hex').length,
+  ];
+  if (!piiKey || !piiKeyLengths.includes(32)) {
+    throw new Error(
+      'Production startup blocked: PII_ENCRYPTION_KEY must be a 32-byte base64 or hex key',
+    );
   }
 
   if (!process.env.CORS_ORIGIN) {

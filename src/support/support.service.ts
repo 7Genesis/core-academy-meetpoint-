@@ -4,6 +4,8 @@ import {
   SupportTicketPriority,
   SupportTicketStatus,
 } from '@prisma/client';
+import { DataMaskingService } from '../common/security/data-masking.service';
+import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSupportSuggestionDto } from './dto/create-support-suggestion.dto';
 import { SupportChatDto } from './dto/support-chat.dto';
@@ -17,14 +19,18 @@ export class SupportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly dataMasking: DataMaskingService,
+    private readonly fieldEncryption: FieldEncryptionService,
   ) {}
 
   async createSuggestion(dto: CreateSupportSuggestionDto) {
     const ticket = await this.prisma.withPlatformAdmin((tx) =>
       tx.supportTicket.create({
         data: {
-          subject: `[Sugestao] ${dto.subject}`,
-          description: this.formatRequesterContext(dto.message, dto),
+          subject: `[Sugestao] ${this.dataMasking.sanitizeText(dto.subject)}`,
+          description: this.fieldEncryption.encryptString(
+            this.formatRequesterContext(dto.message, dto),
+          ),
           priority: SupportTicketPriority.LOW,
           status: SupportTicketStatus.OPEN,
         },
@@ -55,8 +61,12 @@ export class SupportService {
     const ticket = await this.prisma.withPlatformAdmin((tx) =>
       tx.supportTicket.create({
         data: {
-          subject: `[Suporte humano] ${dto.message.slice(0, 80)}`,
-          description: this.formatRequesterContext(dto.message, dto),
+          subject: `[Suporte humano] ${this.dataMasking
+            .sanitizeText(dto.message)
+            ?.slice(0, 80)}`,
+          description: this.fieldEncryption.encryptString(
+            this.formatRequesterContext(dto.message, dto),
+          ),
           priority: needsHuman
             ? SupportTicketPriority.HIGH
             : SupportTicketPriority.MEDIUM,
@@ -98,6 +108,7 @@ export class SupportService {
   private async askOllama(message: string) {
     const ollamaUrl = this.resolveOllamaUrl();
     const model = this.configService.get<string>('OLLAMA_MODEL') ?? 'llama3.2';
+    const safeMessage = this.dataMasking.sanitizeText(message) ?? '';
     if (!ollamaUrl) return this.fallbackAiAnswer(message);
 
     try {
@@ -112,7 +123,7 @@ export class SupportService {
             'Voce e um suporte de uma plataforma SaaS EAD.',
             'Responda em portugues do Brasil, com no maximo 4 frases.',
             'Se envolver pagamento, documento, bloqueio, reembolso ou dados sensiveis, diga que vai encaminhar para suporte humano.',
-            `Mensagem: ${message}`,
+            `Mensagem: ${safeMessage}`,
           ].join('\n'),
         }),
       });
@@ -167,10 +178,10 @@ export class SupportService {
     context: { email?: string; name?: string; segment?: string },
   ) {
     return [
-      `Mensagem: ${message}`,
-      `Nome: ${context.name ?? 'Nao informado'}`,
-      `Email: ${context.email ?? 'Nao informado'}`,
-      `Perfil: ${context.segment ?? 'Nao informado'}`,
+      `Mensagem: ${this.dataMasking.sanitizeText(message)}`,
+      `Nome: ${this.dataMasking.sanitizeText(context.name ?? 'Nao informado')}`,
+      `Email: ${this.dataMasking.redactText(context.email ?? 'Nao informado')}`,
+      `Perfil: ${this.dataMasking.sanitizeText(context.segment ?? 'Nao informado')}`,
     ].join('\n');
   }
 }

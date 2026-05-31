@@ -4,7 +4,11 @@ export type AuthenticatedUser = {
   sub: string;
   email: string;
   role: 'ADMIN' | 'STUDENT';
-  tenantId: string;
+  tenantId?: string;
+  platformRole?: 'OWNER' | 'SUPPORT' | 'OPERATIONS' | 'MAINTENANCE';
+  jti?: string;
+  exp?: number;
+  iat?: number;
 };
 
 export const CurrentUser = createParamDecorator(

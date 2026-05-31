@@ -1,6 +1,10 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'node:crypto';
+import { JwtPayload } from './jwt.strategy';
+import { JwtKeyService } from './jwt-key.service';
+import { TokenRevocationService } from './token-revocation.service';
 import { DemoLoginDto } from './dto/demo-login.dto';
 
 type DemoProfile = {
@@ -72,6 +76,8 @@ const demoProfiles: Record<string, DemoProfile> = {
 export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
+    private readonly jwtKeyService: JwtKeyService,
+    private readonly tokenRevocationService: TokenRevocationService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -91,8 +97,23 @@ export class AuthService {
     if (!profile) throw new UnauthorizedException('Invalid credentials');
 
     return {
-      accessToken: this.jwtService.sign(profile),
+      accessToken: this.jwtService.sign(
+        { ...profile },
+        {
+          ...this.jwtKeyService.getSignOptions(),
+          jwtid: randomUUID(),
+        },
+      ),
       user: profile,
     };
+  }
+
+  async logout(user?: Pick<JwtPayload, 'jti' | 'exp'>) {
+    await this.tokenRevocationService.revokeJti(user?.jti, user?.exp);
+    return { ok: true };
+  }
+
+  jwks() {
+    return this.jwtKeyService.getJwks();
   }
 }
