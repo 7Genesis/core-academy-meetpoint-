@@ -10,6 +10,7 @@ import {
 import { EnrollmentPaymentStatus } from '@prisma/client';
 import { Request } from 'express';
 import { timingSafeEqual } from 'node:crypto';
+import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
@@ -22,6 +23,7 @@ export class WebhooksController {
     private readonly enrollmentsService: EnrollmentsService,
     private readonly prisma: PrismaService,
     private readonly webhooksService: WebhooksService,
+    private readonly fieldEncryption: FieldEncryptionService,
   ) {}
 
   @Public()
@@ -39,9 +41,16 @@ export class WebhooksController {
       throw new UnauthorizedException('Invalid webhook secret');
     }
 
+    const emailHash = this.fieldEncryption.hashForLookup(dto.customerEmail, 'email');
     const user = await this.prisma.withTenant(dto.tenantId, (tx) => {
       return tx.user.findFirst({
-        where: { tenantId: dto.tenantId, email: dto.customerEmail },
+        where: {
+          tenantId: dto.tenantId,
+          OR: [
+            ...(emailHash ? [{ emailHash }] : []),
+            { email: dto.customerEmail },
+          ],
+        },
         select: { id: true },
       });
     });

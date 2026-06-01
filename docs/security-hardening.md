@@ -5,10 +5,12 @@ Escopo: API NestJS/Node.js, Prisma/PostgreSQL, autenticação JWT, dados pessoai
 ## Sumário Executivo
 
 - Crítico corrigido: JWT simétrico substituído por suporte a RS256, `kid`, `issuer`, `audience`, JWKS e revogação por `jti`.
-- Alto corrigido: dados sensíveis em suporte, auditoria, webhook e solicitação de saque PIX agora são criptografados, sanitizados ou mascarados antes de persistência/retorno.
+- Alto corrigido: dados sensíveis em suporte, auditoria, webhook, solicitação de saque PIX e identificadores de e-mail agora são criptografados, sanitizados, hasheados para busca ou mascarados antes de persistência/retorno.
 - Alto mitigado: cabeçalhos HTTP, CORS estrito, CSP em produção, validação global de DTOs, tenant obrigatório e RBAC já estão ativos e foram reforçados por validação de configuração.
 - Infraestrutura entregue: Terraform em `infra/aws-hardening/main.tf` com WAF, S3 privado com SSE-KMS, KMS com rotação, IAM mínimo, VPC privada e Security Groups restritos.
 - Risco residual: feed social, mensagens privadas, uploads de mídia e perfis ainda são majoritariamente protótipo/frontend. Quando esses módulos virarem API real, precisam usar os mesmos guards, validações e criptografia.
+
+> Nota operacional: os payloads abaixo são exemplos controlados para staging/autorização interna. Não devem ser executados contra terceiros, produção sem janela aprovada ou ambientes fora do escopo.
 
 ## 1. Autenticação e Sessão
 
@@ -34,6 +36,7 @@ Confusão de algoritmo: header RS256 -> HS256 com mesmo payload
 - `src/auth/token-revocation.service.ts`: revoga `jti` com TTL em Redis, com fallback local para desenvolvimento.
 - `src/auth/auth.controller.ts`: adiciona `POST /auth/logout` e `GET /auth/jwks.json`.
 - `.env.example` e `src/config/validate-runtime-config.ts`: produção exige RS256, chaves PEM, Redis e chave FLE.
+- `src/common/security/security-audit.interceptor.ts`: registra telemetria mínima de método, rota lógica, status e duração sem body, query string, token ou PII.
 
 ### Mecanismo de Proteção de Dados
 
@@ -61,6 +64,7 @@ X-Tenant-ID: 11111111-1111-4111-8111-111111111111
 
 - `TenantGuard` já obriga `tenantId` por linha e bloqueia divergência entre JWT e `X-Tenant-ID`.
 - `RolesGuard` mantém BFLA por papel.
+- `PlatformAdminGuard` valida `platformRole`, funcionário ativo e permissões específicas por rota; a busca de funcionário agora aceita `emailHash` para reduzir dependência de e-mail em claro.
 - `PrismaService.withTenant()` define `app.current_tenant_id`, base para RLS no PostgreSQL.
 - `src/common/security/access-control.ts` adiciona helpers ABAC para novos módulos de perfil/mensagens.
 
@@ -163,14 +167,21 @@ http://10.0.0.5/admin
 - `src/common/security/field-encryption.service.ts`: AES-256-GCM com IV de 96 bits e tag de autenticação.
 - `PlatformFeePayout.pixKey` e `accountDocument`: criptografados antes de persistir.
 - `SupportTicket.description`: criptografado antes de persistir e mascarado quando listado.
+- `SupportTicket.requesterEmailHash` e `requesterEmailEncrypted`: permitem roteamento de suporte sem expor e-mail cru para DBA.
+- `User.emailHash`, `User.emailEncrypted`, `PlatformStaff.emailHash` e `PlatformStaff.emailEncrypted`: base para migração progressiva de e-mail em claro para lookup por HMAC e leitura autorizada por FLE.
 - `PaymentWebhookEvent.payload`: redigido antes de persistir.
+- `PaymentWebhookEvent.payloadEncrypted`: payload redigido criptografado para trilha forense autorizada.
 - `PlatformAuditLog.metadata`: redigido antes de persistir.
+- `PlatformAuditLog.metadataEncrypted`: metadados redigidos também criptografados para consulta forense autorizada.
+- `src/common/security/data-masking.service.ts`: redige e-mail, JWT, secrets, CPF, CNPJ, IP e coordenadas geográficas em textos e objetos.
+- `src/common/security/field-encryption.service.ts`: adiciona `hashForLookup()` com HMAC-SHA256 para busca determinística sem plaintext.
 
 ### Mecanismo de Proteção de Dados
 
 - Chave `PII_ENCRYPTION_KEY` deve ser gerada fora do repositório, armazenada no AWS Secrets Manager ou SSM Parameter Store criptografado por KMS.
 - Para produção, recomenda-se envelope encryption com AWS KMS por tenant ou por classe de dado.
 - Acesso administrativo deve registrar ator, alvo, ação e metadados minimizados.
+- Migração recomendada: preencher `emailHash/emailEncrypted` para usuários antigos, alterar login/buscas para hash e só depois remover dependência de `User.email` em claro.
 
 ## 7. Checklist de Produção
 

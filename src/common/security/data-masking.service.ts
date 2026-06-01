@@ -33,7 +33,9 @@ export class DataMaskingService {
       .replace(/\b(?:Bearer\s+)?eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/g, '[jwt-redacted]')
       .replace(/\b(?:sk|pk|rk|whsec)_[a-zA-Z0-9_]{12,}\b/g, '[secret-redacted]')
       .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, '[cpf-redacted]')
-      .replace(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g, '[cnpj-redacted]');
+      .replace(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g, '[cnpj-redacted]')
+      .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '[ip-redacted]')
+      .replace(/\b-?\d{1,3}\.\d{4,},\s*-?\d{1,3}\.\d{4,}\b/g, '[geo-redacted]');
   }
 
   sanitizeText(value: string | null | undefined) {

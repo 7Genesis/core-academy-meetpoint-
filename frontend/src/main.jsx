@@ -61,6 +61,54 @@ function getCourseTopicFilters(courses) {
   return ['Todos', 'Gratuitos', 'Pagos', ...new Set([...knownTopics, ...courseTopics])];
 }
 
+function getYouTubeVideo(url = '') {
+  const rawUrl = String(url).trim();
+  if (!rawUrl) return null;
+
+  try {
+    const parsedUrl = new URL(rawUrl);
+    const host = parsedUrl.hostname.replace(/^www\./, '');
+    let videoId = '';
+
+    if (host === 'youtu.be') {
+      videoId = parsedUrl.pathname.split('/').filter(Boolean)[0] ?? '';
+    }
+
+    if (host.endsWith('youtube.com')) {
+      if (parsedUrl.pathname === '/watch') {
+        videoId = parsedUrl.searchParams.get('v') ?? '';
+      } else {
+        const [, pathVideoId] = parsedUrl.pathname.match(/^\/(?:embed|shorts|live)\/([^/?#]+)/) ?? [];
+        videoId = pathVideoId ?? '';
+      }
+    }
+
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) return null;
+
+    return {
+      id: videoId,
+      watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
+      embedUrl: `https://www.youtube.com/embed/${videoId}`,
+      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function createYouTubeMedia(url) {
+  const video = getYouTubeVideo(url);
+  if (!video) return null;
+  return {
+    name: 'Vídeo do YouTube',
+    type: 'youtube',
+    url: video.watchUrl,
+    youtubeId: video.id,
+    embedUrl: video.embedUrl,
+    thumbnailUrl: video.thumbnailUrl,
+  };
+}
+
 // Dados temporários dos cursos enquanto o banco PostgreSQL definitivo não foi conectado.
 const initialCourses = [
   {
@@ -509,7 +557,10 @@ const initialFeedPosts = [
     comments: [
       { id: 'comment-3', author: 'Marina Costa', body: 'Conteúdo perfeito para os grupos de mentoria.' },
     ],
-    mediaType: 'video',
+    mediaType: 'youtube',
+    mediaName: 'Vídeo no YouTube',
+    mediaUrl: 'https://www.youtube.com/watch?v=ysz5S6PUM-U',
+    youtubeId: 'ysz5S6PUM-U',
   },
   {
     id: 'post-3',
@@ -1552,6 +1603,7 @@ function App() {
   const [mediaViewerFocusElement, setMediaViewerFocusElement] = useState(null);
   const [visualPreferences, setVisualPreferences] = useState(createDefaultVisualPreferences);
   const [notificationDockOpen, setNotificationDockOpen] = useState(false);
+  const [supportRequestContext, setSupportRequestContext] = useState(null);
 
   const activeCommunity = useMemo(
     () => communities.find((community) => community.id === activeCommunityId),
@@ -1570,7 +1622,9 @@ function App() {
   const canPublishCourses = ['student', 'teacher', 'company', 'platform'].includes(
     currentUser?.segment,
   );
-  const canCreateEvents = ['teacher', 'company', 'platform'].includes(currentUser?.segment);
+  const canCreateEvents = ['student', 'teacher', 'company', 'platform'].includes(
+    currentUser?.segment,
+  );
   const resolvedProfileInfo = resolveProfileInfo(currentUser, profilePublicInfo);
   const accountDisplayName = currentUser
     ? resolvedProfileInfo.displayName
@@ -1613,6 +1667,14 @@ function App() {
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: mediaViewerScrollY, behavior: 'auto' });
       mediaViewerFocusElement?.focus?.();
+    });
+  }
+
+  function openSupportChannel(context = {}) {
+    setSupportRequestContext({
+      id: Date.now(),
+      mode: 'ai',
+      ...context,
     });
   }
 
@@ -1667,7 +1729,7 @@ function App() {
       const protectedArea = target?.closest?.('.protected-content, .course-module-planner, .course-detail-curriculum, .post-media');
       if (event.type === 'contextmenu') {
         event.preventDefault();
-        warnSecurity('Inspecao, copia e menu de contexto nao estao disponiveis nesta plataforma.');
+        warnSecurity('O botão direito está bloqueado.');
         return;
       }
       if (protectedArea) {
@@ -2103,6 +2165,7 @@ function App() {
     setMobileMoreOpen(false);
     const targetPageId = currentUser && pageId === 'home' && !options.allowHome ? 'feed' : pageId;
     const signupSegment = options.signupSegment ?? null;
+    const signupChoice = Boolean(options.signupChoice);
     if (targetPageId === 'communities' && !options.preserveCommunityOpen) {
       setCommunityBubbleOpen(false);
     }
@@ -2127,12 +2190,12 @@ function App() {
     }
 
     if (targetPageId === 'profile') {
-      setAuthMode(signupSegment ? 'signup' : 'login');
+      setAuthMode(signupSegment || signupChoice ? 'signup' : 'login');
     } else if (authMode !== 'login') {
       setAuthMode('login');
     }
 
-    syncBrowserHistory(targetPageId, { signupSegment });
+    syncBrowserHistory(targetPageId, { signupSegment, signupChoice });
     if (!shouldAnimate) return;
     setMotionKey((value) => value + 1);
     setTimeout(() => {
@@ -2761,6 +2824,9 @@ function App() {
         mediaType: media?.type ?? '',
         mediaName: media?.name ?? '',
         mediaUrl: media?.url ?? '',
+        youtubeId: media?.youtubeId ?? '',
+        mediaEmbedUrl: media?.embedUrl ?? '',
+        mediaThumbnailUrl: media?.thumbnailUrl ?? '',
       },
       ...current,
     ]);
@@ -2799,6 +2865,9 @@ function App() {
         mediaType: post.mediaType ?? '',
         mediaName: post.mediaName ?? '',
         mediaUrl: post.mediaUrl ?? '',
+        youtubeId: post.youtubeId ?? '',
+        mediaEmbedUrl: post.mediaEmbedUrl ?? '',
+        mediaThumbnailUrl: post.mediaThumbnailUrl ?? '',
         sharedFrom: {
           author: post.author,
           role: post.role,
@@ -3240,27 +3309,37 @@ function App() {
         </nav>
 
         <div className="account-actions">
-          <FloatingNotificationDock
-            unreadNotifications={notifications.filter((notice) => !notice.read).length + eventCreatorUnreadCount}
-            isOpen={notificationDockOpen}
-            onOpenChange={setNotificationDockOpen}
-            notifications={notifications}
-            eventCreatorAlerts={eventCreatorAlerts}
-            setNotifications={setNotifications}
-            setEventCreatorAlerts={setEventCreatorAlerts}
-          />
+          {currentUser && (
+            <FloatingNotificationDock
+              unreadNotifications={notifications.filter((notice) => !notice.read).length + eventCreatorUnreadCount}
+              isOpen={notificationDockOpen}
+              onOpenChange={setNotificationDockOpen}
+              notifications={notifications}
+              eventCreatorAlerts={eventCreatorAlerts}
+              setNotifications={setNotifications}
+              setEventCreatorAlerts={setEventCreatorAlerts}
+            />
+          )}
           <button className="account-button" type="button" onClick={() => openPage('profile')}>
             <Avatar initials={currentUser ? getInitials(accountDisplayName) : 'MP'} photo={profilePhoto} />
             <strong className="account-name">{accountDisplayName}</strong>
             {currentUser && <em className="points-inline-badge">{userPoints} pts</em>}
           </button>
-          {currentUser && (
+          {currentUser ? (
             <button
               className="logout-button"
               type="button"
               onClick={logoutCurrentUser}
             >
               Sair
+            </button>
+          ) : (
+            <button
+              className="signup-top-button"
+              type="button"
+              onClick={() => openPage('profile', { signupChoice: true })}
+            >
+              Cadastrar
             </button>
           )}
         </div>
@@ -3440,6 +3519,7 @@ function App() {
               course={createdCourses.find((course) => course.id === editingCreatedCourseId)}
               goBack={goBack}
               openPage={openPage}
+              openMediaViewer={openMediaViewer}
               publishCreatedCourse={publishCreatedCourse}
               updateCreatedCourse={updateCreatedCourse}
               updateCreatedCourseModules={updateCreatedCourseModules}
@@ -3491,7 +3571,7 @@ function App() {
                 goBack={goBack}
                 openPage={openPage}
                 title="Criação restrita"
-                description="Para publicar eventos, entre como Pessoa Jurídica, Empresa ou administrador da plataforma."
+                description="Para publicar eventos, entre como Pessoa Física, Pessoa Jurídica, Empresa ou administrador da plataforma."
               />
             )
           )}
@@ -3582,6 +3662,7 @@ function App() {
               leads={partnerLeads}
               registerPartnerLead={registerPartnerLead}
               openPage={openPage}
+              openSupport={openSupportChannel}
             />
           )}
           {activePage === 'subscription-checkout' && (
@@ -3617,7 +3698,11 @@ function App() {
           setConversations={setPrivateConversations}
         />
       )}
-      <SupportWidget currentUser={currentUser} />
+      <SupportWidget
+        currentUser={currentUser}
+        requestedContext={supportRequestContext}
+        clearRequestedContext={() => setSupportRequestContext(null)}
+      />
       <MediaViewer viewer={mediaViewer} onClose={closeMediaViewer} />
     </main>
   );
@@ -3726,14 +3811,19 @@ function MediaViewer({ viewer, onClose }) {
     onClose?.();
   }
 
+  const youtubeVideo = viewer.type === 'youtube' ? getYouTubeVideo(viewer.src) : null;
   const isVideo = viewer.type === 'video';
+  const isYoutube = Boolean(youtubeVideo || viewer.embedUrl);
   const content = (
     <div className="floating-backdrop" onClick={handleClose}>
-      <section className="media-viewer" onClick={(event) => event.stopPropagation()}>
+      <section
+        className={`media-viewer ${isYoutube ? 'youtube-viewer' : ''}`}
+        onClick={(event) => event.stopPropagation()}
+      >
         <header>
           <strong>{viewer.title ?? 'Mídia'}</strong>
           <div className="media-viewer-actions">
-            {!isVideo && (
+            {!isVideo && !isYoutube && (
               <>
                 <button type="button" onClick={() => setScale((current) => clamp(current - 0.25))}>
                   −
@@ -3757,7 +3847,14 @@ function MediaViewer({ viewer, onClose }) {
         <div className="media-viewer-body">
           <div className="media-stage" ref={stageRef}>
             <div className="media-zoom-surface">
-              {isVideo ? (
+              {isYoutube ? (
+                <iframe
+                  title={viewer.title ?? 'Vídeo do YouTube'}
+                  src={viewer.embedUrl ?? youtubeVideo?.embedUrl}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              ) : isVideo ? (
                 <video
                   ref={videoRef}
                   src={viewer.src}
@@ -3791,6 +3888,60 @@ function MediaViewer({ viewer, onClose }) {
   );
 
   return createPortal(content, document.body);
+}
+
+function YouTubePreviewLink({
+  url,
+  title = 'Vídeo do YouTube',
+  caption = 'Clique ou passe o mouse para reproduzir.',
+  openMediaViewer,
+  variant = 'inline',
+}) {
+  const hoverTimerRef = useRef(null);
+  const video = getYouTubeVideo(url);
+
+  useEffect(() => () => window.clearTimeout(hoverTimerRef.current), []);
+
+  if (!video) return null;
+
+  function openPreview() {
+    window.clearTimeout(hoverTimerRef.current);
+    openMediaViewer?.({
+      type: 'youtube',
+      src: video.watchUrl,
+      embedUrl: video.embedUrl,
+      title,
+      caption,
+    });
+  }
+
+  function schedulePreview() {
+    window.clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = window.setTimeout(openPreview, 320);
+  }
+
+  function cancelPreview() {
+    window.clearTimeout(hoverTimerRef.current);
+  }
+
+  return (
+    <button
+      className={`youtube-preview-link ${variant}`}
+      type="button"
+      onClick={openPreview}
+      onMouseEnter={schedulePreview}
+      onMouseLeave={cancelPreview}
+      onFocus={schedulePreview}
+      onBlur={cancelPreview}
+    >
+      {variant === 'card' && <img src={video.thumbnailUrl} alt="" loading="lazy" decoding="async" />}
+      <span className="youtube-play-dot">▶</span>
+      <span>
+        <strong>{title}</strong>
+        <small>{video.watchUrl}</small>
+      </span>
+    </button>
+  );
 }
 
 function CommunitySidePanel({
@@ -4241,8 +4392,10 @@ function PrivateChatWidget({
   );
 }
 
-function SupportWidget({ currentUser }) {
+function SupportWidget({ currentUser, requestedContext, clearRequestedContext }) {
   const widgetRef = React.useRef(null);
+  const textareaRef = React.useRef(null);
+  const handledRequestRef = React.useRef(null);
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState('ai');
   const [message, setMessage] = useState('');
@@ -4260,6 +4413,48 @@ function SupportWidget({ currentUser }) {
     email: currentUser?.email,
     segment: currentUser?.label,
   };
+
+  function createLocalHumanTicket(reason) {
+    const ticketId = `MP-SUP-${Date.now().toString(36).toUpperCase()}`;
+    const ticket = {
+      id: ticketId,
+      reason,
+      requester,
+      createdAt: new Date().toISOString(),
+      status: 'OPEN',
+      channel: 'human',
+    };
+
+    try {
+      const savedTickets = JSON.parse(localStorage.getItem('localSupportTickets') ?? '[]');
+      localStorage.setItem('localSupportTickets', JSON.stringify([ticket, ...savedTickets]));
+    } catch {
+      // Se o navegador bloquear storage, a conversa ainda mostra o protocolo da sessão.
+    }
+
+    return ticketId;
+  }
+
+  useEffect(() => {
+    if (!requestedContext || handledRequestRef.current === requestedContext.id) return;
+
+    handledRequestRef.current = requestedContext.id;
+    setIsOpen(true);
+    setMode(requestedContext.mode ?? 'ai');
+    setStatus(requestedContext.status ?? 'Suporte aberto pela IA.');
+
+    if (requestedContext.subject) setSubject(requestedContext.subject);
+    if (requestedContext.prefill) setMessage(requestedContext.prefill);
+    if (requestedContext.notice) {
+      setConversation((current) => [
+        ...current,
+        { from: 'support', body: requestedContext.notice },
+      ]);
+    }
+
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+    clearRequestedContext?.();
+  }, [requestedContext]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -4350,14 +4545,15 @@ function SupportWidget({ currentUser }) {
       }
 
       if (mode === 'human') {
+        const ticketId = createLocalHumanTicket(userMessage);
         setConversation((current) => [
           ...current,
           {
             from: 'support',
-            body: 'Não consegui conectar com a central agora, mas esta solicitação foi marcada como atendimento humano no protótipo.',
+            body: `Atendimento humano aberto no protótipo. Protocolo: ${ticketId}. A equipe visualiza esse fluxo na central quando o banco estiver conectado.`,
           },
         ]);
-        setStatus('Suporte humano pendente de conexão.');
+        setStatus(`Atendimento humano acionado. Protocolo ${ticketId}.`);
         return;
       }
 
@@ -4369,6 +4565,52 @@ function SupportWidget({ currentUser }) {
         },
       ]);
       setStatus('Respondido por fallback local.');
+    }
+  }
+
+  async function escalateToHuman() {
+    const escalationMessage = message.trim()
+      || 'A IA não resolveu minha dúvida. Quero falar com uma pessoa do suporte.';
+
+    setMode('human');
+    setMessage('');
+    setStatus('Acionando atendimento humano...');
+    setConversation((current) => [
+      ...current,
+      {
+        from: 'user',
+        body: 'Não resolveu. Quero falar com uma pessoa do suporte.',
+      },
+    ]);
+
+    try {
+      const result = await supportRequest('/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: `Quero falar com uma pessoa. ${escalationMessage}`,
+          preferredChannel: 'human',
+          ...requester,
+        }),
+      });
+
+      setConversation((current) => [
+        ...current,
+        {
+          from: 'support',
+          body: result.ticketId ? `${result.answer} Ticket: ${result.ticketId}` : result.answer,
+        },
+      ]);
+      setStatus('Atendimento humano acionado.');
+    } catch {
+      const ticketId = createLocalHumanTicket(escalationMessage);
+      setConversation((current) => [
+        ...current,
+        {
+          from: 'support',
+          body: `Atendimento humano aberto no protótipo. Protocolo: ${ticketId}. Com o banco conectado, este fluxo passa a criar ticket real na central.`,
+        },
+      ]);
+      setStatus(`Atendimento humano acionado. Protocolo ${ticketId}.`);
     }
   }
 
@@ -4385,9 +4627,9 @@ function SupportWidget({ currentUser }) {
           </header>
 
           <div className="support-mode-tabs">
-            <button className={mode === 'ai' ? 'active' : ''} onClick={() => setMode('ai')}>IA</button>
-            <button className={mode === 'human' ? 'active' : ''} onClick={() => setMode('human')}>Pessoa</button>
-            <button className={mode === 'suggestion' ? 'active' : ''} onClick={() => setMode('suggestion')}>Sugestão</button>
+            <button type="button" className={mode === 'ai' ? 'active' : ''} onClick={() => setMode('ai')}>IA</button>
+            <button type="button" className={mode === 'human' ? 'active' : ''} onClick={() => setMode('human')}>Pessoa</button>
+            <button type="button" className={mode === 'suggestion' ? 'active' : ''} onClick={() => setMode('suggestion')}>Sugestão</button>
           </div>
 
           {mode === 'suggestion' && (
@@ -4407,6 +4649,7 @@ function SupportWidget({ currentUser }) {
 
           <form className="support-form" onSubmit={sendSupportMessage}>
             <textarea
+              ref={textareaRef}
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               placeholder={
@@ -4421,6 +4664,11 @@ function SupportWidget({ currentUser }) {
               {mode === 'suggestion' ? 'Enviar sugestão' : mode === 'human' ? 'Chamar pessoa' : 'Perguntar'}
             </button>
           </form>
+          {mode === 'ai' && (
+            <button className="support-escalate-button" type="button" onClick={escalateToHuman}>
+              Não resolveu? Chamar pessoa
+            </button>
+          )}
           {status && <small>{status}</small>}
         </section>
       )}
@@ -4522,8 +4770,13 @@ function HomeView({ openPage, openCourse }) {
             pontos e parceiros com uma navegação simples.
           </p>
           <div className="home-hero-actions">
-            <button onClick={() => openPage('feed')}>Explorar feed</button>
-            <button className="light" onClick={() => openPage('partners')}>Ver planos</button>
+            <button onClick={() => openPage('profile')}>Entrar</button>
+            <button className="light" onClick={() => openPage('profile', { signupChoice: true })}>
+              Cadastrar
+            </button>
+            <button className="ghost" onClick={() => openPage('feed')}>
+              Explorar feed
+            </button>
           </div>
         </div>
 
@@ -4686,6 +4939,8 @@ function FeedView({
   const [draft, setDraft] = useState('');
   const [city, setCity] = useState('');
   const [media, setMedia] = useState(null);
+  const [videoLink, setVideoLink] = useState('');
+  const [videoLinkOpen, setVideoLinkOpen] = useState(false);
   const [locationStatus, setLocationStatus] = useState('');
   const [activeFeedFilter, setActiveFeedFilter] = useState('Tudo');
   const [selectedTrendTag, setSelectedTrendTag] = useState('');
@@ -4755,6 +5010,10 @@ function FeedView({
 
   function submitPost(event) {
     event.preventDefault();
+    if (videoLink.trim() && !getYouTubeVideo(videoLink)) {
+      setLocationStatus('Cole um link válido do YouTube para publicar o vídeo.');
+      return;
+    }
     const createdPostId = createFeedPost({ body: draft, media, city, tag: postCategory });
     if (!createdPostId) {
       setLocationStatus('Escreva uma publicação ou anexe uma mídia antes de publicar.');
@@ -4762,6 +5021,8 @@ function FeedView({
     }
     setDraft('');
     setMedia(null);
+    setVideoLink('');
+    setVideoLinkOpen(false);
     setPostCategory('Atualização');
     setLocationStatus(
       city.trim()
@@ -4774,11 +5035,25 @@ function FeedView({
   function handleMediaChange(event) {
     const file = event.target.files?.[0];
     if (!file) return;
+    setVideoLink('');
     setMedia({
       name: file.name,
       type: file.type.startsWith('video/') ? 'video' : 'image',
       url: URL.createObjectURL(file),
     });
+  }
+
+  function updateVideoLink(value) {
+    setVideoLink(value);
+    const youtubeMedia = createYouTubeMedia(value);
+    if (youtubeMedia) {
+      setMedia(youtubeMedia);
+      setLocationStatus('Link do YouTube pronto para publicar.');
+      return;
+    }
+    if (media?.type === 'youtube') {
+      setMedia(null);
+    }
   }
 
   async function useCurrentLocation() {
@@ -4965,11 +5240,16 @@ function FeedView({
                   <strong>Foto</strong>
                   <input type="file" accept="image/*" onChange={handleMediaChange} />
                 </label>
-                <label className="media-upload-button composer-media-button" aria-label="Adicionar vídeo" title="Adicionar vídeo">
+                <button
+                  className="media-upload-button composer-media-button"
+                  type="button"
+                  aria-label="Adicionar vídeo do YouTube"
+                  title="Adicionar vídeo do YouTube"
+                  onClick={() => setVideoLinkOpen((current) => !current)}
+                >
                   <span aria-hidden="true">▶</span>
                   <strong>Vídeo</strong>
-                  <input type="file" accept="video/*" onChange={handleMediaChange} />
-                </label>
+                </button>
               </div>
               <button className="light" type="button" onClick={() => openPage('event-create')}>
                 + Evento
@@ -5013,6 +5293,31 @@ function FeedView({
             </div>
 
             {locationStatus && <small className="location-status">{locationStatus}</small>}
+            {videoLinkOpen && (
+              <div className="youtube-link-composer">
+                <label>
+                  Link do YouTube
+                  <input
+                    className="platform-input"
+                    value={videoLink}
+                    onChange={(event) => updateVideoLink(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter') return;
+                      event.preventDefault();
+                      const youtubeMedia = createYouTubeMedia(videoLink);
+                      if (!youtubeMedia) {
+                        setLocationStatus('Cole um link válido do YouTube.');
+                        return;
+                      }
+                      setMedia(youtubeMedia);
+                      setLocationStatus('Vídeo do YouTube anexado.');
+                    }}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                  />
+                </label>
+                <small>Suba o vídeo no YouTube e cole o link aqui. A plataforma reproduz em janela média.</small>
+              </div>
+            )}
             {media && (
               <div className="composer-preview">
                 <div
@@ -5023,7 +5328,12 @@ function FeedView({
                     openMediaViewer?.({
                       type: media.type,
                       src: media.url,
-                      title: media.type === 'video' ? 'Prévia do vídeo' : 'Prévia da foto',
+                      embedUrl: media.embedUrl,
+                      title: media.type === 'youtube'
+                        ? 'Prévia do vídeo do YouTube'
+                        : media.type === 'video'
+                          ? 'Prévia do vídeo'
+                          : 'Prévia da foto',
                       caption: media.name,
                     })
                   }
@@ -5033,13 +5343,20 @@ function FeedView({
                     openMediaViewer?.({
                       type: media.type,
                       src: media.url,
-                      title: media.type === 'video' ? 'Prévia do vídeo' : 'Prévia da foto',
+                      embedUrl: media.embedUrl,
+                      title: media.type === 'youtube'
+                        ? 'Prévia do vídeo do YouTube'
+                        : media.type === 'video'
+                          ? 'Prévia do vídeo'
+                          : 'Prévia da foto',
                       caption: media.name,
                     });
                   }}
                 >
-                  {media.type === 'video' ? <video src={media.url} controls /> : <img src={media.url} alt="" />}
-                  <span>Abrir em tela cheia</span>
+                  {media.type === 'youtube' ? (
+                    <img src={media.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+                  ) : media.type === 'video' ? <video src={media.url} controls /> : <img src={media.url} alt="" />}
+                  <span>{media.type === 'youtube' ? 'Reproduzir YouTube' : 'Abrir em tela cheia'}</span>
                 </div>
                 <button className="composer-remove-media" type="button" onClick={() => setMedia(null)}>Remover mídia</button>
               </div>
@@ -5652,6 +5969,7 @@ const reactionPickerRef = React.useRef(null);
 const reactionDetailRef = React.useRef(null);
 const commentPanelRef = React.useRef(null);
 const reactionHoldTimerRef = React.useRef(null);
+const youtubeHoverTimerRef = React.useRef(null);
 const reactionHoldOpenedRef = React.useRef(false);
 const impressionRegisteredRef = React.useRef(false);
 
@@ -5708,6 +6026,7 @@ useEffect(() => {
 
 useEffect(() => () => {
   window.clearTimeout(reactionHoldTimerRef.current);
+  window.clearTimeout(youtubeHoverTimerRef.current);
 }, []);
 
 useEffect(() => {
@@ -5809,6 +6128,37 @@ function sharePost() {
 
   const selectedReaction =
     reactionLabelById[post.selectedReaction] ?? feedReactions[0];
+  const youtubeVideo = post.mediaType === 'youtube' ? getYouTubeVideo(post.mediaUrl) : null;
+
+  function openPostMediaPreview() {
+    if (youtubeVideo) {
+      openMediaViewer?.({
+        type: 'youtube',
+        src: youtubeVideo.watchUrl,
+        embedUrl: post.mediaEmbedUrl || youtubeVideo.embedUrl,
+        title: post.tag ? `${post.tag} • ${post.author}` : post.author,
+        caption: `${post.author} - ${post.city}`,
+      });
+      return;
+    }
+
+    openMediaViewer?.({
+      type: post.mediaType,
+      src: post.mediaUrl,
+      title: post.tag ? `${post.tag} • ${post.author}` : post.author,
+      caption: `${post.author} - ${post.city}`,
+    });
+  }
+
+  function schedulePostVideoPreview() {
+    if (!youtubeVideo) return;
+    window.clearTimeout(youtubeHoverTimerRef.current);
+    youtubeHoverTimerRef.current = window.setTimeout(openPostMediaPreview, 320);
+  }
+
+  function cancelPostVideoPreview() {
+    window.clearTimeout(youtubeHoverTimerRef.current);
+  }
 
   return (
     <article
@@ -5986,28 +6336,46 @@ post.body && (
   </div>
 )
       )}
-      {post.mediaUrl && (
+      {post.mediaUrl && post.mediaType === 'youtube' && youtubeVideo && (
+        <div className="post-youtube-card">
+          <button
+            className="post-media youtube-media"
+            type="button"
+            onClick={openPostMediaPreview}
+            onMouseEnter={schedulePostVideoPreview}
+            onMouseLeave={cancelPostVideoPreview}
+            onFocus={schedulePostVideoPreview}
+            onBlur={cancelPostVideoPreview}
+          >
+            <img src={post.mediaThumbnailUrl || youtubeVideo.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+            <span className="youtube-play-overlay">▶</span>
+            <span className="media-credit">
+              {post.author} - {post.city}
+            </span>
+          </button>
+          <button
+            className="youtube-link-chip"
+            type="button"
+            onClick={openPostMediaPreview}
+            onMouseEnter={schedulePostVideoPreview}
+            onMouseLeave={cancelPostVideoPreview}
+            onFocus={schedulePostVideoPreview}
+            onBlur={cancelPostVideoPreview}
+          >
+            {youtubeVideo.watchUrl}
+          </button>
+        </div>
+      )}
+      {post.mediaUrl && post.mediaType !== 'youtube' && (
         <div
           className="post-media"
           role="button"
           tabIndex={0}
-          onClick={() => {
-            openMediaViewer?.({
-              type: post.mediaType,
-              src: post.mediaUrl,
-              title: post.tag ? `${post.tag} • ${post.author}` : post.author,
-              caption: `${post.author} - ${post.city}`,
-            });
-          }}
+          onClick={openPostMediaPreview}
           onKeyDown={(event) => {
             if (event.key !== 'Enter' && event.key !== ' ') return;
             event.preventDefault();
-            openMediaViewer?.({
-              type: post.mediaType,
-              src: post.mediaUrl,
-              title: post.tag ? `${post.tag} • ${post.author}` : post.author,
-              caption: `${post.author} - ${post.city}`,
-            });
+            openPostMediaPreview();
           }}
         >
           {post.mediaType === 'video' ? (
@@ -7157,8 +7525,8 @@ function RewardsView({ userPoints, redemptions, benefits, openPage }) {
   );
 }
 
-// Tela Parceiros: controla os cards de planos e botões de assinatura.
-function PartnersView({ leads, registerPartnerLead, openPage }) {
+// Tela Parceiros: controla os cards de planos, assinatura e suporte comercial.
+function PartnersView({ leads, registerPartnerLead, openPage, openSupport }) {
   const [quoteForm, setQuoteForm] = useState({
     company: '',
     contact: '',
@@ -7177,6 +7545,20 @@ function PartnersView({ leads, registerPartnerLead, openPage }) {
       `Solicitação recebida. Email automático e mensagem de confirmação enviados para ${quoteForm.contact || 'o contato informado'}.`,
     );
     setQuoteForm({ company: '', contact: '', volume: '', message: '' });
+  }
+
+  function openAmbassadorSupport() {
+    openSupport?.({
+      mode: 'ai',
+      subject: 'Suporte ao embaixador',
+      status: 'Suporte ao embaixador aberto pela IA.',
+      prefill: 'Tenho uma dúvida sobre link, comissão, regras de divulgação ou materiais comerciais.',
+      notice:
+        'Canal de suporte ao embaixador aberto. Primeiro a IA tenta resolver; se não resolver, clique em "Não resolveu? Chamar pessoa" para abrir atendimento humano.',
+    });
+    setPartnerNotice(
+      'Suporte ao embaixador aberto com IA. Se a resposta não resolver, acione uma pessoa no próprio atendimento.',
+    );
   }
 
   return (
@@ -7246,7 +7628,12 @@ function PartnersView({ leads, registerPartnerLead, openPage }) {
             </details>
             <div className="plan-card-actions compact-hint-row">
               <small>{plan.price > 0 ? 'Pix, cartão ou boleto' : 'Validação comercial'}</small>
-              <button type="button" onClick={() => registerPartnerLead(plan.id)}>
+              <button
+                type="button"
+                onClick={() => (plan.id === 'ambassador'
+                  ? openAmbassadorSupport()
+                  : registerPartnerLead(plan.id))}
+              >
                 {selected ? 'Continuar assinatura' : plan.price > 0 ? 'Assinar agora' : 'Falar com suporte'}
               </button>
             </div>
@@ -7279,7 +7666,7 @@ function PartnersView({ leads, registerPartnerLead, openPage }) {
           <h3>Suporte ao embaixador</h3>
           <p>Canal para dúvidas sobre link, comissão, regras de divulgação e materiais comerciais.</p>
           <div className="button-row">
-            <button type="button" onClick={() => setPartnerNotice('Canal de suporte ao afiliado aberto.')}>
+            <button type="button" onClick={openAmbassadorSupport}>
               Abrir suporte
             </button>
             <button className="light" type="button" onClick={() => registerPartnerLead('ambassador')}>
@@ -8027,6 +8414,7 @@ function CourseBuilderView({
   course,
   goBack,
   openPage,
+  openMediaViewer,
   publishCreatedCourse,
   updateCreatedCourse,
   updateCreatedCourseModules,
@@ -8364,12 +8752,24 @@ function CourseBuilderView({
                           <input
                             value={lesson.videoUrl ?? ''}
                             onChange={(event) => updateLesson(module.id, lesson.id, 'videoUrl', event.target.value)}
-                            placeholder="URL Bunny.net, Vimeo ou arquivo enviado"
+                            placeholder="Cole o link do YouTube da aula"
                           />
                         </label>
+                        {getYouTubeVideo(lesson.videoUrl) ? (
+                          <YouTubePreviewLink
+                            url={lesson.videoUrl}
+                            title={lesson.title || 'Aula do curso'}
+                            caption={`${course.title} - ${module.title}`}
+                            openMediaViewer={openMediaViewer}
+                          />
+                        ) : (
+                          <small className="youtube-helper-text">
+                            Suba o vídeo no YouTube como público/não listado e cole o link para liberar a prévia.
+                          </small>
+                        )}
                         <FileUpload
-                          label="Arquivo de vídeo"
-                          action="Enviar vídeo"
+                          label="Arquivo de vídeo opcional"
+                          action="Enviar arquivo"
                           accept="video/*"
                           onChange={(event) =>
                             updateLesson(
@@ -9713,13 +10113,13 @@ function CreateEventCallView({ createEventCall, currentUser, goBack }) {
       <PageHeader
         label="Chamada de evento"
         title="Criar evento para inscrição dos participantes"
-        description="Pessoa Jurídica e empresa podem publicar eventos online ou presenciais, abrir inscrição e acompanhar participantes."
+        description="Pessoa Física, Pessoa Jurídica e empresa podem publicar eventos online ou presenciais, abrir inscrição e acompanhar participantes."
       />
       <form className="event-create-form" onSubmit={submit}>
         <section className="event-create-owner-card">
           <span className="section-kicker">Publicador</span>
           <strong>{currentUser?.name ?? 'Conta responsável'}</strong>
-          <small>{currentUser?.label ?? 'Pessoa Jurídica ou Empresa'}</small>
+          <small>{currentUser?.label ?? 'Pessoa Física, Pessoa Jurídica ou Empresa'}</small>
         </section>
         <label>
           Título da chamada
@@ -11792,10 +12192,13 @@ function PessoaFisicaProfile({
   return (
     <section className="profile-card yellow">
       <span className="section-kicker">Pessoa Física</span>
-      <p>Pessoa Física pode alterar dados pessoais, ver cursos, progresso, comunidades, candidaturas, benefícios e publicar cursos próprios.</p>
+      <p>Pessoa Física pode alterar dados pessoais, ver cursos, progresso, comunidades, candidaturas, benefícios e publicar cursos e eventos próprios.</p>
       <div className="admin-actions">
         <button type="button" onClick={() => openPage('course-create')}>
           Criar curso como PF
+        </button>
+        <button type="button" onClick={() => openPage('event-create')}>
+          Criar evento como PF
         </button>
         <button type="button" onClick={() => openPage('courses')}>
           Ver cursos

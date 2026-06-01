@@ -215,6 +215,8 @@ export class PlatformAdminService {
         data: {
           name: dto.name,
           email: dto.email.toLowerCase(),
+          emailHash: this.fieldEncryption.hashForLookup(dto.email, 'email'),
+          emailEncrypted: this.fieldEncryption.encryptString(dto.email),
           role: dto.role ?? 'SUPPORT',
           permissions: {
             createMany: {
@@ -541,6 +543,9 @@ export class PlatformAdminService {
         metadata: this.dataMasking.redactObject(
           data.metadata,
         ) as Prisma.InputJsonValue,
+        metadataEncrypted: this.fieldEncryption.encryptString(
+          JSON.stringify(this.dataMasking.redactObject(data.metadata ?? {})),
+        ),
       },
     });
   }
@@ -556,6 +561,9 @@ export class PlatformAdminService {
   private maskSupportTicket<
     T extends {
       description?: string | null;
+      requesterEmailEncrypted?: string | null;
+      requesterIpEncrypted?: string | null;
+      requesterGeoEncrypted?: string | null;
       user?: { email?: string | null } | null;
       assignedTo?: { email?: string | null } | null;
     },
@@ -567,6 +575,11 @@ export class PlatformAdminService {
     return {
       ...ticket,
       description: this.dataMasking.redactText(decryptedDescription) ?? '',
+      requesterEmailEncrypted: this.maskEncryptedValue(
+        ticket.requesterEmailEncrypted,
+      ),
+      requesterIpEncrypted: ticket.requesterIpEncrypted ? '[protected]' : null,
+      requesterGeoEncrypted: ticket.requesterGeoEncrypted ? '[protected]' : null,
       user: ticket.user
         ? {
             ...ticket.user,

@@ -107,6 +107,8 @@ model Tenant {
 model User {
   id        String   @id @default(uuid()) @db.Uuid
   email     String
+  emailHash String?
+  emailEncrypted String?
   password  String
   role      UserRole @default(STUDENT)
   status    AccountStatus @default(ACTIVE)
@@ -114,6 +116,8 @@ model User {
   createdAt DateTime @default(now())
   blockedAt DateTime?
   blockedReason String?
+  lastLoginIpEncrypted String?
+  lastKnownGeoEncrypted String?
 
   tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   enrollments     Enrollment[]
@@ -124,7 +128,9 @@ model User {
   paymentWebhookEvents PaymentWebhookEvent[]
 
   @@unique([tenantId, email])
+  @@unique([tenantId, emailHash])
   @@index([tenantId])
+  @@index([emailHash])
   @@index([status])
   @@map("users")
 }
@@ -271,6 +277,8 @@ model PlatformStaff {
   id        String       @id @default(uuid()) @db.Uuid
   name      String
   email     String       @unique
+  emailHash String?      @unique
+  emailEncrypted String?
   role      PlatformRole @default(SUPPORT)
   isActive  Boolean      @default(true)
   createdAt DateTime     @default(now())
@@ -282,6 +290,7 @@ model PlatformStaff {
   requestedPayouts PlatformFeePayout[]
 
   @@index([role])
+  @@index([emailHash])
   @@index([isActive])
   @@map("platform_staff")
 }
@@ -304,6 +313,10 @@ model SupportTicket {
   tenantId    String?               @db.Uuid
   userId      String?               @db.Uuid
   assignedToId String?              @db.Uuid
+  requesterEmailHash String?
+  requesterEmailEncrypted String?
+  requesterIpEncrypted String?
+  requesterGeoEncrypted String?
   subject     String
   description String?
   priority    SupportTicketPriority @default(MEDIUM)
@@ -319,6 +332,7 @@ model SupportTicket {
   @@index([tenantId])
   @@index([userId])
   @@index([assignedToId])
+  @@index([requesterEmailHash])
   @@index([status])
   @@index([priority])
   @@map("support_tickets")
@@ -331,6 +345,7 @@ model PlatformAuditLog {
   targetType  String
   targetId    String?
   metadata    Json?
+  metadataEncrypted String?
   createdAt   DateTime @default(now())
 
   actorStaff PlatformStaff? @relation(fields: [actorStaffId], references: [id], onDelete: SetNull)
@@ -378,6 +393,7 @@ model PaymentWebhookEvent {
   gatewayPaymentId String?
   status           String    @default("RECEIVED")
   payload          Json
+  payloadEncrypted String?
   errorMessage     String?
   receivedAt       DateTime  @default(now())
   processedAt      DateTime?

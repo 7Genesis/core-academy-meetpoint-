@@ -6,6 +6,7 @@ import {
 import { EnrollmentPaymentStatus, Prisma } from '@prisma/client';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { DataMaskingService } from '../common/security/data-masking.service';
+import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -44,6 +45,7 @@ export class WebhooksService {
     private readonly enrollmentsService: EnrollmentsService,
     private readonly prisma: PrismaService,
     private readonly dataMasking: DataMaskingService,
+    private readonly fieldEncryption: FieldEncryptionService,
   ) {}
 
   async handleStripeEvent(
@@ -275,6 +277,9 @@ export class WebhooksService {
           gatewayPaymentId: payment.gatewayPaymentId,
           status: 'RECEIVED',
           payload: this.dataMasking.redactObject(event) as Prisma.InputJsonValue,
+          payloadEncrypted: this.fieldEncryption.encryptString(
+            JSON.stringify(this.dataMasking.redactObject(event)),
+          ),
         },
       });
 
@@ -319,9 +324,16 @@ export class WebhooksService {
 
   private async findUserIdByEmail(tenantId: string, email?: string) {
     if (!email) return null;
+    const emailHash = this.fieldEncryption.hashForLookup(email, 'email');
     const user = await this.prisma.withTenant(tenantId, (tx) =>
       tx.user.findFirst({
-        where: { tenantId, email },
+        where: {
+          tenantId,
+          OR: [
+            ...(emailHash ? [{ emailHash }] : []),
+            { email },
+          ],
+        },
         select: { id: true },
       }),
     );

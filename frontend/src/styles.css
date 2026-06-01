@@ -276,6 +276,24 @@ button:disabled {
   font-weight: 950;
 }
 
+.signup-top-button {
+  height: 40px;
+  padding: 0 14px;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  color: #fff;
+  background: var(--charcoal);
+  font-weight: 950;
+  box-shadow: 4px 4px 0 rgba(13, 15, 20, 0.22);
+}
+
+.home-hero-actions .ghost {
+  color: var(--ink);
+  background: rgba(255, 250, 240, 0.7);
+  border: 2px solid rgba(13, 15, 20, 0.18);
+  box-shadow: none;
+}
+
 .hero-banner {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 390px;
@@ -4317,7 +4335,8 @@ label + .file-upload {
 
 .support-panel header button,
 .support-form button,
-.support-mode-tabs button {
+.support-mode-tabs button,
+.support-escalate-button {
   min-height: 38px;
   padding: 0 12px;
   border: 2px solid var(--ink);
@@ -4336,6 +4355,13 @@ label + .file-upload {
 .support-mode-tabs button.active,
 .support-form button {
   background: var(--yellow);
+  box-shadow: 3px 3px 0 var(--charcoal);
+}
+
+.support-escalate-button {
+  width: 100%;
+  min-height: 42px;
+  background: #fff8dc;
   box-shadow: 3px 3px 0 var(--charcoal);
 }
 
@@ -4839,6 +4865,57 @@ input[type="checkbox"] {
     width: calc(100vw - 28px);
     max-height: 76vh;
     overflow: auto;
+  }
+}
+
+/* Visitante sem cadastro: deixa as rotas de entrada evidentes no topo e na Home.
+   O botão Entrar abre login; Cadastrar abre a escolha PF/PJ/Empresa. */
+.signup-top-button {
+  min-width: 112px;
+  height: 36px;
+  border-radius: 999px !important;
+  border: 1px solid rgba(17, 19, 24, 0.12) !important;
+  background: var(--charcoal) !important;
+  color: #fff !important;
+  box-shadow: 0 12px 24px rgba(17, 19, 24, 0.14) !important;
+}
+
+.home-hero-actions {
+  flex-wrap: wrap;
+}
+
+.home-hero-actions .ghost {
+  border-radius: 999px;
+  background: rgba(255, 250, 240, 0.78) !important;
+  color: var(--ink) !important;
+  border: 1px solid rgba(17, 19, 24, 0.12) !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 760px) {
+  .account-actions:not(:has(.logout-button)) {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    width: 100% !important;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .account-actions:not(:has(.logout-button)) .account-button,
+  .account-actions:not(:has(.logout-button)) .signup-top-button {
+    width: 100%;
+    max-width: none;
+    justify-content: center;
+  }
+
+  .account-actions:not(:has(.logout-button)) .account-button .avatar {
+    display: none;
+  }
+
+  .home-hero-actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -6148,6 +6225,7 @@ input[type="checkbox"] {
    padroniza botões de ação, uploads, filtros, abas e formulários sem transformar cards clicáveis em botões pequenos. */
 .account-button,
 .logout-button,
+.signup-top-button,
 .create-community,
 .create-submit-button,
 .back-button,
@@ -6246,6 +6324,7 @@ input[type="checkbox"] {
    mantém a sensação de zoom/movimento planejada para qualquer ação clicável. */
 .account-button:hover,
 .logout-button:hover,
+.signup-top-button:hover,
 .create-community:hover,
 .create-submit-button:hover,
 .back-button:hover,
@@ -13219,6 +13298,170 @@ details[open] {
   border-radius: 10px;
 }
 
+.media-viewer.youtube-viewer {
+  width: min(820px, calc(100vw - 32px));
+}
+
+.media-viewer.youtube-viewer .media-zoom-surface {
+  aspect-ratio: 16 / 9;
+  max-height: min(62vh, 520px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.media-viewer.youtube-viewer iframe {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+  border-radius: 10px;
+  background: #0d0f14;
+}
+
+.youtube-preview-link {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 8px 12px;
+  border: 1px solid rgba(17, 19, 24, 0.12);
+  border-radius: 14px;
+  background: #fffdf7;
+  color: var(--ink);
+  box-shadow: none;
+  text-align: left;
+}
+
+.youtube-preview-link.card {
+  min-height: 220px;
+  grid-template-columns: 1fr;
+  place-items: center;
+  padding: 0;
+  overflow: hidden;
+  background: #0d0f14;
+  color: var(--light-text);
+}
+
+.youtube-preview-link.card img {
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  object-fit: cover;
+  opacity: 0.72;
+}
+
+.youtube-preview-link.card > span:last-child {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  right: 12px;
+  z-index: 2;
+}
+
+.youtube-preview-link strong,
+.youtube-preview-link small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.youtube-preview-link small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.youtube-preview-link.card small {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.youtube-play-dot,
+.youtube-play-overlay {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-weight: 950;
+  box-shadow: 0 10px 24px rgba(17, 19, 24, 0.18);
+}
+
+.youtube-preview-link.card .youtube-play-dot,
+.youtube-play-overlay {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  width: 58px;
+  height: 58px;
+  transform: translate(-50%, -50%);
+}
+
+.post-youtube-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.youtube-media {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.youtube-media img {
+  width: 100%;
+  height: 100%;
+  min-height: 260px;
+  object-fit: cover;
+  filter: saturate(0.92) contrast(1.02);
+}
+
+.youtube-link-chip {
+  justify-self: start;
+  max-width: 100%;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(17, 19, 24, 0.12);
+  border-radius: 999px;
+  background: #fffdf7;
+  color: var(--soft-text);
+  box-shadow: none;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.youtube-link-composer {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid rgba(17, 19, 24, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 253, 247, 0.92);
+}
+
+.youtube-link-composer label {
+  display: grid;
+  gap: 6px;
+  font-weight: 900;
+}
+
+.youtube-link-composer small,
+.youtube-helper-text {
+  color: var(--soft-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .media-caption {
   display: flex;
   align-items: center;
@@ -16998,5 +17241,547 @@ html[data-theme="dark"] .notification-dock-window header button {
   .notification-dock-window header button {
     min-width: 104px;
     padding: 0 10px;
+  }
+}
+
+/* YouTube embeds: vídeos ficam fora do storage da plataforma e abrem em player médio. */
+.media-viewer.youtube-viewer {
+  width: min(820px, calc(100vw - 32px)) !important;
+}
+
+.media-viewer.youtube-viewer .media-zoom-surface {
+  aspect-ratio: 16 / 9;
+  min-height: 0 !important;
+  max-height: min(62vh, 520px) !important;
+  padding: 0 !important;
+}
+
+.media-viewer.youtube-viewer iframe {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+  border-radius: 10px;
+}
+
+.post-youtube-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.post-youtube-card .youtube-media {
+  width: 100%;
+  min-height: 260px;
+  padding: 0 !important;
+  border: 0 !important;
+  cursor: pointer;
+}
+
+.post-youtube-card .youtube-media img {
+  width: 100%;
+  height: 100%;
+  min-height: 260px;
+  object-fit: cover;
+}
+
+.youtube-link-chip {
+  max-width: 100%;
+  min-height: 34px;
+  justify-self: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-theme="dark"] .youtube-link-composer,
+html[data-theme="dark"] .youtube-preview-link,
+html[data-theme="dark"] .youtube-link-chip {
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+  border-color: rgba(248, 250, 252, 0.12) !important;
+}
+
+@media (max-width: 760px) {
+  .media-viewer.youtube-viewer {
+    width: calc(100vw - 20px) !important;
+  }
+
+  .youtube-link-chip {
+    justify-self: stretch;
+  }
+}
+
+/* Perfil: raio maior nos blocos para tirar o aspecto quadrado/retangular. */
+.profile-authenticated-page {
+  --profile-radius-xl: 34px;
+  --profile-radius-lg: 28px;
+  --profile-radius-md: 22px;
+  --profile-radius-sm: 18px;
+}
+
+.profile-authenticated-page .modern-profile-hero,
+.profile-authenticated-page .profile-card,
+.profile-authenticated-page .profile-social-panel,
+.profile-authenticated-page .system-customization-trigger,
+.profile-authenticated-page .system-customization-modal {
+  border-radius: var(--profile-radius-xl) !important;
+}
+
+.profile-authenticated-page .profile-cover-upload,
+.profile-authenticated-page .profile-cover-band {
+  border-radius: 30px !important;
+}
+
+.profile-authenticated-page .profile-cover-upload > span,
+.profile-authenticated-page .profile-avatar-upload > span,
+.profile-authenticated-page .profile-owner-actions button,
+.profile-authenticated-page .profile-social-actions button,
+.profile-authenticated-page .profile-card button,
+.profile-authenticated-page .permission-chip,
+.profile-authenticated-page .file-upload,
+.profile-authenticated-page .compact-social-button,
+.profile-authenticated-page .self-connection-pill {
+  border-radius: 999px !important;
+}
+
+.profile-authenticated-page .modern-profile-stats article,
+.profile-authenticated-page .modern-profile-stats button,
+.profile-authenticated-page .session-identity-grid,
+.profile-authenticated-page .protected-data-summary,
+.profile-authenticated-page .notification-list article,
+.profile-authenticated-page .social-connection-list article,
+.profile-authenticated-page .social-request-list article,
+.profile-authenticated-page .social-mini-list article,
+.profile-authenticated-page .module-card,
+.profile-authenticated-page .collaborator-row,
+.profile-authenticated-page .theme-mode-switch button,
+.profile-authenticated-page .theme-color-grid label,
+.profile-authenticated-page .theme-image-controls label {
+  border-radius: var(--profile-radius-lg) !important;
+}
+
+.profile-authenticated-page input,
+.profile-authenticated-page textarea,
+.profile-authenticated-page select,
+.profile-authenticated-page .platform-input,
+.profile-authenticated-page .platform-textarea {
+  border-radius: var(--profile-radius-md) !important;
+}
+
+.profile-authenticated-page .section-kicker,
+.profile-authenticated-page .valid-note,
+.profile-authenticated-page .invalid-note,
+.profile-authenticated-page .policy-note {
+  border-radius: 999px;
+}
+
+.profile-authenticated-page .profile-card {
+  overflow: hidden;
+}
+
+@media (max-width: 760px) {
+  .profile-authenticated-page {
+    --profile-radius-xl: 26px;
+    --profile-radius-lg: 22px;
+    --profile-radius-md: 18px;
+  }
+
+  .profile-authenticated-page .profile-cover-upload,
+  .profile-authenticated-page .profile-cover-band {
+    border-radius: 24px !important;
+  }
+}
+
+/* Design system: deixa as demais páginas menos quadradas e mais próximas do perfil. */
+:root {
+  --ui-radius-xl: 30px;
+  --ui-radius-lg: 24px;
+  --ui-radius-md: 20px;
+  --ui-radius-sm: 16px;
+}
+
+:is(
+  .topbar,
+  .mobile-tabbar,
+  .hero-banner,
+  .spotlight-card,
+  .home-flow-strip,
+  .suggestion-grid,
+  .home-insight-strip,
+  .feed-composer,
+  .feed-widget,
+  .post-card,
+  .post-media,
+  .composer-preview,
+  .people-discovery-card,
+  .side-panel,
+  .community-chat-panel,
+  .community-whatsapp-shell,
+  .community-chat-inline,
+  .community-details-panel,
+  .community-details-modal,
+  .community-access-modal,
+  .compact-event-actions-modal,
+  .create-community-form,
+  .course-card,
+  .course-detail-curriculum,
+  .detail-panel,
+  .created-courses-section,
+  .create-course-form,
+  .builder-card,
+  .course-module-planner,
+  .module-builder-card,
+  .course-builder-layout,
+  .course-settings-card,
+  .course-publish-panel,
+  .finance-panel,
+  .checkout-card,
+  .job-card,
+  .resume-card,
+  .company-opportunity-card,
+  .company-applications-panel,
+  .job-detail-modal,
+  .resume-create-modal,
+  .job-create-modal,
+  .application-modal,
+  .benefit-card,
+  .benefit-toolbar,
+  .points-card,
+  .points-progress-card,
+  .reward-action-card,
+  .ranking-card,
+  .reward-history-card,
+  .reward-suggestion-panel,
+  .partners-hero,
+  .partner-plan-card,
+  .monetization-panel,
+  .partner-support-card,
+  .partner-quote-form,
+  .event-card,
+  .event-owner-panel,
+  .event-response-board,
+  .event-payment-modal,
+  .event-create-form,
+  .support-panel,
+  .private-chat-window,
+  .floating-modal
+) {
+  border-radius: var(--ui-radius-xl) !important;
+}
+
+:is(
+  .feed-mini-row,
+  .feed-filter-menu,
+  .feed-filter-menu-body,
+  .feed-toolbar-status,
+  .composer-preview-media,
+  .reaction-detail-panel,
+  .comment-panel,
+  .social-comment-card,
+  .inline-edit-box,
+  .course-create-stats article,
+  .course-builder-dashboard article,
+  .lesson-builder-row,
+  .lesson-builder-details,
+  .course-implementation-note,
+  .publication-issues,
+  .event-owner-card,
+  .event-response-card,
+  .event-registration-form,
+  .community-name-editor,
+  .community-member-manager,
+  .community-admin-tools,
+  .event-request-box,
+  .community-toast,
+  .community-member-strip article,
+  .job-detail-grid,
+  .benefit-admin-panel,
+  .benefit-admin-form,
+  .benefit-admin-list,
+  .benefit-email-log,
+  .platform-finance-panel,
+  .employee-permission-panel,
+  .module-card,
+  .reward-stat-row,
+  .reward-next-actions,
+  .reward-suggestion-grid article,
+  .partner-metrics article,
+  .theme-color-grid label,
+  .theme-image-controls label
+) {
+  border-radius: var(--ui-radius-lg) !important;
+}
+
+:is(
+  .button-link,
+  .action-button,
+  .brand-button,
+  .account-button,
+  .logout-button,
+  .signup-top-button,
+  .back-button,
+  .create-community,
+  .create-submit-button,
+  .composer-publish-button,
+  .composer-media-button,
+  .geo-button,
+  .social-action-button,
+  .comment-send-button,
+  .feed-refresh-hint,
+  .media-upload-button,
+  .add-lesson-button,
+  .issue-button,
+  .benefit-redeem-button,
+  .method-card,
+  .signup-method-link,
+  .options-menu-panel,
+  .post-menu,
+  .section-kicker,
+  .post-tag-badge,
+  .community-privacy-pill,
+  .community-unread-badge,
+  .reward-level-pill,
+  .points-inline-badge,
+  .youtube-link-chip
+) {
+  border-radius: 999px !important;
+}
+
+/* Cards clicaveis continuam sendo botoes no HTML, mas visualmente precisam ser cards. */
+:is(
+  .product-card,
+  .created-course-card,
+  .course-card,
+  .job-card,
+  .benefit-card,
+  .event-card,
+  .partner-plan-card,
+  .reward-action-card,
+  .community-card,
+  .community-list-item
+) {
+  border-radius: var(--ui-radius-xl) !important;
+  overflow: hidden;
+}
+
+.product-card .mock-product {
+  border-radius: var(--ui-radius-md) !important;
+}
+
+:is(
+  input,
+  textarea,
+  select,
+  .platform-input,
+  .platform-textarea,
+  .community-search,
+  .file-upload,
+  .private-search-panel,
+  .private-thread-form,
+  .comment-input
+) {
+  border-radius: var(--ui-radius-md) !important;
+}
+
+:is(
+  .social-post-header,
+  .compact-card-header,
+  .plan-card-top,
+  .plan-card-actions,
+  .event-capacity-row,
+  .payment-methods,
+  .permission-chip-grid,
+  .feed-shortcut-grid button,
+  .content-category-row button,
+  .feed-filter-row button
+) {
+  border-radius: var(--ui-radius-lg) !important;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --ui-radius-xl: 24px;
+    --ui-radius-lg: 20px;
+    --ui-radius-md: 18px;
+    --ui-radius-sm: 14px;
+  }
+
+  .mobile-tabbar {
+    border-radius: 26px !important;
+  }
+}
+
+/* Glass UI: aplica transparencia premium somente em areas estrategicas e pouco densas. */
+:root {
+  --glass-bg: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.78),
+    rgba(255, 250, 240, 0.58)
+  );
+  --glass-bg-strong: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.88),
+    rgba(255, 250, 240, 0.72)
+  );
+  --glass-border: 1px solid rgba(255, 255, 255, 0.54);
+  --glass-shadow: 0 22px 70px rgba(13, 15, 20, 0.12);
+  --glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+}
+
+:is(
+  .topbar,
+  .topbar nav,
+  .mobile-tabbar,
+  .feed-composer,
+  .feed-widget,
+  .people-discovery-card,
+  .course-toolbar,
+  .side-panel,
+  .community-chat-panel,
+  .community-details-panel,
+  .community-details-modal,
+  .community-access-modal,
+  .compact-event-actions-modal,
+  .benefit-toolbar,
+  .event-toolbar,
+  .partners-hero,
+  .partner-support-card,
+  .support-panel,
+  .private-chat-window,
+  .floating-modal,
+  .job-detail-modal,
+  .resume-create-modal,
+  .job-create-modal,
+  .application-modal,
+  .event-payment-modal,
+  .notification-panel,
+  .private-search-panel
+) {
+  border: var(--glass-border) !important;
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(24px) saturate(1.28);
+  -webkit-backdrop-filter: blur(24px) saturate(1.28);
+  box-shadow: var(--glass-shadow), var(--glass-inner) !important;
+}
+
+:is(
+  .feed-filter-menu,
+  .reaction-detail-panel,
+  .comment-panel,
+  .options-menu-panel,
+  .post-menu,
+  .payment-methods,
+  .event-registration-form,
+  .community-admin-tools,
+  .community-name-editor,
+  .community-member-manager,
+  .benefit-admin-panel,
+  .benefit-email-log,
+  .partner-quote-form,
+  .theme-color-grid label,
+  .theme-image-controls label
+) {
+  border: var(--glass-border) !important;
+  background: var(--glass-bg-strong) !important;
+  backdrop-filter: blur(18px) saturate(1.18);
+  -webkit-backdrop-filter: blur(18px) saturate(1.18);
+  box-shadow: 0 18px 46px rgba(13, 15, 20, 0.1), var(--glass-inner) !important;
+}
+
+.topbar::after,
+.mobile-tabbar::after,
+.feed-composer::after,
+.side-panel::after,
+.floating-modal::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.3), transparent 42%);
+}
+
+:is(.topbar, .feed-composer, .side-panel, .floating-modal) {
+  position: relative;
+  isolation: isolate;
+}
+
+.mobile-tabbar {
+  position: fixed !important;
+  right: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 12px;
+  z-index: 80;
+  isolation: isolate;
+}
+
+html[data-theme="dark"] {
+  --glass-bg: linear-gradient(
+    135deg,
+    rgba(28, 32, 42, 0.82),
+    rgba(17, 20, 28, 0.68)
+  );
+  --glass-bg-strong: linear-gradient(
+    135deg,
+    rgba(34, 40, 54, 0.9),
+    rgba(22, 26, 36, 0.78)
+  );
+  --glass-border: 1px solid rgba(248, 250, 252, 0.12);
+  --glass-shadow: 0 24px 78px rgba(0, 0, 0, 0.42);
+  --glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] :is(
+  .topbar,
+  .topbar nav,
+  .mobile-tabbar,
+  .feed-composer,
+  .feed-widget,
+  .people-discovery-card,
+  .course-toolbar,
+  .side-panel,
+  .community-chat-panel,
+  .community-details-panel,
+  .community-details-modal,
+  .community-access-modal,
+  .compact-event-actions-modal,
+  .benefit-toolbar,
+  .event-toolbar,
+  .partners-hero,
+  .partner-support-card,
+  .support-panel,
+  .private-chat-window,
+  .floating-modal,
+  .job-detail-modal,
+  .resume-create-modal,
+  .job-create-modal,
+  .application-modal,
+  .event-payment-modal,
+  .notification-panel,
+  .private-search-panel
+) {
+  border: var(--glass-border) !important;
+  background: var(--glass-bg) !important;
+  color: var(--ink) !important;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --glass-shadow: 0 18px 48px rgba(13, 15, 20, 0.1);
+  }
+
+  :is(
+    .topbar,
+    .mobile-tabbar,
+    .feed-composer,
+    .side-panel,
+    .community-chat-panel,
+    .floating-modal,
+    .support-panel,
+    .private-chat-window
+  ) {
+    backdrop-filter: blur(18px) saturate(1.18);
+    -webkit-backdrop-filter: blur(18px) saturate(1.18);
   }
 }

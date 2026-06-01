@@ -176,6 +176,17 @@ Ponto importante: bloqueios de inspecionar elemento, copia ou clique direito no 
 
 O plano tecnico completo de hardening, vetores OWASP e Terraform AWS fica em [`docs/security-hardening.md`](docs/security-hardening.md).
 
+## Arquitetura, UML e Operacao
+
+Documentos tecnicos adicionados:
+
+- [`docs/architecture.md`](docs/architecture.md): arquitetura, UML, conectividade e fluxos principais;
+- [`docs/gitflow.md`](docs/gitflow.md): estrategia de branches, PRs, releases e hotfix;
+- [`docs/deployment.md`](docs/deployment.md): CI/CD, staging, producao, migrations, RLS e rollback;
+- [`docs/resource-optimization.md`](docs/resource-optimization.md): otimizacao de frontend, backend, banco, midia e custo.
+- [`docs/github-setup.md`](docs/github-setup.md): branch protection, environments, secrets e templates do GitHub;
+- [`docs/production-readiness-checklist.md`](docs/production-readiness-checklist.md): checklist para hospedagem, banco e go-live.
+
 ## Multi-tenant e RLS
 
 A arquitetura foi preparada para isolamento por linha usando `tenantId`.
@@ -242,15 +253,20 @@ O projeto esta preparado para PostgreSQL com Prisma. Para mudar de banco no futu
 O repositorio inclui:
 
 ```text
+.github/workflows/ci.yml
 .github/workflows/security.yml
+.github/workflows/deploy-staging.yml
+.github/workflows/deploy-production.yml
 .github/dependabot.yml
 ```
 
 Esses arquivos preparam uma base para:
 
+- build e lint em pull requests;
 - auditoria de dependencias;
 - validacoes de seguranca;
 - atualizacoes automatizadas.
+- deploy por ambiente quando os secrets forem configurados.
 
 ## Status atual
 

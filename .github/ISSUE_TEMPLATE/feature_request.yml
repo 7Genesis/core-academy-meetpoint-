@@ -1,0 +1,53 @@
+name: Feature
+description: Solicitar nova funcionalidade ou melhoria de produto
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Objetivo
+      description: Qual resultado de negocio ou usuario esta feature precisa gerar?
+    validations:
+      required: true
+  - type: textarea
+    id: user_flow
+    attributes:
+      label: Fluxo esperado
+      description: Descreva como o usuario deve usar a funcionalidade.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Feed
+        - Comunidades
+        - Cursos
+        - Eventos
+        - Oportunidades
+        - Beneficios
+        - Pontos
+        - Parceiros
+        - Perfil
+        - Admin
+        - Suporte
+        - Backend/API
+        - Outro
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Criterios de aceite
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Observacoes

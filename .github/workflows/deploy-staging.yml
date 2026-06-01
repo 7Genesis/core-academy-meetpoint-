@@ -1,0 +1,82 @@
+name: Deploy Staging
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+jobs:
+  build-artifacts:
+    name: Build Staging Artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run frontend:build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-dist
+          path: dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-artifacts
+    environment: staging
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      DEPLOY_WEBHOOK_URL: ${{ secrets.STAGING_DEPLOY_WEBHOOK_URL }}
+      DEPLOY_WEBHOOK_TOKEN: ${{ secrets.STAGING_DEPLOY_WEBHOOK_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply database migrations and RLS
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "STAGING_DATABASE_URL not configured. Skipping database migration."
+            exit 0
+          fi
+
+          npx prisma migrate deploy
+          npx prisma db execute --schema prisma/schema.prisma --file prisma/rls.sql
+
+      - name: Trigger staging deploy webhook
+        run: |
+          if [ -z "$DEPLOY_WEBHOOK_URL" ]; then
+            echo "STAGING_DEPLOY_WEBHOOK_URL not configured. Build artifacts are ready, deploy skipped."
+            exit 0
+          fi
+
+          curl -fsS -X POST "$DEPLOY_WEBHOOK_URL" \
+            -H "Authorization: Bearer $DEPLOY_WEBHOOK_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "{\"environment\":\"staging\",\"sha\":\"${GITHUB_SHA}\"}"

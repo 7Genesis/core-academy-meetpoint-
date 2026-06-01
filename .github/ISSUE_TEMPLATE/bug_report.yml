@@ -1,0 +1,49 @@
+name: Bug
+description: Reportar erro funcional, visual ou tecnico
+title: "fix: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema
+      description: Descreva o erro de forma objetiva.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passos para reproduzir
+      description: Liste o caminho exato ate o erro.
+      placeholder: |
+        1. Abrir ...
+        2. Clicar em ...
+        3. Ver erro ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamento esperado
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Frontend
+        - Backend/API
+        - Banco de dados
+        - CI/CD
+        - Seguranca
+        - Mobile
+        - Outro
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidencias
+      description: Prints, videos, logs ou URL.

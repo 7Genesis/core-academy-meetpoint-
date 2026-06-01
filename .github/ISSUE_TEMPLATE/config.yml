@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Vulnerabilidade de seguranca
+    url: https://github.com/7Genesis/core-academy-meetpoint-/security/advisories/new
+    about: Use Security Advisory para falhas sensiveis. Nao abra issue publica com payload, token ou dado privado.

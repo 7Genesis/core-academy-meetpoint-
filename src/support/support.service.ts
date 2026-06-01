@@ -28,6 +28,8 @@ export class SupportService {
       tx.supportTicket.create({
         data: {
           subject: `[Sugestao] ${this.dataMasking.sanitizeText(dto.subject)}`,
+          requesterEmailHash: this.fieldEncryption.hashForLookup(dto.email, 'email'),
+          requesterEmailEncrypted: this.fieldEncryption.encryptString(dto.email),
           description: this.fieldEncryption.encryptString(
             this.formatRequesterContext(dto.message, dto),
           ),
@@ -64,6 +66,8 @@ export class SupportService {
           subject: `[Suporte humano] ${this.dataMasking
             .sanitizeText(dto.message)
             ?.slice(0, 80)}`,
+          requesterEmailHash: this.fieldEncryption.hashForLookup(dto.email, 'email'),
+          requesterEmailEncrypted: this.fieldEncryption.encryptString(dto.email),
           description: this.fieldEncryption.encryptString(
             this.formatRequesterContext(dto.message, dto),
           ),

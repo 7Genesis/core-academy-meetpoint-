@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PlatformPermission } from '@prisma/client';
+import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PLATFORM_PERMISSIONS_KEY } from './platform-permissions.decorator';
 
@@ -21,6 +22,7 @@ export class PlatformAdminGuard implements CanActivate {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reflector: Reflector,
+    private readonly fieldEncryption: FieldEncryptionService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -36,11 +38,16 @@ export class PlatformAdminGuard implements CanActivate {
       throw new ForbiddenException('Platform admin access is required');
     }
 
+    const emailHash = this.fieldEncryption.hashForLookup(user.email, 'email');
     const staff = await this.prisma.withPlatformAdmin((tx) =>
       tx.platformStaff.findFirst({
         where: {
           isActive: true,
-          OR: [{ id: user.sub }, { email: user.email }],
+          OR: [
+            { id: user.sub },
+            ...(emailHash ? [{ emailHash }] : []),
+            { email: user.email },
+          ],
         },
         include: { permissions: true },
       }),

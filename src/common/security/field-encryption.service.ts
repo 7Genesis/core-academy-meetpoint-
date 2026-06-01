@@ -4,6 +4,7 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createHmac,
   randomBytes,
 } from 'node:crypto';
 
@@ -63,6 +64,17 @@ export class FieldEncryptionService {
 
   isEncrypted(value: string | null | undefined) {
     return typeof value === 'string' && value.startsWith(`${ENCRYPTION_PREFIX}:`);
+  }
+
+  hashForLookup(value: string | null | undefined, scope = 'pii') {
+    if (!value) return null;
+    return createHmac('sha256', this.key)
+      .update(`${scope}:${this.normalizeForLookup(value)}`)
+      .digest('hex');
+  }
+
+  private normalizeForLookup(value: string) {
+    return value.trim().toLowerCase();
   }
 
   private resolveKey() {
