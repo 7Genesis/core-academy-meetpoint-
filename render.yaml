@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: coreacademy-api
+    name: meetpoint-api
     runtime: node
     plan: free
     buildCommand: npm ci --include=dev && npm run build && npm run prisma:migrate:deploy
@@ -23,11 +23,11 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_KID
-        value: coreacademy-render-key
+        value: meetpoint-render-key
       - key: JWT_ISSUER
-        value: coreacademy-api
+        value: meetpoint-api
       - key: JWT_AUDIENCE
-        value: coreacademy-clients
+        value: meetpoint-clients
       - key: PII_ENCRYPTION_KEY
         generateValue: true
       - key: CORS_ORIGIN

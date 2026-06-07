@@ -1,12 +1,12 @@
 {
-  "name": "core-academy-api",
+  "name": "meetpoint-api",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "clean": "rm -rf dist frontend/dist tsconfig.tsbuildinfo",
     "build": "rm -rf dist && tsc -p tsconfig.json",
-    "prebuild": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; if [ ! -f \"$schema\" ] && [ -n \"$COREACADEMY_APP_ROOT\" ]; then schema=\"$COREACADEMY_APP_ROOT/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma generate --schema=\"$schema\"",
-    "postinstall": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; if [ ! -f \"$schema\" ] && [ -n \"$COREACADEMY_APP_ROOT\" ]; then schema=\"$COREACADEMY_APP_ROOT/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma generate --schema=\"$schema\"",
+    "prebuild": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; app_root=\"${MEETPOINT_APP_ROOT:-${COREACADEMY_APP_ROOT:-}}\"; if [ ! -f \"$schema\" ] && [ -n \"$app_root\" ]; then schema=\"$app_root/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma generate --schema=\"$schema\"",
+    "postinstall": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; app_root=\"${MEETPOINT_APP_ROOT:-${COREACADEMY_APP_ROOT:-}}\"; if [ ! -f \"$schema\" ] && [ -n \"$app_root\" ]; then schema=\"$app_root/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma generate --schema=\"$schema\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
@@ -14,10 +14,10 @@
     "frontend:build": "vite build frontend --base=/meetpoint/",
     "lint": "eslint --no-error-on-unmatched-pattern \"src/**/*.ts\" \"prisma/**/*.ts\"",
     "db:rls": "psql \"$DATABASE_URL\" -f prisma/rls.sql",
-    "prisma:generate": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; if [ ! -f \"$schema\" ] && [ -n \"$COREACADEMY_APP_ROOT\" ]; then schema=\"$COREACADEMY_APP_ROOT/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma generate --schema=\"$schema\"",
+    "prisma:generate": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; app_root=\"${MEETPOINT_APP_ROOT:-${COREACADEMY_APP_ROOT:-}}\"; if [ ! -f \"$schema\" ] && [ -n \"$app_root\" ]; then schema=\"$app_root/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma generate --schema=\"$schema\"",
     "prisma:verify": "node -e \"const {UserRole, Prisma}=require('@prisma/client'); if (UserRole?.ADMIN !== 'ADMIN') throw new Error('Invalid Prisma Client: UserRole.ADMIN is missing'); console.log(JSON.stringify({prismaClient: Prisma.prismaVersion.client, userRoleAdmin: UserRole.ADMIN}))\"",
-    "prisma:migrate": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; if [ ! -f \"$schema\" ] && [ -n \"$COREACADEMY_APP_ROOT\" ]; then schema=\"$COREACADEMY_APP_ROOT/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate dev --schema=\"$schema\"",
-    "prisma:migrate:deploy": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; if [ ! -f \"$schema\" ] && [ -n \"$COREACADEMY_APP_ROOT\" ]; then schema=\"$COREACADEMY_APP_ROOT/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate deploy --schema=\"$schema\""
+    "prisma:migrate": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; app_root=\"${MEETPOINT_APP_ROOT:-${COREACADEMY_APP_ROOT:-}}\"; if [ ! -f \"$schema\" ] && [ -n \"$app_root\" ]; then schema=\"$app_root/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate dev --schema=\"$schema\"",
+    "prisma:migrate:deploy": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; app_root=\"${MEETPOINT_APP_ROOT:-${COREACADEMY_APP_ROOT:-}}\"; if [ ! -f \"$schema\" ] && [ -n \"$app_root\" ]; then schema=\"$app_root/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate deploy --schema=\"$schema\""
   },
   "dependencies": {
     "@nestjs/common": "^11.1.24",

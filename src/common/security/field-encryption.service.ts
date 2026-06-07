@@ -95,7 +95,7 @@ export class FieldEncryptionService {
         );
       }
       return createHash('sha256')
-        .update('core-academy-shared-hosting-compatibility-field-encryption-key')
+        .update('meetpoint-shared-hosting-compatibility-field-encryption-key')
         .digest();
     }
 

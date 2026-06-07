@@ -16,9 +16,9 @@ export class JwtKeyService {
 
   constructor(private readonly configService: ConfigService) {
     this.algorithm = this.resolveAlgorithm();
-    this.issuer = this.configService.get<string>('JWT_ISSUER') ?? 'core-academy-api';
+    this.issuer = this.configService.get<string>('JWT_ISSUER') ?? 'meetpoint-api';
     this.audience =
-      this.configService.get<string>('JWT_AUDIENCE') ?? 'core-academy-clients';
+      this.configService.get<string>('JWT_AUDIENCE') ?? 'meetpoint-clients';
     this.kid = this.configService.get<string>('JWT_KID') ?? 'local-dev-key';
 
     if (this.algorithm === 'RS256') {
@@ -137,7 +137,7 @@ export class JwtKeyService {
   }
 
   private getCompatibilitySecret() {
-    return 'core-academy-shared-hosting-compatibility-jwt-secret-change-before-real-use';
+    return 'meetpoint-shared-hosting-compatibility-jwt-secret-change-before-real-use';
   }
 
   private normalizePem(value: string | undefined) {

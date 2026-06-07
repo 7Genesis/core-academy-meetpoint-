@@ -22,9 +22,9 @@ import { PrismaModule } from '../prisma/prisma.module';
         const publicKey = configService
           .get<string>('JWT_PUBLIC_KEY')
           ?.replace(/\\n/g, '\n');
-        const issuer = configService.get<string>('JWT_ISSUER') ?? 'core-academy-api';
+        const issuer = configService.get<string>('JWT_ISSUER') ?? 'meetpoint-api';
         const audience =
-          configService.get<string>('JWT_AUDIENCE') ?? 'core-academy-clients';
+          configService.get<string>('JWT_AUDIENCE') ?? 'meetpoint-clients';
         const kid = configService.get<string>('JWT_KID') ?? 'local-dev-key';
 
         if (privateKey && publicKey) {
@@ -54,7 +54,7 @@ import { PrismaModule } from '../prisma/prisma.module';
         return {
           secret:
             secret ??
-            'core-academy-shared-hosting-compatibility-jwt-secret-change-before-real-use',
+            'meetpoint-shared-hosting-compatibility-jwt-secret-change-before-real-use',
           signOptions: {
             algorithm: 'HS256' as const,
             issuer,

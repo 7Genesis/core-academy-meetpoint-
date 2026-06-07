@@ -1,4 +1,4 @@
-# CoreAcademy MeetPoint
+# MeetPoint
 
 Plataforma SaaS white-label para cursos, comunidades, eventos, oportunidades, beneficios, pontos e suporte. O projeto combina um backend em NestJS com Prisma/PostgreSQL e um frontend em React/Vite para validar a experiencia do produto antes da integracao definitiva com banco de dados e servicos externos.
 

@@ -61,7 +61,7 @@ export class TokenRevocationService {
   }
 
   private key(jti: string) {
-    return `coreacademy:revoked-jti:${jti}`;
+    return `meetpoint:revoked-jti:${jti}`;
   }
 
   private async redisCommand(args: string[]): Promise<RespValue> {

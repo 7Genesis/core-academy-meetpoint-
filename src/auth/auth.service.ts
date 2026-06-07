@@ -221,8 +221,8 @@ export class AuthService {
   }
 
   private async resolveDefaultTenant() {
-    const subdomain = process.env.DEFAULT_TENANT_SUBDOMAIN?.trim() || 'coreacademy';
-    const name = process.env.DEFAULT_TENANT_NAME?.trim() || 'Core Academy';
+    const subdomain = process.env.DEFAULT_TENANT_SUBDOMAIN?.trim() || 'meetpoint';
+    const name = process.env.DEFAULT_TENANT_NAME?.trim() || 'MeetPoint';
 
     return this.prisma.tenant.upsert({
       where: { subdomain },

@@ -11,7 +11,7 @@ terraform {
 
 variable "project_name" {
   type    = string
-  default = "core-academy"
+  default = "meetpoint"
 }
 
 variable "environment" {
@@ -201,7 +201,7 @@ resource "aws_db_subnet_group" "postgres" {
 
 resource "aws_iam_policy" "app_runtime" {
   name        = "${local.name}-app-runtime"
-  description = "Least-privilege runtime permissions for Core Academy API"
+  description = "Least-privilege runtime permissions for MeetPoint API"
 
   policy = jsonencode({
     Version = "2012-10-17"

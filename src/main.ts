@@ -112,7 +112,7 @@ async function bootstrap() {
 
   if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_SWAGGER === 'true') {
     const swaggerConfig = new DocumentBuilder()
-      .setTitle('Core Academy API')
+      .setTitle('MeetPoint API')
       .setDescription('White-label multi-tenant EAD API')
       .setVersion('0.1.0')
       .addBearerAuth()
@@ -138,8 +138,8 @@ void bootstrap();
 async function loadRuntimeEnv() {
   const envPaths = [
     resolve(process.cwd(), '.env'),
-    process.env.COREACADEMY_APP_ROOT
-      ? resolve(process.env.COREACADEMY_APP_ROOT, '.env')
+    process.env.MEETPOINT_APP_ROOT || process.env.COREACADEMY_APP_ROOT
+      ? resolve(process.env.MEETPOINT_APP_ROOT || process.env.COREACADEMY_APP_ROOT!, '.env')
       : '',
     '/home/nova3034/api-meetpoint/.env',
   ].filter(Boolean);

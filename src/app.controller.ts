@@ -10,7 +10,7 @@ export class AppController {
   @Get()
   health() {
     return {
-      name: 'Core Academy API',
+      name: 'MeetPoint API',
       status: 'running',
       docs: '/docs',
     };

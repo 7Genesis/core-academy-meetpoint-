@@ -295,7 +295,7 @@ const initialCourses = [
     progress: 64,
     level: 'Intermediário',
     instructor: 'Marina Costa',
-    company: 'Core Academy',
+    company: 'MeetPoint',
     liveDate: '2026-06-04T19:00',
     color: 'pink',
     modules: [
@@ -339,7 +339,7 @@ const initialCourses = [
     progress: 0,
     level: 'Disponível',
     instructor: 'Ana Lima',
-    company: 'Core Academy',
+    company: 'MeetPoint',
     liveDate: '2026-06-12T18:30',
     color: 'blue',
     modules: [
@@ -771,7 +771,7 @@ const initialFeedPosts = [
     likes: 61,
     reactionSummary: { like: 39, love: 11, fire: 11 },
     reactors: [
-      { user: 'Core Academy', reaction: 'like', at: '29/05/2026 11:22' },
+      { user: 'MeetPoint', reaction: 'like', at: '29/05/2026 11:22' },
     ],
     comments: [],
     mediaType: '',
@@ -985,7 +985,7 @@ const initialJobs = [
   {
     id: 'job-2',
     title: 'Desenvolvedor Frontend',
-    company: 'Core Academy',
+    company: 'MeetPoint',
     city: 'Remoto',
     type: 'Freela',
     category: 'Profissional',
@@ -994,7 +994,7 @@ const initialJobs = [
     description: 'Projeto de frontend para marketplace regional, comunidades e área de conteúdo.',
     requirements: 'Portfólio com React, consumo de API e atenção forte a layout responsivo.',
     benefits: 'Contrato remoto, entregas por sprint e possibilidade de recorrência.',
-    rhEmail: 'rh@coreacademy.com',
+    rhEmail: 'rh@meetpoint.com',
     whatsapp: '+55 11 99999-2020',
     contactMethods: ['application', 'email'],
     applicants: 9,
@@ -1736,7 +1736,7 @@ function getProfileEvents(profile, communityEvents = []) {
     profile.name,
     profile.handle?.replace('@', ''),
     profile.name === 'MeetPoint Oficial' ? 'MeetPoint' : '',
-    profile.name === 'Marina Costa' ? 'Core Academy' : '',
+    profile.name === 'Marina Costa' ? 'MeetPoint' : '',
   ].filter(Boolean).map((token) => token.toLowerCase());
 
   return [...communityEvents, ...scheduledEvents].filter((event) => {
@@ -1754,7 +1754,7 @@ function getProfileOpportunities(profile, jobs = []) {
   return jobs.filter((job) => {
     if (job.creatorHandle === profile.handle) return true;
     const haystack = `${job.company ?? ''} ${job.title ?? ''} ${job.description ?? ''}`.toLowerCase();
-    if (profile.name === 'MeetPoint Oficial') return ['Core Academy', 'Clube de Benefícios'].includes(job.company);
+    if (profile.name === 'MeetPoint Oficial') return ['MeetPoint', 'Clube de Benefícios'].includes(job.company);
     if (profile.name === 'Associação Empresarial') return ['Agência Norte', 'Hub Londrina Centro', 'Restaurante Central'].includes(job.company);
     return haystack.includes(profileName) || (handleName && haystack.includes(handleName));
   });
@@ -1863,8 +1863,8 @@ function createDefaultProfileInfo(account) {
       : isTeacher
         ? 'Produtor e profissional com foco em conteúdo, cursos e comunidades.'
         : 'Empreendedor e produtor digital',
-    linkedin: isCompany ? 'linkedin.com/company/coreacademy' : 'linkedin.com/in/lucas',
-    instagram: isCompany ? '@coreacademy' : '@lucas',
+    linkedin: isCompany ? 'linkedin.com/company/meetpoint' : 'linkedin.com/in/lucas',
+    instagram: isCompany ? '@meetpoint' : '@lucas',
     github: isCompany ? '' : 'github.com/lucas',
     coverPhoto: '',
   };
@@ -9737,7 +9737,7 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
           <div className="course-implementation-note external-course-mode-panel">
             <strong>Modelo de entrega</strong>
             <p>
-              Hospede o curso dentro da Core Academy ou use esta área para divulgar
+              Hospede o curso dentro da MeetPoint ou use esta área para divulgar
               um curso que já está em outra plataforma.
             </p>
             <div className="pricing-switch">
@@ -10635,7 +10635,7 @@ function CheckoutView({ course, finishEnrollment, goBack, openPage }) {
           <span className="section-kicker">Dados do comprador</span>
           <h3>Identificação</h3>
           <label>Nome completo<input defaultValue="Lucas Carvalho" /></label>
-          <label>Email<input defaultValue="lucas@coreacademy.com" /></label>
+          <label>Email<input defaultValue="lucas@meetpoint.com" /></label>
           <label>Celular<input defaultValue="+55 11 99999-0000" /></label>
           <label>CPF<input placeholder="000.000.000-00" /></label>
           <label>Endereço de cobrança<input placeholder="Rua, número, cidade e UF" /></label>
@@ -13965,7 +13965,7 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
               <input
                 value={form.legalName}
                 onChange={(event) => update('legalName', event.target.value)}
-                placeholder={isPfSignup ? 'Nome completo' : isPjSignup ? 'Ex: Ana Lima Mentorias' : 'Ex: Core Academy LTDA'}
+                placeholder={isPfSignup ? 'Nome completo' : isPjSignup ? 'Ex: Ana Lima Mentorias' : 'Ex: MeetPoint LTDA'}
               />
             </label>
             {!isPfSignup && (
@@ -14466,8 +14466,8 @@ function PessoaJuridicaProfile({ currentUser, openPage }) {
 
 // Perfil Empresa: dados corporativos, colaboradores, convites e cursos da empresa.
 function CompanyProfile({ openPage }) {
-  const [companyName, setCompanyName] = useState('Core Academy');
-  const [companyEmail, setCompanyEmail] = useState('empresa@coreacademy.com');
+  const [companyName, setCompanyName] = useState('MeetPoint');
+  const [companyEmail, setCompanyEmail] = useState('empresa@meetpoint.com');
   const [companySearch, setCompanySearch] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [verificationNotice, setVerificationNotice] = useState('');
@@ -14524,7 +14524,7 @@ function CompanyProfile({ openPage }) {
         {verificationNotice && <p className="valid-note">{verificationNotice}</p>}
         <label>
           Site
-          <input defaultValue="https://coreacademy.com" />
+          <input defaultValue="https://meetpoint.com" />
         </label>
         <label>
           Responsável legal
@@ -14716,7 +14716,7 @@ function PlatformProfile({ authToken, benefits, createBenefit, benefitEmailDeliv
   );
   const directoryData = {
     companies: [
-      { name: 'Core Academy LTDA', meta: '12 cursos publicados', status: 'Ativa' },
+      { name: 'MeetPoint LTDA', meta: '12 cursos publicados', status: 'Ativa' },
       { name: 'Studio Growth Educação', meta: '4 professores vinculados', status: 'Em análise' },
       { name: 'Mentoria Labs', meta: 'R$ 18.420 em vendas', status: 'Ativa' },
     ],
@@ -14726,14 +14726,14 @@ function PlatformProfile({ authToken, benefits, createBenefit, benefitEmailDeliv
       { name: 'Rafael Dias', meta: 'Aguardando validação documental', status: 'Pendente' },
     ],
     teachers: [
-      { name: 'Ana Ribeiro', meta: 'Vinculada a Core Academy', status: 'Aprovada' },
+      { name: 'Ana Ribeiro', meta: 'Vinculada a MeetPoint', status: 'Aprovada' },
       { name: 'Bruno Costa', meta: 'PJ autônoma', status: 'Ativo' },
       { name: 'Camila Torres', meta: 'Convite pendente', status: 'Pendente' },
     ],
   };
   const supportTickets = [
     { id: 'demo-ticket-1', title: 'Pessoa Física não recebeu email de compra', owner: 'Lucas Carvalho', priority: 'Alta' },
-    { id: 'demo-ticket-2', title: 'Empresa quer trocar chave PIX', owner: 'Core Academy LTDA', priority: 'Média' },
+    { id: 'demo-ticket-2', title: 'Empresa quer trocar chave PIX', owner: 'MeetPoint LTDA', priority: 'Média' },
     { id: 'demo-ticket-3', title: 'Pessoa Jurídica solicitou análise de material', owner: 'Ana Ribeiro', priority: 'Baixa' },
   ];
   const [remoteDirectory, setRemoteDirectory] = useState([]);
