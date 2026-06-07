@@ -145,8 +145,8 @@ function resolveApiBaseUrls() {
   }
 
   const candidates = pathname.startsWith('/meetpoint')
-    ? [`${origin}/meetpoint`, origin]
-    : [origin, `${origin}/meetpoint`];
+    ? [`${origin}/api-meetpoint`, `${origin}/meetpoint`, origin]
+    : [origin, `${origin}/api-meetpoint`, `${origin}/meetpoint`];
 
   return [...new Set(candidates.map((url) => url.replace(/\/+$/, '')))];
 }

@@ -14,6 +14,17 @@ async function bootstrap() {
   validateRuntimeConfig();
   const isProduction = process.env.NODE_ENV === 'production';
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  const appBasePath = resolveAppBasePath();
+  if (appBasePath) {
+    app.use((request: Request, _response: Response, next: NextFunction) => {
+      if (request.url === appBasePath) {
+        request.url = '/';
+      } else if (request.url.startsWith(`${appBasePath}/`)) {
+        request.url = request.url.slice(appBasePath.length) || '/';
+      }
+      next();
+    });
+  }
   app.use(
     helmet({
       contentSecurityPolicy:
@@ -190,4 +201,10 @@ function resolveCspConnectSources() {
       .map((source) => source.trim())
       .filter(Boolean) ?? []
   );
+}
+
+function resolveAppBasePath() {
+  const configured = process.env.APP_BASE_PATH?.trim();
+  if (!configured || configured === '/') return '';
+  return `/${configured.replace(/^\/+|\/+$/g, '')}`;
 }
