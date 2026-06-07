@@ -1,4 +1,3 @@
-import { PlatformPermission, PlatformRole } from '@prisma/client';
 import {
   ArrayUnique,
   IsArray,
@@ -9,6 +8,12 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import {
+  PlatformPermission,
+  type PlatformPermission as PlatformPermissionType,
+  PlatformRole,
+  type PlatformRole as PlatformRoleType,
+} from '../../common/prisma-enums';
 
 export class CreatePlatformStaffDto {
   @IsString()
@@ -21,10 +26,10 @@ export class CreatePlatformStaffDto {
 
   @IsEnum(PlatformRole)
   @IsOptional()
-  role?: PlatformRole;
+  role?: PlatformRoleType;
 
   @IsArray()
   @ArrayUnique()
   @IsEnum(PlatformPermission, { each: true })
-  permissions!: PlatformPermission[];
+  permissions!: PlatformPermissionType[];
 }

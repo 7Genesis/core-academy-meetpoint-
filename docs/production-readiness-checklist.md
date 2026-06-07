@@ -24,7 +24,6 @@ Solicite ao dono da conta:
 - [ ] Configurar `DATABASE_URL`.
 - [ ] Rodar `npx prisma migrate deploy`.
 - [ ] Rodar `npx prisma db execute --schema prisma/schema.prisma --file prisma/rls.sql`.
-- [ ] Rodar seed apenas se for ambiente staging/demo.
 - [ ] Validar login e consulta tenant.
 
 ## Backend
@@ -37,7 +36,7 @@ Solicite ao dono da conta:
 - [ ] Configurar JWT RS256.
 - [ ] Configurar `PII_ENCRYPTION_KEY`.
 - [ ] Configurar Stripe/webhooks.
-- [ ] Desligar `ENABLE_DEMO_LOGIN`.
+- [ ] Confirmar que nao existe rota de login demonstrativo publicada.
 
 ## Frontend
 
@@ -85,7 +84,8 @@ Depois de publicar:
 
 ```text
 GET /
-POST /auth/demo-login somente se staging
+POST /auth/register com dados validos
+POST /auth/login com usuario real
 GET /tenants/current com JWT
 GET /courses com tenant valido
 POST /support/chat

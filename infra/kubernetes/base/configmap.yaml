@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: meetpoint-api-config
+  namespace: meetpoint
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  JWT_ALGORITHM: "HS256"
+  JWT_ISSUER: "core-academy-api"
+  JWT_AUDIENCE: "core-academy-clients"
+  COOKIE_SECURE: "true"
+  ENABLE_SWAGGER: "false"
+  RAG_ENABLED: "false"
+  VECTOR_STORE_PROVIDER: "noop"

@@ -1,4 +1,3 @@
-import { PixKeyType } from '@prisma/client';
 import {
   IsEnum,
   IsInt,
@@ -8,6 +7,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { PixKeyType, type PixKeyType as PixKeyTypeType } from '../../common/prisma-enums';
 
 export class CreatePlatformFeePayoutDto {
   @IsInt()
@@ -15,7 +15,7 @@ export class CreatePlatformFeePayoutDto {
   amountCents!: number;
 
   @IsEnum(PixKeyType)
-  pixKeyType!: PixKeyType;
+  pixKeyType!: PixKeyTypeType;
 
   @IsString()
   @MinLength(3)

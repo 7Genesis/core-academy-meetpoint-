@@ -17,7 +17,10 @@ import { ModulesModule } from './modules/modules.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RagModule } from './rag/rag.module';
 import { SupportModule } from './support/support.module';
+import { SubscriptionGuard } from './subscriptions/subscription.guard';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 
@@ -41,7 +44,9 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     CertificatesModule,
     PaymentsModule,
     PlatformAdminModule,
+    RagModule,
     SupportModule,
+    SubscriptionsModule,
     WebhooksModule,
   ],
   controllers: [AppController],
@@ -49,6 +54,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
+    { provide: APP_GUARD, useClass: SubscriptionGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_INTERCEPTOR, useClass: SecurityAuditInterceptor },
   ],

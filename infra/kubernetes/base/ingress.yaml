@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: meetpoint-api
+  namespace: meetpoint
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.meetpoint.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: meetpoint-api
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - api.meetpoint.example.com
+      secretName: meetpoint-api-tls

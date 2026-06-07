@@ -4,10 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EnrollmentPaymentStatus } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import Stripe from 'stripe';
 import { AuthenticatedUser } from '../common/decorators/current-user.decorator';
+import { EnrollmentPaymentStatus } from '../common/prisma-enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCourseCheckoutDto } from './dto/create-course-checkout.dto';
 

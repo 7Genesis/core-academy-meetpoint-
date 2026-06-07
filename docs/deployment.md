@@ -157,7 +157,8 @@ Depois do deploy:
 ```text
 GET /
 GET /docs somente se ENABLE_SWAGGER=true
-POST /auth/demo-login somente em staging
+POST /auth/register com dados validos
+POST /auth/login com usuario real
 GET /tenants/current com JWT valido
 POST /support/chat
 POST /payments/course-checkout com tenant valido

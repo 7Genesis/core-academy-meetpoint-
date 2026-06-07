@@ -1,0 +1,58 @@
+services:
+  - type: web
+    name: coreacademy-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build && npm run prisma:migrate:deploy
+    startCommand: npm run start:prod
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: 20.20.2
+      - key: NODE_ENV
+        value: production
+      - key: STRICT_RUNTIME_VALIDATION
+        value: "false"
+      - key: SKIP_DATABASE_CONNECT
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_KID
+        value: coreacademy-render-key
+      - key: JWT_ISSUER
+        value: coreacademy-api
+      - key: JWT_AUDIENCE
+        value: coreacademy-clients
+      - key: PII_ENCRYPTION_KEY
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+      - key: CSP_CONNECT_SRC
+        sync: false
+      - key: CHECKOUT_ALLOWED_ORIGINS
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: ENABLE_SWAGGER
+        value: "false"
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_WEBHOOK_TOLERANCE_SECONDS
+        value: "300"
+      - key: SUBSCRIPTION_WEBHOOK_SECRET
+        generateValue: true
+      - key: SUBSCRIPTION_WEBHOOK_TOLERANCE_SECONDS
+        value: "300"
+      - key: RAG_ENABLED
+        value: "false"
+      - key: VECTOR_STORE_PROVIDER
+        value: noop

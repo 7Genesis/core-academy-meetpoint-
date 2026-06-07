@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   SupportTicketPriority,
   SupportTicketStatus,
-} from '@prisma/client';
+} from '../common/prisma-enums';
 import { DataMaskingService } from '../common/security/data-masking.service';
 import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -33,7 +33,7 @@ export class SupportService {
           description: this.fieldEncryption.encryptString(
             this.formatRequesterContext(dto.message, dto),
           ),
-          priority: SupportTicketPriority.LOW,
+          priority: this.resolveTicketPriority(dto.priority, SupportTicketPriority.LOW),
           status: SupportTicketStatus.OPEN,
         },
       }),
@@ -47,7 +47,12 @@ export class SupportService {
   }
 
   async chat(dto: SupportChatDto) {
-    const needsHuman = this.shouldEscalateToHuman(dto.message);
+    const requestedPriority = this.resolveTicketPriority(dto.priority);
+    const needsHuman =
+      dto.preferredChannel === 'human'
+      || requestedPriority === SupportTicketPriority.HIGH
+      || requestedPriority === SupportTicketPriority.CRITICAL
+      || this.shouldEscalateToHuman(dto.message);
 
     if (!needsHuman) {
       const aiAnswer = await this.askOllama(dto.message);
@@ -71,9 +76,10 @@ export class SupportService {
           description: this.fieldEncryption.encryptString(
             this.formatRequesterContext(dto.message, dto),
           ),
-          priority: needsHuman
-            ? SupportTicketPriority.HIGH
-            : SupportTicketPriority.MEDIUM,
+          priority: requestedPriority
+            ?? (needsHuman
+              ? SupportTicketPriority.HIGH
+              : SupportTicketPriority.MEDIUM),
           status: SupportTicketStatus.OPEN,
         },
       }),
@@ -179,13 +185,35 @@ export class SupportService {
 
   private formatRequesterContext(
     message: string,
-    context: { email?: string; name?: string; segment?: string },
+    context: {
+      email?: string;
+      name?: string;
+      segment?: string;
+      category?: string;
+      priority?: string;
+      conversationSummary?: string;
+    },
   ) {
     return [
       `Mensagem: ${this.dataMasking.sanitizeText(message)}`,
       `Nome: ${this.dataMasking.sanitizeText(context.name ?? 'Nao informado')}`,
       `Email: ${this.dataMasking.redactText(context.email ?? 'Nao informado')}`,
       `Perfil: ${this.dataMasking.sanitizeText(context.segment ?? 'Nao informado')}`,
+      `Categoria: ${this.dataMasking.sanitizeText(context.category ?? 'Nao classificado')}`,
+      `Prioridade: ${this.dataMasking.sanitizeText(context.priority ?? 'Nao informada')}`,
+      `Historico: ${this.dataMasking.sanitizeText(context.conversationSummary ?? 'Nao informado')}`,
     ].join('\n');
+  }
+
+  private resolveTicketPriority(
+    priority?: string,
+    fallback?: SupportTicketPriority,
+  ) {
+    if (!priority) return fallback;
+    if (priority === 'CRITICAL') return SupportTicketPriority.CRITICAL;
+    if (priority === 'HIGH') return SupportTicketPriority.HIGH;
+    if (priority === 'MEDIUM') return SupportTicketPriority.MEDIUM;
+    if (priority === 'LOW') return SupportTicketPriority.LOW;
+    return fallback;
   }
 }

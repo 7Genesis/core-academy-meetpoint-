@@ -1,5 +1,8 @@
-import { SupportTicketPriority } from '@prisma/client';
 import { IsEnum, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import {
+  SupportTicketPriority,
+  type SupportTicketPriority as SupportTicketPriorityType,
+} from '../../common/prisma-enums';
 
 export class CreateSupportTicketDto {
   @IsString()
@@ -12,7 +15,7 @@ export class CreateSupportTicketDto {
 
   @IsEnum(SupportTicketPriority)
   @IsOptional()
-  priority?: SupportTicketPriority;
+  priority?: SupportTicketPriorityType;
 
   @IsUUID()
   @IsOptional()

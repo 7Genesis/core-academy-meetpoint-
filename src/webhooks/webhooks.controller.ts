@@ -7,9 +7,9 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
-import { EnrollmentPaymentStatus } from '@prisma/client';
 import { Request } from 'express';
 import { timingSafeEqual } from 'node:crypto';
+import { EnrollmentPaymentStatus } from '../common/prisma-enums';
 import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -48,6 +48,7 @@ export class WebhooksController {
           tenantId: dto.tenantId,
           OR: [
             ...(emailHash ? [{ emailHash }] : []),
+            ...(emailHash ? [{ contactEmailHash: emailHash }] : []),
             { email: dto.customerEmail },
           ],
         },

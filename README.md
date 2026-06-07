@@ -72,7 +72,6 @@ src/
 prisma/
   schema.prisma
   rls.sql
-  seed.ts
 ```
 
 ## Como rodar localmente
@@ -130,7 +129,6 @@ npm run lint
 npm run prisma:generate
 npm run prisma:migrate
 npm run db:rls
-npm run db:seed
 ```
 
 ## Variaveis de ambiente
@@ -152,7 +150,10 @@ Principais variaveis:
 - `CORS_ORIGIN`: origem liberada para frontend;
 - `CHECKOUT_ALLOWED_ORIGINS`: origens permitidas no checkout;
 - `OLLAMA_URL`: endpoint local do Ollama;
-- `ENABLE_DEMO_LOGIN`: habilita login demonstrativo somente em ambiente controlado.
+- `RAG_ENABLED`: habilita rotas/fluxos RAG quando adapters reais estiverem configurados;
+- `VECTOR_STORE_PROVIDER`: provider do banco vetorial (`noop`, `pgvector`, `qdrant`, `pinecone`, etc.);
+- `VECTOR_STORE_URL`: endpoint/conexao do vector store quando aplicavel;
+- `OPENAI_API_KEY`, `LLM_PROVIDER`, `EMBEDDING_PROVIDER`: providers de IA configurados por ambiente, nunca em codigo.
 
 ## Seguranca
 
@@ -177,6 +178,28 @@ Ponto importante: bloqueios de inspecionar elemento, copia ou clique direito no 
 O plano tecnico completo de hardening, vetores OWASP e Terraform AWS fica em [`docs/security-hardening.md`](docs/security-hardening.md).
 
 ## Arquitetura, UML e Operacao
+
+Documentacao tecnica atualizada:
+
+- [`docs/architecture.md`](docs/architecture.md)
+- [`docs/rag.md`](docs/rag.md)
+- [`docs/query-router.md`](docs/query-router.md)
+- [`docs/agents.md`](docs/agents.md)
+- [`docs/security.md`](docs/security.md)
+- [`docs/devops-kubernetes.md`](docs/devops-kubernetes.md)
+- [`docs/operations.md`](docs/operations.md)
+
+## Docker e Kubernetes
+
+Arquivos adicionados:
+
+- `Dockerfile`
+- `docker-compose.yml`
+- `.dockerignore`
+- `infra/kubernetes/base`
+- `infra/kubernetes/overlays`
+
+O secret de Kubernetes e apenas template (`secret.template.yaml`) e nao deve ser aplicado com valores placeholder em producao.
 
 Documentos tecnicos adicionados:
 

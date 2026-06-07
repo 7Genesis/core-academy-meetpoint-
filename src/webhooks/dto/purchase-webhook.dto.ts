@@ -1,4 +1,3 @@
-import { EnrollmentPaymentStatus } from '@prisma/client';
 import {
   IsEmail,
   IsIn,
@@ -9,6 +8,10 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import {
+  EnrollmentPaymentStatus,
+  type EnrollmentPaymentStatus as EnrollmentPaymentStatusType,
+} from '../../common/prisma-enums';
 
 export class PurchaseWebhookDto {
   @IsUUID()
@@ -41,5 +44,5 @@ export class PurchaseWebhookDto {
     EnrollmentPaymentStatus.REFUNDED,
   ])
   @IsOptional()
-  paymentStatus?: EnrollmentPaymentStatus;
+  paymentStatus?: EnrollmentPaymentStatusType;
 }

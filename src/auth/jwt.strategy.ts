@@ -8,7 +8,7 @@ import { TokenRevocationService } from './token-revocation.service';
 export type JwtPayload = {
   sub: string;
   email: string;
-  role: 'ADMIN' | 'STUDENT';
+  role: 'ADMIN' | 'USER';
   tenantId?: string;
   platformRole?: 'OWNER' | 'SUPPORT' | 'OPERATIONS' | 'MAINTENANCE';
   jti?: string;

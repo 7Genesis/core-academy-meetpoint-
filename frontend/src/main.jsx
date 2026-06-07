@@ -17,23 +17,141 @@ const navigation = [
   { id: 'partners', label: 'Parceiros' },
   { id: 'profile', label: 'Perfil' },
 ];
-const primaryMobilePageIds = ['home', 'feed', 'courses', 'communities', 'profile'];
-const loggedInPrimaryMobilePageIds = ['feed', 'courses', 'communities', 'profile'];
-const mobileNavigationIcons = {
-  home: '⌂',
-  feed: '#',
-  courses: '▶',
-  communities: '◐',
-  opportunities: '$',
-  benefits: '%',
-  events: '+',
-  rewards: '★',
-  partners: '◆',
-  profile: '@',
+const primaryMobilePageIds = ['feed', 'opportunities', 'benefits', 'events'];
+const loggedInPrimaryMobilePageIds = ['feed', 'opportunities', 'benefits', 'events'];
+const publicReadPageIds = ['home', 'feed', 'opportunities', 'events', 'benefits', 'profile'];
+const guestPrimaryMobilePageIds = ['feed', 'opportunities', 'events', 'benefits'];
+const TERMS_VERSION = 'meetpoint-lgpd-2026-06-03';
+const PRIVACY_VERSION = 'meetpoint-privacy-lgpd-2026-06-03';
+const REQUIRED_CONSENT_TYPE = 'platform_usage';
+const TERMS_CONSENT_TEXT =
+  'Li e aceito os Termos de Uso e autorizo o tratamento dos meus dados conforme a Política de Privacidade.';
+
+function getPageLabel(pageId) {
+  return navigation.find((item) => item.id === pageId)?.label ?? pageId;
+}
+
+const mobileNavigationIconNames = {
+  home: 'home',
+  feed: 'home',
+  courses: 'play',
+  communities: 'users',
+  opportunities: 'briefcase',
+  benefits: 'gift',
+  events: 'calendar',
+  rewards: 'sparkles',
+  partners: 'building',
+  profile: 'user',
 };
 
+const mobileTabLabels = {
+  communities: 'Comun.',
+  opportunities: 'Oport.',
+  benefits: 'Benef.',
+};
+
+function getMobileTabLabel(item) {
+  return mobileTabLabels[item.id] ?? item.label;
+}
+
+function MobileNavIcon({ name }) {
+  const paths = {
+    building: (
+      <>
+        <path d="M4 20V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v15" />
+        <path d="M15 9h4a1 1 0 0 1 1 1v10" />
+        <path d="M8 8h3M8 12h3M8 16h3" />
+      </>
+    ),
+    calendar: (
+      <>
+        <path d="M7 3v3M17 3v3M4 9h16" />
+        <rect x="4" y="5" width="16" height="16" rx="3" />
+      </>
+    ),
+    briefcase: (
+      <>
+        <path d="M9 6V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1" />
+        <rect x="3" y="6" width="18" height="14" rx="3" />
+        <path d="M3 11h18M12 11v2" />
+      </>
+    ),
+    gift: (
+      <>
+        <path d="M20 12v8H4v-8M2 8h20v4H2zM12 8v12" />
+        <path d="M12 8H7.5a2.5 2.5 0 1 1 2.2-3.7L12 8Zm0 0h4.5a2.5 2.5 0 1 0-2.2-3.7L12 8Z" />
+      </>
+    ),
+    home: (
+      <>
+        <path d="m3 11 9-8 9 8" />
+        <path d="M5 10v10h14V10" />
+        <path d="M9 20v-6h6v6" />
+      </>
+    ),
+    more: (
+      <>
+        <circle cx="5" cy="12" r="1.5" />
+        <circle cx="12" cy="12" r="1.5" />
+        <circle cx="19" cy="12" r="1.5" />
+      </>
+    ),
+    play: (
+      <>
+        <rect x="4" y="5" width="16" height="14" rx="3" />
+        <path d="m10 9 5 3-5 3V9Z" />
+      </>
+    ),
+    sparkles: (
+      <>
+        <path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3Z" />
+        <path d="m5 15 .8 1.7L7.5 18l-1.7.8L5 20.5l-.8-1.7L2.5 18l1.7-.8L5 15ZM19 14l.6 1.4L21 16l-1.4.6L19 18l-.6-1.4L17 16l1.4-.6L19 14Z" />
+      </>
+    ),
+    user: (
+      <>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </>
+    ),
+    users: (
+      <>
+        <circle cx="9" cy="8" r="3.5" />
+        <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+        <path d="M16 5.5a3 3 0 0 1 0 5.8M18 20a5.6 5.6 0 0 0-2.5-4.7" />
+      </>
+    ),
+  };
+
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+        {paths[name] ?? paths.more}
+      </g>
+    </svg>
+  );
+}
+
 // Configurações globais usadas pelo frontend para falar com a API e calcular taxas.
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:3000';
+function resolveApiBaseUrls() {
+  const configuredUrl = import.meta.env.VITE_API_URL?.trim();
+  if (configuredUrl) return [configuredUrl.replace(/\/+$/, '')];
+
+  if (typeof window === 'undefined') return ['http://127.0.0.1:3000'];
+
+  const { origin, hostname, pathname } = window.location;
+  if (hostname === '127.0.0.1' || hostname === 'localhost') {
+    return ['http://127.0.0.1:3000'];
+  }
+
+  const candidates = pathname.startsWith('/meetpoint')
+    ? [`${origin}/meetpoint`, origin]
+    : [origin, `${origin}/meetpoint`];
+
+  return [...new Set(candidates.map((url) => url.replace(/\/+$/, '')))];
+}
+
+const API_BASE_URLS = resolveApiBaseUrls();
 const PLATFORM_FEE_PERCENT = 10;
 const courseTopicOptions = [
   'Tecnologia',
@@ -67,14 +185,17 @@ function getYouTubeVideo(url = '') {
 
   try {
     const parsedUrl = new URL(rawUrl);
-    const host = parsedUrl.hostname.replace(/^www\./, '');
+    const host = parsedUrl.hostname
+      .replace(/^www\./, '')
+      .replace(/^m\./, '')
+      .replace(/^music\./, '');
     let videoId = '';
 
     if (host === 'youtu.be') {
       videoId = parsedUrl.pathname.split('/').filter(Boolean)[0] ?? '';
     }
 
-    if (host.endsWith('youtube.com')) {
+    if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
       if (parsedUrl.pathname === '/watch') {
         videoId = parsedUrl.searchParams.get('v') ?? '';
       } else {
@@ -94,6 +215,59 @@ function getYouTubeVideo(url = '') {
   } catch {
     return null;
   }
+}
+
+function normalizeYouTubeEmbedUrl(url = '') {
+  const video = getYouTubeVideo(url);
+  return video?.embedUrl ?? '';
+}
+
+function getInlineYouTubeEmbedUrl(video, options = {}) {
+  if (!video?.embedUrl) return '';
+  const params = new URLSearchParams({
+    autoplay: options.autoplay ? '1' : '0',
+    mute: options.muted ? '1' : '0',
+    controls: '1',
+    playsinline: '1',
+    rel: '0',
+    modestbranding: '1',
+    iv_load_policy: '3',
+  });
+  if (options.enableJsApi) {
+    params.set('enablejsapi', '1');
+  }
+  if (options.enableJsApi && typeof window !== 'undefined' && window.location?.origin) {
+    const origin = window.location.origin;
+    params.set('origin', origin);
+  }
+  return `${video.embedUrl}?${params.toString()}`;
+}
+
+function normalizeExternalUrl(url = '') {
+  const value = String(url).trim();
+  if (!value) return '';
+  const withProtocol = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  try {
+    const parsedUrl = new URL(withProtocol);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) return '';
+    return parsedUrl.toString();
+  } catch {
+    return '';
+  }
+}
+
+function getExternalCoursePreview(url = '', fallbackTitle = 'Curso externo') {
+  const normalizedUrl = normalizeExternalUrl(url);
+  if (!normalizedUrl) return null;
+  const youtubeVideo = getYouTubeVideo(normalizedUrl);
+  const host = new URL(normalizedUrl).hostname.replace(/^www\./, '');
+  return {
+    url: normalizedUrl,
+    host,
+    title: youtubeVideo ? 'Vídeo ou curso no YouTube' : fallbackTitle,
+    thumbnailUrl: youtubeVideo?.thumbnailUrl ?? '',
+    isYoutube: Boolean(youtubeVideo),
+  };
 }
 
 function createYouTubeMedia(url) {
@@ -231,6 +405,7 @@ function getCourseWorkloadLabel(course) {
 function getCoursePublicationIssues(course, modules) {
   const issues = [];
   const normalizedModules = modules ?? normalizeCourseModules(course);
+  const isExternalCourse = course?.deliveryMode === 'external';
 
   if (!course?.title?.trim() || course.title === 'Novo curso') {
     issues.push({
@@ -267,6 +442,17 @@ function getCoursePublicationIssues(course, modules) {
       targetId: 'course-price-field',
     });
   }
+
+  if (isExternalCourse && !normalizeExternalUrl(course?.externalCourseUrl)) {
+    issues.push({
+      id: 'course-external-url',
+      label: 'Link externo',
+      detail: 'Informe um link válido para a plataforma onde o curso está hospedado.',
+      targetId: 'course-external-url-field',
+    });
+  }
+
+  if (isExternalCourse) return issues;
 
   if (!normalizedModules.length) {
     issues.push({
@@ -386,6 +572,15 @@ function getCommunityAccessLabel(community = {}) {
   if (accessMode === 'password') return 'Privada com senha';
   if (accessMode === 'invite') return 'Privada por convite';
   return 'Pública';
+}
+
+function CommunityAvatar({ community, className = '' }) {
+  const initials = getInitials(community?.name ?? 'Comunidade');
+  return (
+    <span className={`community-avatar ${community?.photo ? 'has-photo' : ''} ${className}`.trim()}>
+      {community?.photo ? <img src={community.photo} alt="" /> : <b className="community-avatar-initials">{initials}</b>}
+    </span>
+  );
 }
 
 const initialCommunities = [
@@ -523,6 +718,7 @@ const initialFeedPosts = [
   {
     id: 'post-1',
     author: 'MeetPoint Oficial',
+    authorHandle: '@meetpoint',
     role: 'Patrocinador',
     initials: 'MP',
     city: 'Londrina',
@@ -543,6 +739,7 @@ const initialFeedPosts = [
   {
     id: 'post-2',
     author: 'Dra. Camila Torres',
+    authorHandle: '@camilatorres',
     role: 'Conteúdo de autoridade',
     initials: 'CT',
     city: 'Maringá',
@@ -565,6 +762,7 @@ const initialFeedPosts = [
   {
     id: 'post-3',
     author: 'Associação Empresarial',
+    authorHandle: '@associacaoempresarial',
     role: 'Comunidade PJ',
     initials: 'AE',
     city: 'Apucarana',
@@ -728,6 +926,43 @@ function hasOpportunityContactMethod(job, method) {
   return normalizeOpportunityContactMethods(job).includes(method);
 }
 
+function cleanMailHeader(value = '') {
+  return String(value).replace(/[\r\n]/g, ' ').trim();
+}
+
+function buildOpportunityEmailAction(job = {}, currentUser, resumeName = '') {
+  const recipient = cleanMailHeader(job.rhEmail || '');
+  const candidateName = cleanMailHeader(currentUser?.name || 'Candidato');
+  const candidateEmail = cleanMailHeader(getContactEmail(currentUser));
+  const company = cleanMailHeader(job.company || 'equipe responsável');
+  const title = cleanMailHeader(job.title || 'oportunidade');
+  const resumeLabel = cleanMailHeader(resumeName || 'currículo do perfil ainda não cadastrado');
+  const subject = `Interesse em ${title} - ${candidateName}`;
+  const body = [
+    `Olá, ${company}.`,
+    '',
+    `Tenho interesse na oportunidade "${title}".`,
+    `Nome: ${candidateName}`,
+    candidateEmail ? `Email para retorno: ${candidateEmail}` : '',
+    `Currículo informado: ${resumeLabel}`,
+    '',
+    'Observação: por segurança do navegador, o arquivo do currículo não é anexado automaticamente pelo site. Anexe o arquivo antes de enviar ou use a candidatura pela plataforma.',
+    '',
+    'Mensagem:',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return {
+    recipient,
+    subject,
+    body,
+    href: recipient
+      ? `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+      : '',
+  };
+}
+
 // Vagas iniciais exibidas em Oportunidades. Empresas também podem criar vagas pelo formulário visual.
 const initialJobs = [
   {
@@ -878,24 +1113,28 @@ const rewardActions = [
 const partnerPlans = [
   {
     id: 'pf',
+    subscriptionPlanId: '00000000-0000-4000-8000-000000000049',
     name: 'PF Assinante',
     price: 49.9,
     description: 'Acesso a comunidades, eventos, benefícios, feed e conteúdos selecionados.',
   },
   {
     id: 'pj',
+    subscriptionPlanId: '00000000-0000-4000-8000-000000000099',
     name: 'PJ Parceiro',
     price: 99.9,
     description: 'Publicação de vagas, benefícios, conteúdos, cursos e presença em comunidades.',
   },
   {
     id: 'sponsor',
+    subscriptionPlanId: '00000000-0000-4000-8000-000000000490',
     name: 'Patrocinador',
     price: 490,
     description: 'Banners, destaques na home, presença institucional e espaco premium regional.',
   },
   {
     id: 'ambassador',
+    subscriptionPlanId: '00000000-0000-4000-8000-000000000000',
     name: 'Embaixador',
     price: 0,
     description: 'Link próprio, benefícios VIP e comissão por indicação validada.',
@@ -951,26 +1190,95 @@ function calculatePlatformSplit(price) {
 
 async function apiRequest(path, options = {}) {
   const { token, headers, ...requestOptions } = options;
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const requestConfig = {
     ...requestOptions,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(headers ?? {}),
     },
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `Erro HTTP ${response.status}`);
+  };
+  let lastError = null;
+
+  for (const baseUrl of API_BASE_URLS) {
+    const targetUrl = `${baseUrl}${path}`;
+    try {
+      const response = await fetch(targetUrl, requestConfig);
+      if (!response.ok) {
+        const errorText = await response.text();
+        const error = new Error(errorText || `Erro HTTP ${response.status}`);
+        error.status = response.status;
+        error.url = targetUrl;
+        if ([404, 405].includes(response.status) && API_BASE_URLS.length > 1) {
+          lastError = error;
+          continue;
+        }
+        throw error;
+      }
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        const error = new Error('A rota de API retornou uma resposta invalida.');
+        error.status = 404;
+        error.url = targetUrl;
+        if (API_BASE_URLS.length > 1) {
+          lastError = error;
+          continue;
+        }
+        throw error;
+      }
+      return response.json();
+    } catch (error) {
+      error.url = error.url ?? targetUrl;
+      lastError = error;
+      if (error.status && ![404, 405].includes(error.status)) break;
+      if (API_BASE_URLS.length <= 1) break;
+    }
   }
-  return response.json();
+
+  throw lastError ?? new Error('Nao foi possivel conectar a API.');
 }
 
-function demoLoginRequest(email, password) {
-  return apiRequest('/auth/demo-login', {
+function loginRequest(email, password, consent = {}) {
+  return apiRequest('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({
+      email,
+      password,
+      termsAccepted: Boolean(consent.termsAccepted),
+      termsVersion: consent.termsVersion ?? TERMS_VERSION,
+      privacyVersion: consent.privacyVersion ?? PRIVACY_VERSION,
+      consentType: consent.consentType ?? REQUIRED_CONSENT_TYPE,
+    }),
   });
+}
+
+function registerRequest(payload = {}) {
+  return apiRequest('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+function authenticatedUserRequest(token) {
+  return apiRequest('/auth/me', { token });
+}
+
+function privacyConsentRequest(consent = {}) {
+  return apiRequest('/auth/privacy-consent', {
+    method: 'POST',
+    body: JSON.stringify({
+      termsVersion: consent.termsVersion ?? TERMS_VERSION,
+      privacyVersion: consent.privacyVersion ?? PRIVACY_VERSION,
+      consentType: consent.consentType ?? REQUIRED_CONSENT_TYPE,
+      accepted: true,
+      country: consent.country ?? '',
+    }),
+  });
+}
+
+function subscriptionRequest(path, options = {}) {
+  return apiRequest(`/subscriptions${path}`, options);
 }
 
 function platformAdminRequest(path, token, options = {}) {
@@ -981,90 +1289,133 @@ function supportRequest(path, options = {}) {
   return apiRequest(`/support${path}`, options);
 }
 
-const demoAccounts = {
-  'admin@meetpoint.com': {
-    name: 'Operação MeetPoint',
-    initials: 'MP',
-    email: 'admin@meetpoint.com',
-    segment: 'platform',
-    label: 'Plataforma',
-  },
-  'teste@meetpoint.com': {
-    name: 'Conta Teste',
-    initials: 'CT',
-    email: 'teste@meetpoint.com',
-    segment: 'student',
-    label: 'Pessoa Física',
-    subscriptionActive: true,
-  },
-  'aluno@meetpoint.com': {
-    name: 'Lucas Carvalho',
-    initials: 'LC',
-    email: 'aluno@meetpoint.com',
-    segment: 'student',
-    label: 'Pessoa Física',
-    subscriptionActive: true,
-  },
-  'pf@meetpoint.com': {
-    name: 'Lucas Carvalho',
-    initials: 'LC',
-    email: 'pf@meetpoint.com',
-    segment: 'student',
-    label: 'Pessoa Física',
-    subscriptionActive: true,
-  },
-  'professor@coreacademy.com': {
-    name: 'Marina Costa',
-    initials: 'MC',
-    email: 'professor@coreacademy.com',
-    segment: 'teacher',
-    label: 'Pessoa Jurídica',
-    invitedBy: 'Core Academy',
-    teacherMode: 'Vinculado a empresa',
-    companyLinks: ['Core Academy'],
-    subscriptionActive: true,
-  },
-  'pj@coreacademy.com': {
-    name: 'Marina Costa',
-    initials: 'MC',
-    email: 'pj@coreacademy.com',
-    segment: 'teacher',
-    label: 'Pessoa Jurídica',
-    invitedBy: 'Core Academy',
-    teacherMode: 'Vinculado a empresa',
-    companyLinks: ['Core Academy'],
-    subscriptionActive: true,
-  },
-  'autonomo@coreacademy.com': {
-    name: 'Bruno Costa',
-    initials: 'BC',
-    email: 'autonomo@coreacademy.com',
-    segment: 'teacher',
-    label: 'Pessoa Jurídica',
-    invitedBy: 'Sem vínculo empresarial',
-    teacherMode: 'PJ autônoma',
-    companyLinks: [],
-    subscriptionActive: true,
-  },
-  'empresa@coreacademy.com': {
-    name: 'Core Academy',
-    initials: 'CA',
-    email: 'empresa@coreacademy.com',
-    segment: 'company',
-    label: 'Empresa',
-    subscriptionActive: true,
-  },
-  'suporte@meetpoint.com': {
-    name: 'Júlia Martins',
-    initials: 'JM',
-    email: 'suporte@meetpoint.com',
-    segment: 'employee',
-    label: 'Funcionária de suporte',
-    department: 'Suporte técnico',
-    permissions: ['Responder suporte', 'Transferir ticket', 'Ver pessoas físicas'],
-    subscriptionActive: true,
-  },
-};
+const LAST_SIGNUP_LOGIN_KEY = 'lastMeetPointLoginEmail';
+const DOCUMENT_VALIDATION_ENDPOINT = import.meta.env?.VITE_DOCUMENT_VALIDATION_ENDPOINT || '';
+
+function mapBackendUserToAccount(user = {}, extra = {}) {
+  const email = user.email ?? '';
+  const name = user.name ?? email.split('@')[0] ?? 'Conta MeetPoint';
+  const segment = user.platformRole
+    ? 'platform'
+    : user.role === 'ADMIN'
+      ? 'teacher'
+      : 'student';
+
+  return {
+    id: user.sub ?? user.id ?? email,
+    name,
+    initials: getInitials(name),
+    email,
+    contactEmail: user.contactEmail ?? email,
+    segment,
+    label: getAccountTypeLabel(segment),
+    tenantId: user.tenantId,
+    city: user.city ?? '',
+    state: user.state ?? '',
+    bio: user.bio ?? '',
+    profilePhoto: user.profileImage ?? '',
+    createdAt: user.createdAt,
+    lastLoginAt: user.lastLoginAt,
+    platformRole: user.platformRole,
+    accountStatus: user.status,
+    subscriptionActive: user.status === 'ACTIVE',
+    backendUser: user,
+    ...extra,
+  };
+}
+
+function getLastSignupLoginEmail() {
+  if (typeof localStorage === 'undefined') return '';
+  return localStorage.getItem(LAST_SIGNUP_LOGIN_KEY) || '';
+}
+
+function createTermsConsentRecord(userId) {
+  return {
+    userId,
+    termsVersion: TERMS_VERSION,
+    acceptedAt: new Date().toISOString(),
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+    ip: '',
+  };
+}
+
+function createPrivacyConsentRecord(userId, consentType = REQUIRED_CONSENT_TYPE) {
+  const now = new Date().toISOString();
+  return {
+    userId,
+    termsVersion: TERMS_VERSION,
+    privacyVersion: PRIVACY_VERSION,
+    consentType,
+    accepted: true,
+    acceptedAt: now,
+    createdAt: now,
+    updatedAt: now,
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+    ipAddress: '',
+    country: '',
+  };
+}
+
+function hasValidPrivacyConsent(user) {
+  const consent = user?.privacyConsent;
+  return Boolean(
+    consent?.accepted
+    && consent.termsVersion === TERMS_VERSION
+    && consent.privacyVersion === PRIVACY_VERSION
+    && consent.consentType === REQUIRED_CONSENT_TYPE,
+  );
+}
+
+function createPendingSubscriptionRecord(planId = '') {
+  const now = new Date().toISOString();
+  return {
+    status: 'PENDING_PAYMENT',
+    planId,
+    paymentProvider: '',
+    externalSubscriptionId: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function hasActivePlatformSubscription(user) {
+  if (!user) return false;
+  if (user.segment === 'platform' || user.platformRole) return true;
+  if (user.subscriptionActive) return true;
+  const subscription = user.subscription;
+  if (subscription?.status !== 'ACTIVE') return false;
+  if (!subscription.expiresAt) return true;
+  return new Date(subscription.expiresAt).getTime() > Date.now();
+}
+
+function isValidEmailFormat(value = '') {
+  const email = value.trim().toLowerCase();
+  if (email.length > 254) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+}
+
+function isValidRealContactEmail(value = '') {
+  const email = value.trim().toLowerCase();
+  if (!isValidEmailFormat(email)) return false;
+  const [, domain = ''] = email.split('@');
+  const blockedDomains = new Set([
+    'meetpoint.com',
+    'example.com',
+    'example.com.br',
+    'teste.com',
+    'test.com',
+    'fake.com',
+    'dominio.com',
+    'email.com',
+  ]);
+  if (blockedDomains.has(domain)) return false;
+  if (domain.endsWith('.invalid') || domain.endsWith('.test') || domain === 'localhost') return false;
+  return true;
+}
+
+function getContactEmail(account) {
+  return account?.contactEmail || account?.signupRecord?.contactEmail || account?.email || '';
+}
 
 const initialUserNotifications = [
   { id: 'notice-1', title: 'Novo comentário no seu post', channel: 'computador', read: false },
@@ -1120,6 +1471,80 @@ const defaultResumeDetails = {
 
 function createDefaultVisualPreferences() {
   return { ...defaultVisualPreferences };
+}
+
+function normalizeVisualPreferences(value = {}) {
+  return {
+    ...createDefaultVisualPreferences(),
+    ...(value && typeof value === 'object' ? value : {}),
+  };
+}
+
+function getVisualPreferencesStorageKey(account) {
+  return `meetpoint:visual:${getAccountSessionKey(account) || 'guest'}`;
+}
+
+function getWorkspaceStorageKey(account) {
+  const sessionKey = getAccountSessionKey(account);
+  return sessionKey ? `meetpoint:workspace:${sessionKey}` : '';
+}
+
+function readStoredVisualPreferences(account) {
+  try {
+    const saved = localStorage.getItem(getVisualPreferencesStorageKey(account));
+    return normalizeVisualPreferences(saved ? JSON.parse(saved) : {});
+  } catch {
+    return createDefaultVisualPreferences();
+  }
+}
+
+function normalizeProfilePublicInfo(account, profileInfo = {}) {
+  const coverPhoto =
+    profileInfo.coverPhoto ||
+    profileInfo.coverImage ||
+    profileInfo.coverUrl ||
+    profileInfo.bannerImage ||
+    profileInfo.bannerUrl ||
+    '';
+  return resolveProfileInfo(account, {
+    ...profileInfo,
+    coverPhoto,
+  });
+}
+
+function normalizeWorkspaceSnapshot(snapshot, account) {
+  const defaults = account ? createAccountWorkspace(account) : createGuestWorkspace();
+  const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  return {
+    ...defaults,
+    ...source,
+    profilePublicInfo: normalizeProfilePublicInfo(
+      account,
+      source.profilePublicInfo ?? defaults.profilePublicInfo,
+    ),
+    visualPreferences: normalizeVisualPreferences(source.visualPreferences ?? defaults.visualPreferences),
+  };
+}
+
+function readStoredWorkspace(account) {
+  const storageKey = getWorkspaceStorageKey(account);
+  if (!storageKey || typeof localStorage === 'undefined') return null;
+  try {
+    const saved = localStorage.getItem(storageKey);
+    return saved ? normalizeWorkspaceSnapshot(JSON.parse(saved), account) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredWorkspace(account, snapshot) {
+  const storageKey = getWorkspaceStorageKey(account);
+  if (!storageKey || typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(normalizeWorkspaceSnapshot(snapshot, account)));
+  } catch {
+    // Sem armazenamento local, o workspace continua apenas na sessao atual.
+  }
 }
 
 function createDefaultResumeDetails() {
@@ -1278,6 +1703,33 @@ function getProfileSampleHandles(profile, offset = 0, limit = 3) {
   return handles.slice(offset, offset + limit);
 }
 
+function getPostAuthorHandle(post) {
+  if (post?.authorHandle) return post.authorHandle;
+  const profile = getSocialProfileByName(post?.author);
+  return profile?.handle ?? getUserHandle({ name: post?.author });
+}
+
+function getProfilePosts(profile, posts = []) {
+  if (!profile) return [];
+  const profileName = profile.name?.toLowerCase?.() ?? '';
+  return posts.filter((post) => (
+    getPostAuthorHandle(post) === profile.handle ||
+    post.author?.toLowerCase?.() === profileName
+  ));
+}
+
+function getOwnProfilePosts(currentUser, posts = []) {
+  if (!currentUser) return [];
+  const handle = getUserHandle(currentUser);
+  const name = currentUser.name?.toLowerCase?.() ?? '';
+  const email = currentUser.email?.toLowerCase?.() ?? '';
+  return posts.filter((post) => (
+    post.authorHandle === handle ||
+    post.authorEmail?.toLowerCase?.() === email ||
+    post.author?.toLowerCase?.() === name
+  ));
+}
+
 function getProfileEvents(profile, communityEvents = []) {
   if (!profile) return [];
   const ownerTokens = [
@@ -1288,6 +1740,7 @@ function getProfileEvents(profile, communityEvents = []) {
   ].filter(Boolean).map((token) => token.toLowerCase());
 
   return [...communityEvents, ...scheduledEvents].filter((event) => {
+    if (event.creatorHandle === profile.handle) return true;
     const haystack = `${event.owner ?? ''} ${event.creatorName ?? ''} ${event.title ?? ''} ${event.description ?? ''}`.toLowerCase();
     return ownerTokens.some((token) => haystack.includes(token));
   });
@@ -1299,6 +1752,7 @@ function getProfileOpportunities(profile, jobs = []) {
   const handleName = profile.handle?.replace('@', '').toLowerCase() ?? '';
 
   return jobs.filter((job) => {
+    if (job.creatorHandle === profile.handle) return true;
     const haystack = `${job.company ?? ''} ${job.title ?? ''} ${job.description ?? ''}`.toLowerCase();
     if (profile.name === 'MeetPoint Oficial') return ['Core Academy', 'Clube de Benefícios'].includes(job.company);
     if (profile.name === 'Associação Empresarial') return ['Agência Norte', 'Hub Londrina Centro', 'Restaurante Central'].includes(job.company);
@@ -1308,8 +1762,10 @@ function getProfileOpportunities(profile, jobs = []) {
 
 function getOwnProfileEvents(currentUser, communityEvents = []) {
   if (!currentUser) return [];
+  const currentHandle = getUserHandle(currentUser);
   const tokens = [currentUser.name, currentUser.email].filter(Boolean).map((token) => token.toLowerCase());
   return [...communityEvents, ...scheduledEvents].filter((event) => {
+    if (event.creatorHandle === currentHandle) return true;
     const owner = `${event.owner ?? ''} ${event.creatorName ?? ''} ${event.creatorEmail ?? ''}`.toLowerCase();
     return tokens.some((token) => owner.includes(token));
   });
@@ -1317,43 +1773,46 @@ function getOwnProfileEvents(currentUser, communityEvents = []) {
 
 function getOwnProfileOpportunities(currentUser, jobs = []) {
   if (!currentUser) return [];
+  const currentHandle = getUserHandle(currentUser);
   const tokens = [currentUser.name, currentUser.company].filter(Boolean).map((token) => token.toLowerCase());
   return jobs.filter((job) => {
+    if (job.creatorHandle === currentHandle || job.creatorEmail === currentUser.email) return true;
     const company = job.company?.toLowerCase?.() ?? '';
     return tokens.some((token) => company.includes(token));
   });
 }
 
-function getViewedProfileStats(profile, socialGraph, profileEvents = [], profileOpportunities = []) {
+function getViewedProfileStats(profile, socialGraph, profilePosts = [], profileEvents = [], profileOpportunities = []) {
   const followerDelta = socialGraph?.followerDeltas?.[profile?.handle] ?? 0;
   return {
     friends: getProfileSampleHandles(profile, 1, 3).length,
     followers: Math.max((profile?.followers ?? 0) + followerDelta, 0),
     following: getProfileSampleHandles(profile, 0, 3).length,
-    posts: profile?.posts ?? 0,
+    posts: profilePosts.length,
     events: profileEvents.length,
     opportunities: profileOpportunities.length,
   };
 }
 
-function getOwnProfileStats(socialGraph, profileEvents = [], profileOpportunities = []) {
+function getOwnProfileStats(socialGraph, profilePosts = [], profileEvents = [], profileOpportunities = []) {
   const defaultGraph = createDefaultSocialGraph();
   const graph = { ...defaultGraph, ...(socialGraph ?? {}) };
   return {
     friends: ownSocialBaseStats.friends + (graph.friendHandles.length - defaultGraph.friendHandles.length),
     followers: ownSocialBaseStats.followers + (graph.followerHandles.length - defaultGraph.followerHandles.length),
     following: ownSocialBaseStats.following + (graph.followingHandles.length - defaultGraph.followingHandles.length),
+    posts: profilePosts.length,
     events: profileEvents.length,
     opportunities: profileOpportunities.length,
   };
 }
 
-function formatSocialCount(value) {
-  if (value >= 1000) {
-    const rounded = Math.round((value / 1000) * 10) / 10;
-    return `${String(rounded).replace('.', ',')}k`;
-  }
-  return String(value);
+function formatExactCount(value) {
+  return new Intl.NumberFormat('pt-BR').format(Number(value) || 0);
+}
+
+function formatCountLabel(value, singular, plural) {
+  return Number(value) === 1 ? singular : plural;
 }
 
 function getAccountTypeLabel(accountOrSegment) {
@@ -1451,7 +1910,7 @@ function createGuestWorkspace() {
     courseProgress: {},
     coursePaymentStatus: {},
     courseCompletionStep: {},
-    profilePhoto: '',
+    profilePhoto: account.profilePhoto ?? '',
     userPoints: 0,
     jobApplications: [],
     benefitRedemptions: [],
@@ -1528,32 +1987,60 @@ function App() {
   // Estado central da aplicação: páginas, autenticação, dados mockados e ações do usuário.
   const initialRoute = useMemo(() => getCurrentRouteState(), []);
   
-  // Lista de rotas protegidas (requerem usuário autenticado)
-  const protectedRoutes = ['feed', 'courses', 'communities', 'opportunities', 'benefits', 'events', 'rewards', 'partners', 'course-create', 'course-builder', 'checkout', 'community-create', 'event-create', 'subscription-checkout'];
+  // Rotas com dados privados ou alteração de estado. Feed, oportunidades, eventos e benefícios são leitura pública.
+  const protectedRoutes = ['courses', 'communities', 'rewards', 'private-chat', 'course-create', 'course-builder', 'checkout', 'community-create', 'event-create'];
+  const subscriptionRequiredRoutes = ['courses', 'communities', 'rewards', 'private-chat', 'course-create', 'course-builder', 'checkout', 'community-create', 'event-create'];
   
-  // Carregar estado de autenticação do localStorage para persistência
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('currentUser');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [authToken, setAuthToken] = useState('');
+  // Autenticação real: persiste apenas o token emitido pelo backend.
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('authToken') ?? '');
 
   function resolveAccessiblePage(pageId, user = currentUser) {
     if (user && pageId === 'home') return 'feed';
     if (!user && protectedRoutes.includes(pageId)) return 'profile';
+    if (user && subscriptionRequiredRoutes.includes(pageId) && !hasActivePlatformSubscription(user)) {
+      return 'partners';
+    }
     return pageId;
   }
   
   const [activePage, setActivePage] = useState(() => {
-    return resolveAccessiblePage(initialRoute.page);
+    const startupRoute = !currentUser && isPublicDomainEntry() ? buildRouteState('feed') : initialRoute;
+    return resolveAccessiblePage(startupRoute.page, currentUser);
   });
   const [authMode, setAuthMode] = useState(
     activePage === 'profile' && initialRoute.signupMode ? 'signup' : 'login',
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreAuthenticatedUser() {
+      if (!authToken) {
+        localStorage.removeItem('currentUser');
+        return;
+      }
+
+      try {
+        const result = await authenticatedUserRequest(authToken);
+        if (cancelled) return;
+        activateUserSession(mapBackendUserToAccount(result.user), authToken);
+      } catch {
+        if (cancelled) return;
+        setAuthToken('');
+        setCurrentUser(null);
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('currentUser');
+      }
+    }
+
+    restoreAuthenticatedUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [communities, setCommunities] = useState(initialCommunities);
   const [niches, setNiches] = useState(defaultNiches);
   const [activeCommunityId, setActiveCommunityId] = useState('growth');
@@ -1589,7 +2076,13 @@ function App() {
   const [profileResumeDetails, setProfileResumeDetails] = useState(createDefaultResumeDetails);
   const [profilePublicInfo, setProfilePublicInfo] = useState(createDefaultProfileInfo(null));
   const [selectedPartnerPlanId, setSelectedPartnerPlanId] = useState('pf');
-  const [profileSessions, setProfileSessions] = useState({});
+  const [profileSessions, setProfileSessions] = useState(() => {
+    const sessionKey = getAccountSessionKey(currentUser);
+    const storedWorkspace = readStoredWorkspace(currentUser);
+    return sessionKey && storedWorkspace ? { [sessionKey]: storedWorkspace } : {};
+  });
+  const workspaceHydratedRef = useRef(false);
+  const skipInitialWorkspacePersistRef = useRef(true);
   const [securityWarning, setSecurityWarning] = useState('');
   const [headerCompact, setHeaderCompact] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
@@ -1601,9 +2094,15 @@ function App() {
   const [mediaViewer, setMediaViewer] = useState(null);
   const [mediaViewerScrollY, setMediaViewerScrollY] = useState(0);
   const [mediaViewerFocusElement, setMediaViewerFocusElement] = useState(null);
-  const [visualPreferences, setVisualPreferences] = useState(createDefaultVisualPreferences);
+  const [visualPreferences, setVisualPreferences] = useState(() =>
+    readStoredVisualPreferences(currentUser),
+  );
+  const [systemThemeTick, setSystemThemeTick] = useState(0);
   const [notificationDockOpen, setNotificationDockOpen] = useState(false);
   const [supportRequestContext, setSupportRequestContext] = useState(null);
+  const [privacyGate, setPrivacyGate] = useState(null);
+  const [authGate, setAuthGate] = useState(null);
+  const [subscriptionGate, setSubscriptionGate] = useState(null);
 
   const activeCommunity = useMemo(
     () => communities.find((community) => community.id === activeCommunityId),
@@ -1640,12 +2139,12 @@ function App() {
     () =>
       currentUser
         ? navigation.filter((item) => item.id !== 'home')
-        : navigation.filter((item) => item.id === 'home'),
+        : navigation.filter((item) => publicReadPageIds.includes(item.id)),
     [currentUser],
   );
   const visiblePrimaryMobilePageIds = currentUser
     ? loggedInPrimaryMobilePageIds
-    : primaryMobilePageIds.filter((id) => id === 'home');
+    : guestPrimaryMobilePageIds;
   const primaryMobileNavigation = visibleNavigation.filter((item) =>
     visiblePrimaryMobilePageIds.includes(item.id),
   );
@@ -1678,10 +2177,108 @@ function App() {
     });
   }
 
+  function requestAuthentication(actionLabel = 'continuar') {
+    setAuthGate({
+      id: Date.now(),
+      actionLabel,
+    });
+  }
+
+  function requestPrivacyConsent(actionLabel = 'continuar') {
+    setPrivacyGate({
+      id: Date.now(),
+      actionLabel,
+    });
+  }
+
+  function requestSubscriptionActivation(actionLabel = 'continuar') {
+    setSubscriptionGate({
+      id: Date.now(),
+      actionLabel,
+    });
+  }
+
+  async function acceptPrivacyConsent() {
+    if (!currentUser) {
+      setPrivacyGate(null);
+      requestAuthentication('aceitar termos de privacidade');
+      return;
+    }
+
+    const fallbackConsent = createPrivacyConsentRecord(currentUser.id ?? currentUser.email);
+    let privacyConsent = fallbackConsent;
+    try {
+      privacyConsent = await privacyConsentRequest(fallbackConsent);
+    } catch {
+      privacyConsent = fallbackConsent;
+    }
+    const nextUser = {
+      ...currentUser,
+      termsConsent: {
+        ...(currentUser.termsConsent ?? {}),
+        termsVersion: TERMS_VERSION,
+        acceptedAt: privacyConsent.acceptedAt,
+        userAgent: privacyConsent.userAgent,
+      },
+      privacyConsent,
+    };
+    setCurrentUser(nextUser);
+    localStorage.removeItem('currentUser');
+    setPrivacyGate(null);
+  }
+
+  function markSubscriptionPaymentProcessing(plan, intent = {}) {
+    if (!currentUser) return;
+    const nextUser = {
+      ...currentUser,
+      accountStatus: 'PAYMENT_PROCESSING',
+      subscriptionActive: false,
+      subscription: {
+        ...createPendingSubscriptionRecord(plan?.id ?? ''),
+        planId: plan?.id ?? '',
+        subscriptionPlanId: plan?.subscriptionPlanId ?? '',
+        status: intent.status ?? 'PENDING_PAYMENT',
+        paymentProvider: intent.paymentProvider ?? 'mock',
+        externalSubscriptionId: intent.externalSubscriptionId ?? '',
+      },
+    };
+    setCurrentUser(nextUser);
+    localStorage.removeItem('currentUser');
+  }
+
+  function requireAuthenticatedAction(actionLabel) {
+    if (currentUser) {
+      if (!hasValidPrivacyConsent(currentUser)) {
+        requestPrivacyConsent(actionLabel);
+        return false;
+      }
+      if (!hasActivePlatformSubscription(currentUser)) {
+        requestSubscriptionActivation(actionLabel);
+        return false;
+      }
+      return true;
+    }
+    requestAuthentication(actionLabel);
+    return false;
+  }
+
+  function requireAuthenticatedConsent(actionLabel) {
+    if (currentUser && hasValidPrivacyConsent(currentUser)) return true;
+    if (currentUser) {
+      requestPrivacyConsent(actionLabel);
+      return false;
+    }
+    requestAuthentication(actionLabel);
+    return false;
+  }
+
   // Rota inicial e botao voltar do navegador: mantem query string e tela ativa sincronizadas.
   useEffect(() => {
-    const initialRoute = getCurrentRouteState();
-    const initialPage = resolveAccessiblePage(initialRoute.page);
+    const rawInitialRoute = getCurrentRouteState();
+    const initialRoute = !currentUser && isPublicDomainEntry()
+      ? buildRouteState('feed')
+      : rawInitialRoute;
+    const initialPage = resolveAccessiblePage(initialRoute.page, currentUser);
     const initialHistoryRoute =
       initialPage === initialRoute.page
         ? initialRoute
@@ -1695,6 +2292,8 @@ function App() {
     setActivePage(initialPage);
     if (initialPage === 'profile' && initialRoute.signupMode) {
       setAuthMode('signup');
+    } else if (initialPage !== 'profile') {
+      setAuthMode('login');
     }
 
     function handleBrowserNavigation(event) {
@@ -1796,7 +2395,6 @@ function App() {
       '.mobile-more-sheet',
       '.reaction-detail-popover',
       '.comment-panel',
-      '.private-chat-panel',
       '.private-chat-window',
       '.support-panel',
       '.notification-dock-window',
@@ -1980,14 +2578,37 @@ function App() {
     return () => observer.disconnect();
   }, [activePage, motionKey, jobs.length, communityEvents.length, createdCourses.length, currentUser?.email, userPoints]);
 
+  // Sessao por perfil: restaura o workspace persistido no reload da SPA.
+  useEffect(() => {
+    if (workspaceHydratedRef.current) return;
+    workspaceHydratedRef.current = true;
+    const sessionKey = getAccountSessionKey(currentUser);
+    if (!sessionKey) return;
+    const restoredWorkspace =
+      profileSessions[sessionKey] ??
+      readStoredWorkspace(currentUser) ??
+      createAccountWorkspace(currentUser);
+    setProfileSessions((current) => ({
+      ...current,
+      [sessionKey]: restoredWorkspace,
+    }));
+    applyWorkspaceSnapshot(restoredWorkspace, currentUser);
+  }, []);
+
   // Sessao por perfil: salva o estado local de cada conta para evitar misturar PF, PJ e empresa.
   useEffect(() => {
     const sessionKey = getAccountSessionKey(currentUser);
     if (!sessionKey) return;
+    if (skipInitialWorkspacePersistRef.current) {
+      skipInitialWorkspacePersistRef.current = false;
+      return;
+    }
+    const snapshot = getCurrentWorkspaceSnapshot();
     setProfileSessions((current) => ({
       ...current,
-      [sessionKey]: getCurrentWorkspaceSnapshot(),
+      [sessionKey]: snapshot,
     }));
+    writeStoredWorkspace(currentUser, snapshot);
   }, [
     currentUser?.email,
     currentUser?.segment,
@@ -2014,11 +2635,44 @@ function App() {
     visualPreferences,
   ]);
 
+  // Personalizacao persistente: tema e cores ficam salvos por conta e sobrevivem a reload.
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        getVisualPreferencesStorageKey(currentUser),
+        JSON.stringify(normalizeVisualPreferences(visualPreferences)),
+      );
+    } catch {
+      // Sem armazenamento local, a preferencia permanece apenas na sessao atual.
+    }
+  }, [currentUser?.email, currentUser?.segment, currentUser?.tenantId, visualPreferences]);
+
+  // Tema automatico: atualiza a interface quando o sistema alterna entre claro e escuro.
+  useEffect(() => {
+    const themeQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!themeQuery) return undefined;
+
+    const handleSystemThemeChange = () => setSystemThemeTick((tick) => tick + 1);
+    if (themeQuery.addEventListener) {
+      themeQuery.addEventListener('change', handleSystemThemeChange);
+      return () => themeQuery.removeEventListener('change', handleSystemThemeChange);
+    }
+    themeQuery.addListener(handleSystemThemeChange);
+    return () => themeQuery.removeListener(handleSystemThemeChange);
+  }, []);
+
   // Tema visual: aplica cores e filtros escolhidos no perfil em variaveis CSS globais.
   useEffect(() => {
     const root = document.documentElement;
-    root.dataset.theme = visualPreferences.mode;
-    const darkModePalette = visualPreferences.mode === 'dark'
+    const rawMode = visualPreferences.mode ?? defaultVisualPreferences.mode;
+    const systemPrefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    const effectiveMode = rawMode === 'auto' ? (systemPrefersDark ? 'dark' : 'light') : rawMode;
+    root.dataset.theme = effectiveMode;
+    root.dataset.themeMode = rawMode;
+    const baseLightPalette = rawMode === 'auto'
+      ? defaultVisualPreferences
+      : visualPreferences;
+    const darkModePalette = effectiveMode === 'dark'
       ? {
           primary: '#101216',
           secondary: '#2c3340',
@@ -2027,17 +2681,22 @@ function App() {
           text: '#f8fafc',
         }
       : {
-          primary: visualPreferences.primary,
-          secondary: visualPreferences.secondary,
-          button: visualPreferences.button,
-          highlight: visualPreferences.highlight,
-          text: visualPreferences.text ?? defaultVisualPreferences.text,
+          primary: baseLightPalette.primary,
+          secondary: baseLightPalette.secondary,
+          button: baseLightPalette.button,
+          highlight: baseLightPalette.highlight,
+          text: baseLightPalette.text ?? defaultVisualPreferences.text,
         };
+    const readableText = getReadableTextColor(darkModePalette.secondary, darkModePalette.text);
+    const buttonText = getReadableTextColor(darkModePalette.button);
+    const highlightText = getReadableTextColor(darkModePalette.highlight);
     root.style.setProperty('--custom-primary', darkModePalette.primary);
     root.style.setProperty('--custom-secondary', darkModePalette.secondary);
     root.style.setProperty('--custom-button', darkModePalette.button);
     root.style.setProperty('--custom-highlight', darkModePalette.highlight);
-    root.style.setProperty('--custom-text', darkModePalette.text);
+    root.style.setProperty('--custom-text', readableText);
+    root.style.setProperty('--custom-button-text', buttonText);
+    root.style.setProperty('--custom-highlight-text', highlightText);
     root.style.setProperty('--image-dim-opacity', `${visualPreferences.imageDim / 100}`);
     root.style.setProperty('--image-brightness', `${visualPreferences.imageBrightness}%`);
     root.style.setProperty(
@@ -2050,7 +2709,7 @@ function App() {
             ? 'saturate(0.92) hue-rotate(8deg)'
             : 'none',
     );
-  }, [visualPreferences]);
+  }, [visualPreferences, systemThemeTick]);
 
   // Captura tudo que pertence ao workspace visual da conta ativa.
   function getCurrentWorkspaceSnapshot() {
@@ -2081,54 +2740,64 @@ function App() {
 
   // Restaura o workspace de uma conta quando ela entra novamente.
   function applyWorkspaceSnapshot(snapshot, accountForDefaults = currentUser) {
-    setSelectedCourseId(snapshot.selectedCourseId ?? 'saas');
-    setCreatedCourses(snapshot.createdCourses ?? []);
-    setEditingCreatedCourseId(snapshot.editingCreatedCourseId ?? null);
-    setCheckoutCourseId(snapshot.checkoutCourseId ?? null);
-    setEnrollments(snapshot.enrollments ?? []);
-    setCourseProgress(snapshot.courseProgress ?? {});
-    setCoursePaymentStatus(snapshot.coursePaymentStatus ?? {});
-    setCourseCompletionStep(snapshot.courseCompletionStep ?? {});
-    setProfilePhoto(snapshot.profilePhoto ?? '');
-    setUserPoints(snapshot.userPoints ?? 0);
-    setJobApplications(snapshot.jobApplications ?? []);
-    setBenefitRedemptions(snapshot.benefitRedemptions ?? []);
-    setNotifications(snapshot.notifications ?? []);
-    setNotificationPrefs(snapshot.notificationPrefs ?? { ...initialNotificationPrefs });
-    setSocialGraph(snapshot.socialGraph ?? createDefaultSocialGraph());
-    setInterestScores(snapshot.interestScores ?? {});
-    setProfileResumeName(snapshot.profileResumeName ?? '');
+    const normalizedSnapshot = normalizeWorkspaceSnapshot(snapshot, accountForDefaults);
+    setSelectedCourseId(normalizedSnapshot.selectedCourseId ?? 'saas');
+    setCreatedCourses(normalizedSnapshot.createdCourses ?? []);
+    setEditingCreatedCourseId(normalizedSnapshot.editingCreatedCourseId ?? null);
+    setCheckoutCourseId(normalizedSnapshot.checkoutCourseId ?? null);
+    setEnrollments(normalizedSnapshot.enrollments ?? []);
+    setCourseProgress(normalizedSnapshot.courseProgress ?? {});
+    setCoursePaymentStatus(normalizedSnapshot.coursePaymentStatus ?? {});
+    setCourseCompletionStep(normalizedSnapshot.courseCompletionStep ?? {});
+    setProfilePhoto(normalizedSnapshot.profilePhoto ?? '');
+    setUserPoints(normalizedSnapshot.userPoints ?? 0);
+    setJobApplications(normalizedSnapshot.jobApplications ?? []);
+    setBenefitRedemptions(normalizedSnapshot.benefitRedemptions ?? []);
+    setNotifications(normalizedSnapshot.notifications ?? []);
+    setNotificationPrefs(normalizedSnapshot.notificationPrefs ?? { ...initialNotificationPrefs });
+    setSocialGraph(normalizedSnapshot.socialGraph ?? createDefaultSocialGraph());
+    setInterestScores(normalizedSnapshot.interestScores ?? {});
+    setProfileResumeName(normalizedSnapshot.profileResumeName ?? '');
     setProfileResumeDetails({
       ...createDefaultResumeDetails(),
-      ...(snapshot.profileResumeDetails ?? {}),
+      ...(normalizedSnapshot.profileResumeDetails ?? {}),
     });
-    setProfilePublicInfo(snapshot.profilePublicInfo ?? createDefaultProfileInfo(accountForDefaults));
-    setPrivateConversations(snapshot.privateConversations ?? initialPrivateConversations);
-    setVisualPreferences({
-      ...createDefaultVisualPreferences(),
-      ...(snapshot.visualPreferences ?? {}),
-    });
+    setProfilePublicInfo(normalizedSnapshot.profilePublicInfo);
+    setPrivateConversations(normalizedSnapshot.privateConversations ?? initialPrivateConversations);
+    setVisualPreferences(
+      normalizeVisualPreferences({
+        ...(normalizedSnapshot.visualPreferences ?? {}),
+        ...readStoredVisualPreferences(accountForDefaults),
+      }),
+    );
   }
 
-  // Login local/API: troca a conta ativa e carrega o estado isolado daquele perfil.
+  // Login real/API: troca a conta ativa e carrega o estado isolado daquele perfil.
   function activateUserSession(account, token = '') {
     const previousSessionKey = getAccountSessionKey(currentUser);
     const nextSessionKey = getAccountSessionKey(account);
     const nextWorkspace =
-      profileSessions[nextSessionKey] ?? createAccountWorkspace(account);
+      profileSessions[nextSessionKey] ??
+      readStoredWorkspace(account) ??
+      createAccountWorkspace(account);
 
     if (previousSessionKey) {
+      const previousSnapshot = getCurrentWorkspaceSnapshot();
       setProfileSessions((current) => ({
         ...current,
-        [previousSessionKey]: getCurrentWorkspaceSnapshot(),
+        [previousSessionKey]: previousSnapshot,
       }));
+      writeStoredWorkspace(currentUser, previousSnapshot);
     }
 
     setCurrentUser(account);
     setAuthToken(token);
-    // Persiste apenas o usuario demo. Token real deve ficar em cookie HttpOnly ou memoria.
-    localStorage.setItem('currentUser', JSON.stringify(account));
-    localStorage.removeItem('authToken');
+    localStorage.removeItem('currentUser');
+    if (token) {
+      localStorage.setItem('authToken', token);
+    } else {
+      localStorage.removeItem('authToken');
+    }
     applyWorkspaceSnapshot(nextWorkspace, account);
     setPreviousPage('profile');
     setActivePage('feed');
@@ -2140,10 +2809,12 @@ function App() {
   function logoutCurrentUser() {
     const sessionKey = getAccountSessionKey(currentUser);
     if (sessionKey) {
+      const snapshot = getCurrentWorkspaceSnapshot();
       setProfileSessions((current) => ({
         ...current,
-        [sessionKey]: getCurrentWorkspaceSnapshot(),
+        [sessionKey]: snapshot,
       }));
+      writeStoredWorkspace(currentUser, snapshot);
     }
     setCurrentUser(null);
     setAuthToken('');
@@ -2151,7 +2822,7 @@ function App() {
     localStorage.removeItem('currentUser');
     localStorage.removeItem('authToken');
     applyWorkspaceSnapshot(createGuestWorkspace(), null);
-    openPage('home', { allowHome: true });
+    openPage('feed', { allowHome: true });
   }
 
   // Navegacao SPA: atualiza a URL sem recarregar a aplicacao.
@@ -2177,6 +2848,22 @@ function App() {
       setActivePage('profile');
       syncBrowserHistory('profile');
       setMotionKey((value) => value + 1);
+      return;
+    }
+
+    if (
+      subscriptionRequiredRoutes.includes(targetPageId) &&
+      currentUser &&
+      !hasActivePlatformSubscription(currentUser)
+    ) {
+      requestSubscriptionActivation(`acessar ${getPageLabel(targetPageId)}`);
+      setPreviousPage(activePage);
+      setActivePage('partners');
+      syncBrowserHistory('partners');
+      setMotionKey((value) => value + 1);
+      setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 80);
       return;
     }
     
@@ -2235,6 +2922,7 @@ function App() {
   }
 
   function openCommunity(communityId) {
+    if (!requireAuthenticatedAction('entrar em comunidade')) return;
     const community = communities.find((item) => item.id === communityId);
     if (!community) return;
 
@@ -2248,6 +2936,7 @@ function App() {
   }
 
   function confirmCommunityAccess(password = '') {
+    if (!requireAuthenticatedAction('entrar em comunidade privada')) return;
     const community = communities.find((item) => item.id === communityAccessRequest?.communityId);
     if (!community) return;
 
@@ -2275,17 +2964,20 @@ function App() {
   }
 
   function openCommunityCreate() {
+    if (!requireAuthenticatedAction('criar comunidade')) return;
     openPage('community-create');
   }
 
   // Comunidades: cria grupo, seleciona automaticamente e sugere adicionar membros.
   function createCommunity(data) {
+    if (!requireAuthenticatedAction('criar comunidade')) return;
     const community = {
       id: `community-${Date.now()}`,
       name: data.name,
       topic: data.topic,
       type: data.type,
       relatedTo: data.relatedTo,
+      photo: data.photo ?? '',
       members: 1,
       unread: 0,
       privacy: data.accessMode === 'public' ? 'Público' : 'Privada',
@@ -2344,6 +3036,14 @@ function App() {
     );
   }
 
+  function updateCommunityPhoto(communityId, photo) {
+    setCommunities((current) =>
+      current.map((community) =>
+        community.id === communityId ? { ...community, photo } : community,
+      ),
+    );
+  }
+
   // Exclusao segura: comunidade so pode ser removida pelo admin quando estiver vazia.
   function deleteEmptyCommunity(communityId) {
     const community = communities.find((item) => item.id === communityId);
@@ -2380,6 +3080,7 @@ function App() {
         owner: event.owner ?? currentUser?.name ?? 'MeetPoint',
         creatorName: event.creatorName ?? currentUser?.name ?? event.owner ?? 'MeetPoint',
         creatorEmail: event.creatorEmail ?? currentUser?.email ?? '',
+        creatorHandle: event.creatorHandle ?? getUserHandle(currentUser),
         creatorSegment: event.creatorSegment ?? currentUser?.segment ?? 'local',
         location:
           event.location?.trim?.() ||
@@ -2450,10 +3151,15 @@ function App() {
       instructor: isCompany ? 'Equipe da empresa' : currentUser?.name ?? 'Você',
       company: companyLabel,
       publicationScope,
+      deliveryMode: courseData.deliveryMode ?? 'internal',
+      externalCourseUrl: normalizeExternalUrl(courseData.externalCourseUrl ?? ''),
+      externalPlatformName: courseData.externalPlatformName ?? '',
       creatorSegment: currentUser?.segment ?? 'local',
       creatorEmail: currentUser?.email ?? '',
       liveDate: courseData.liveDate,
       color: courseData.isFree ? 'yellow' : 'blue',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       students: 0,
       revenue: 0,
       platformFeeRevenue: 0,
@@ -2481,6 +3187,7 @@ function App() {
         return {
           ...course,
           published: true,
+          updatedAt: new Date().toISOString(),
           students,
           revenue: split.gross,
           platformFeeRevenue: split.platformFee,
@@ -2494,7 +3201,7 @@ function App() {
     setCreatedCourses((current) =>
       current.map((course) =>
         course.id === courseId
-          ? { ...course, ...patch }
+          ? { ...course, ...patch, updatedAt: new Date().toISOString() }
           : course,
       ),
     );
@@ -2504,7 +3211,7 @@ function App() {
     setCreatedCourses((current) =>
       current.map((course) =>
         course.id === courseId
-          ? { ...course, modules }
+          ? { ...course, modules, updatedAt: new Date().toISOString() }
           : course,
       ),
     );
@@ -2618,6 +3325,7 @@ function App() {
 
   // Rede social: seguir, amizade, bloqueio e notificacoes ficam no App para valer em Feed e Perfil.
   function followProfile(handle) {
+    if (!requireAuthenticatedAction('seguir perfil')) return;
     const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
     const isBlocked = socialGraph.blockedHandles.includes(handle);
     if (isBlocked) {
@@ -2648,6 +3356,7 @@ function App() {
   }
 
   function requestFriendship(handle) {
+    if (!requireAuthenticatedAction('enviar solicitação de amizade')) return;
     const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
     if (socialGraph.blockedHandles.includes(handle) || socialGraph.friendHandles.includes(handle)) return;
 
@@ -2663,12 +3372,19 @@ function App() {
   }
 
   function resolveFriendship(handle, accepted) {
+    if (!requireAuthenticatedAction(accepted ? 'aceitar amizade' : 'recusar amizade')) return;
     const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
     setSocialGraph((current) => ({
       ...current,
       sentFriendRequestHandles: current.sentFriendRequestHandles.filter((item) => item !== handle),
       friendHandles: accepted ? uniqueItems([...current.friendHandles, handle]) : current.friendHandles,
       followingHandles: accepted ? uniqueItems([...current.followingHandles, handle]) : current.followingHandles,
+      followerDeltas: accepted
+        ? {
+            ...current.followerDeltas,
+            [handle]: Math.max((current.followerDeltas[handle] ?? 0) + (current.followingHandles.includes(handle) ? 0 : 1), 0),
+          }
+        : current.followerDeltas,
     }));
     addNotification({
       title: accepted ? `${profile.name} agora está nos seus amigos.` : `Solicitação para ${profile.name} foi cancelada.`,
@@ -2678,11 +3394,13 @@ function App() {
   }
 
   function acceptIncomingFriendRequest(handle) {
+    if (!requireAuthenticatedAction('aceitar amizade')) return;
     const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
     setSocialGraph((current) => ({
       ...current,
       incomingFriendRequestHandles: current.incomingFriendRequestHandles.filter((item) => item !== handle),
       friendHandles: uniqueItems([...current.friendHandles, handle]),
+      followerHandles: uniqueItems([...current.followerHandles, handle]),
     }));
     addNotification({
       title: `Você aceitou a solicitação de ${profile.name}.`,
@@ -2692,6 +3410,7 @@ function App() {
   }
 
   function rejectIncomingFriendRequest(handle) {
+    if (!requireAuthenticatedAction('recusar amizade')) return;
     const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
     setSocialGraph((current) => ({
       ...current,
@@ -2705,6 +3424,7 @@ function App() {
   }
 
   function blockProfile(handle) {
+    if (!requireAuthenticatedAction('bloquear perfil')) return;
     const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
     const wasFollowing = socialGraph.followingHandles.includes(handle);
     setSocialGraph((current) => ({
@@ -2728,6 +3448,7 @@ function App() {
   }
 
   function unblockProfile(handle) {
+    if (!requireAuthenticatedAction('desbloquear perfil')) return;
     const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
     setSocialGraph((current) => ({
       ...current,
@@ -2741,6 +3462,7 @@ function App() {
   }
 
   function removeFollower(handle) {
+    if (!requireAuthenticatedAction('remover seguidor')) return;
     const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
     setSocialGraph((current) => ({
       ...current,
@@ -2755,6 +3477,7 @@ function App() {
 
   function openPrivateConversationWithProfile(profile) {
     if (!profile) return;
+    if (!requireAuthenticatedAction('enviar mensagem privada')) return;
     setPrivateConversations((current) => {
       const existing = current.find(
         (conversation) =>
@@ -2803,6 +3526,7 @@ function App() {
 
   // Feed: cria publicacao com texto/midia, cidade, autor e pontuacao.
   function createFeedPost({ body, media, city, tag }) {
+    if (!requireAuthenticatedAction('publicar no feed')) return null;
     const content = body.trim();
     if (!content && !media) return null;
     const postId = `post-${Date.now()}`;
@@ -2810,6 +3534,8 @@ function App() {
       {
         id: postId,
         author: currentUser?.name ?? 'Visitante',
+        authorHandle: getUserHandle(currentUser),
+        authorEmail: currentUser?.email ?? '',
         role: currentUser?.label ?? 'Membro',
         initials: currentUser?.initials ?? 'MP',
         photo: profilePhoto,
@@ -2845,12 +3571,15 @@ function App() {
   }
   // Compartilhar: republica o post no topo do feed preservando origem.
   function shareFeedPost(post) {
+    if (!requireAuthenticatedAction('compartilhar publicação')) return null;
     const shareId = `share-${Date.now()}`;
     recordFeedInterest(post, 'share');
     setFeedPosts((current) => [
       {
         id: shareId,
         author: currentUser?.name ?? 'Visitante',
+        authorHandle: getUserHandle(currentUser),
+        authorEmail: currentUser?.email ?? '',
         role: currentUser?.label ?? 'Membro',
         initials: currentUser?.initials ?? 'MP',
         photo: profilePhoto,
@@ -2886,6 +3615,7 @@ function App() {
 
   // Reacoes: alterna curtir/amei/quente sem abrir a janela de detalhes.
   function reactToFeedPost(postId, reaction) {
+    if (!requireAuthenticatedAction('reagir à publicação')) return;
     const currentPost = feedPosts.find((post) => post.id === postId);
     if (currentPost?.selectedReaction !== reaction) {
       recordFeedInterest(currentPost, 'reaction');
@@ -2919,6 +3649,7 @@ function App() {
 
   // Comentarios: adiciona comentario no post e pontua a interacao.
   function commentOnFeedPost(postId, body) {
+    if (!requireAuthenticatedAction('comentar no feed')) return null;
     const content = body.trim();
     if (!content) return null;
     recordFeedInterest(postId, 'comment');
@@ -2948,6 +3679,7 @@ function App() {
   }
 
   function editFeedPost(postId, nextBody) {
+    if (!requireAuthenticatedAction('editar publicação')) return;
     const content = nextBody.trim();
     if (!content) return;
     setFeedPosts((current) =>
@@ -2956,10 +3688,12 @@ function App() {
   }
 
   function deleteFeedPost(postId) {
+    if (!requireAuthenticatedAction('excluir publicação')) return;
     setFeedPosts((current) => current.filter((post) => post.id !== postId));
   }
 
   function editFeedComment(postId, commentId, nextBody) {
+    if (!requireAuthenticatedAction('editar comentário')) return;
     const content = nextBody.trim();
     if (!content) return;
     setFeedPosts((current) =>
@@ -2977,6 +3711,7 @@ function App() {
   }
 
   function deleteFeedComment(postId, commentId) {
+    if (!requireAuthenticatedAction('excluir comentário')) return;
     setFeedPosts((current) =>
       current.map((post) =>
         post.id === postId
@@ -2988,6 +3723,7 @@ function App() {
 
   // Eventos: cria chamada no feed/comunidade e envia notificacao local.
   function createEventCall(eventData) {
+    if (!requireAuthenticatedAction('criar evento')) return;
     const mode = eventData.mode || 'Online';
     const price = Number(eventData.price || 0);
     const capacity = Number(eventData.capacity || 60);
@@ -2998,6 +3734,7 @@ function App() {
       owner: currentUser?.name ?? 'MeetPoint',
       creatorName: currentUser?.name ?? 'MeetPoint',
       creatorEmail: currentUser?.email ?? '',
+      creatorHandle: getUserHandle(currentUser),
       creatorSegment: currentUser?.segment ?? 'local',
       mode,
       location:
@@ -3030,6 +3767,7 @@ function App() {
   // Eventos: registra participante e cria alerta visível para quem publicou o evento.
   function registerEventAttendance(event, attendeeData) {
     if (!currentUser) {
+      requestAuthentication('inscrever-se em evento');
       return {
         ok: false,
         message: 'Entre na conta para confirmar presença neste evento.',
@@ -3043,12 +3781,12 @@ function App() {
     const documentNumber = attendeeData.documentNumber.trim();
     const requiresDocument = (event.requiredFields ?? []).includes('document');
 
-    if (!fullName || !email || !whatsapp || (requiresDocument && onlyDigits(documentNumber).length < 11)) {
+    if (!fullName || !isValidRealContactEmail(email) || !whatsapp || (requiresDocument && onlyDigits(documentNumber).length < 11)) {
       return {
         ok: false,
         message: requiresDocument
-          ? 'Preencha nome, email, WhatsApp e documento válido para concluir a inscrição.'
-          : 'Preencha nome, email e WhatsApp para concluir a inscrição.',
+          ? 'Preencha nome, email real, WhatsApp e documento válido para concluir a inscrição.'
+          : 'Preencha nome, email real e WhatsApp para concluir a inscrição.',
       };
     }
 
@@ -3118,6 +3856,7 @@ function App() {
 
   // Oportunidades: empresa publica vaga, freela, servico, espaco ou parceria.
   function createJob(jobData) {
+    if (!requireAuthenticatedAction('criar oportunidade')) return;
     const title = jobData.title.trim();
     const company = jobData.company.trim();
     if (!title || !company) return;
@@ -3144,6 +3883,10 @@ function App() {
         rhEmail: jobData.rhEmail?.trim() || 'rh@empresa.com',
         whatsapp: jobData.whatsapp?.trim() || '+55 00 00000-0000',
         contactMethods,
+        creatorName: currentUser?.name ?? company,
+        creatorEmail: currentUser?.email ?? '',
+        creatorHandle: getUserHandle(currentUser),
+        creatorSegment: currentUser?.segment ?? 'local',
         applicants: 0,
       },
       ...current,
@@ -3156,6 +3899,8 @@ function App() {
 
   // Candidatura: envia curriculo do perfil ou arquivo importado para o RH da vaga.
   function applyToJob(job, resumeName) {
+    if (!requireAuthenticatedAction('candidatar-se à oportunidade')) return;
+    const notificationEmail = getContactEmail(currentUser);
     setJobApplications((current) =>
       current.some((application) => application.jobId === job.id)
         ? current
@@ -3166,7 +3911,7 @@ function App() {
               jobTitle: job.title,
               company: job.company,
               candidateName: currentUser?.name ?? 'Visitante',
-              candidateEmail: currentUser?.email ?? 'sem-email@local',
+              candidateEmail: notificationEmail || 'sem-email@local',
               resumeName,
               rhEmail: job.rhEmail,
               status: 'Enviada ao RH',
@@ -3191,7 +3936,9 @@ function App() {
 
   // Beneficios: valida assinatura/pontos e simula envio por app, email e WhatsApp.
   function redeemBenefit(benefitId) {
-    if (!currentUser?.subscriptionActive || !currentUser?.email) return;
+    if (!requireAuthenticatedAction('resgatar benefício')) return;
+    const notificationEmail = getContactEmail(currentUser);
+    if (!currentUser?.subscriptionActive || !notificationEmail) return;
     const benefit = benefits.find((item) => item.id === benefitId);
     if (!benefit || benefitRedemptions.includes(benefitId) || userPoints < benefit.pointsCost) {
       return;
@@ -3202,8 +3949,8 @@ function App() {
       benefitId,
       benefitTitle: benefit.title,
       recipientName: currentUser.name,
-      recipientEmail: currentUser.email,
-      maskedRecipientEmail: maskEmail(currentUser.email),
+      recipientEmail: notificationEmail,
+      maskedRecipientEmail: maskEmail(notificationEmail),
       subject: benefit.emailSubject ?? `Seu benefício ${benefit.title}`,
       body: benefit.emailBody ?? 'Benefício resgatado na plataforma MeetPoint.',
       assetName: benefit.deliveryAssetName ?? 'beneficio-digital.pdf',
@@ -3224,7 +3971,7 @@ function App() {
     setNotifications((current) => [
       {
         id: `notice-benefit-email-${Date.now()}`,
-        title: `Benefício "${benefit.title}" enviado para ${maskEmail(currentUser.email)}.`,
+        title: `Benefício "${benefit.title}" enviado para ${maskEmail(notificationEmail)}.`,
         channel: 'email',
         read: false,
       },
@@ -3240,6 +3987,7 @@ function App() {
 
   // Admin central: cadastra beneficio que depois sera entregue no resgate.
   function createBenefit(draft) {
+    if (!requireAuthenticatedAction('criar benefício')) return null;
     if (currentUser?.segment !== 'platform') return null;
     const title = draft.title.trim();
     const partner = draft.partner.trim();
@@ -3279,6 +4027,7 @@ function App() {
 
   // Parceiros: registra interesse e direciona para checkout de assinatura.
   function registerPartnerLead(planId) {
+    if (!requireAuthenticatedConsent('assinar plano')) return;
     setPartnerLeads((current) =>
       current.includes(planId) ? current : [...current, planId],
     );
@@ -3289,7 +4038,7 @@ function App() {
   return (
     <main className="platform">
       <header className={headerCompact ? 'topbar compact' : 'topbar'}>
-        <button className="brand-button" type="button" onClick={() => openPage(currentUser ? 'feed' : 'home')}>
+        <button className="brand-button" type="button" onClick={() => openPage('feed')}>
           <span>MP</span>
           MeetPoint
         </button>
@@ -3308,7 +4057,7 @@ function App() {
           ))}
         </nav>
 
-        <div className="account-actions">
+        <div className={currentUser ? 'account-actions signed-in-actions' : 'account-actions guest-actions'}>
           {currentUser && (
             <FloatingNotificationDock
               unreadNotifications={notifications.filter((notice) => !notice.read).length + eventCreatorUnreadCount}
@@ -3350,33 +4099,54 @@ function App() {
         </div>
       )}
 
-      <nav className="mobile-tabbar" aria-label="Navegação rápida mobile">
-        {primaryMobileNavigation.map((item) => (
-          <button
-            className={activePage === item.id ? 'active' : ''}
-            key={item.id}
-            type="button"
-            onClick={() => openPage(item.id)}
-          >
-            <span aria-hidden="true">{mobileNavigationIcons[item.id]}</span>
-            <small>{item.label}</small>
-          </button>
-        ))}
-        {secondaryMobileNavigation.length > 0 && (
-          <button
-            className={
-              secondaryMobileNavigation.some((item) => item.id === activePage)
-                ? 'active mobile-more-trigger'
-                : 'mobile-more-trigger'
-            }
-            type="button"
-            onClick={() => setMobileMoreOpen(true)}
-          >
-            <span aria-hidden="true">☰</span>
-            <small>Mais</small>
-          </button>
-        )}
-      </nav>
+      {visibleNavigation.length > 0 && (
+        <nav className="mobile-tabbar mobile-bottom-dock" aria-label="Navegação rápida mobile">
+          {primaryMobileNavigation.slice(0, 1).map((item) => (
+            <button
+              aria-current={activePage === item.id ? 'page' : undefined}
+              aria-label={`Ir para ${item.label}`}
+              className={activePage === item.id ? 'dock-side-button active' : 'dock-side-button'}
+              key={item.id}
+              type="button"
+              onClick={() => openPage(item.id)}
+            >
+              <MobileNavIcon name={mobileNavigationIconNames[item.id]} />
+              <small>{getMobileTabLabel(item)}</small>
+            </button>
+          ))}
+          <div className="dock-main-pill" role="group" aria-label="Áreas principais">
+            {primaryMobileNavigation.slice(1).map((item) => (
+              <button
+                aria-current={activePage === item.id ? 'page' : undefined}
+                aria-label={`Ir para ${item.label}`}
+                className={activePage === item.id ? 'dock-item active' : 'dock-item'}
+                key={item.id}
+                type="button"
+                onClick={() => openPage(item.id)}
+              >
+                <MobileNavIcon name={mobileNavigationIconNames[item.id]} />
+                <small>{getMobileTabLabel(item)}</small>
+              </button>
+            ))}
+          </div>
+          {(secondaryMobileNavigation.length > 0 || currentUser) && (
+            <button
+              aria-label="Abrir mais páginas"
+              aria-expanded={mobileMoreOpen}
+              className={
+                secondaryMobileNavigation.some((item) => item.id === activePage)
+                  ? 'dock-side-button dock-more-button active mobile-more-trigger'
+                  : 'dock-side-button dock-more-button mobile-more-trigger'
+              }
+              type="button"
+              onClick={() => setMobileMoreOpen(true)}
+            >
+              <MobileNavIcon name="more" />
+              <small>Mais</small>
+            </button>
+          )}
+        </nav>
+      )}
       {mobileMoreOpen && (
         <div className="mobile-more-backdrop" onClick={() => setMobileMoreOpen(false)}>
           <section className="mobile-more-sheet" onClick={(event) => event.stopPropagation()}>
@@ -3394,10 +4164,27 @@ function App() {
                   type="button"
                   onClick={() => openPage(item.id)}
                 >
-                  <span aria-hidden="true">{mobileNavigationIcons[item.id]}</span>
+                  <span aria-hidden="true">
+                    <MobileNavIcon name={mobileNavigationIconNames[item.id]} />
+                  </span>
                   <strong>{item.label}</strong>
                 </button>
               ))}
+              {currentUser && (
+                <button
+                  className="mobile-more-logout"
+                  type="button"
+                  onClick={() => {
+                    setMobileMoreOpen(false);
+                    logoutCurrentUser();
+                  }}
+                >
+                  <span aria-hidden="true">
+                    <MobileNavIcon name="user" />
+                  </span>
+                  <strong>Sair</strong>
+                </button>
+              )}
             </div>
           </section>
         </div>
@@ -3548,6 +4335,7 @@ function App() {
               addCommunityMember={addCommunityMember}
               removeCommunityMember={removeCommunityMember}
               updateCommunityName={updateCommunityName}
+              updateCommunityPhoto={updateCommunityPhoto}
               deleteEmptyCommunity={deleteEmptyCommunity}
             />
           )}
@@ -3584,10 +4372,12 @@ function App() {
               eventRegistrations={eventRegistrations}
               openPage={openPage}
               registerEventAttendance={registerEventAttendance}
+              requestAuthentication={requestAuthentication}
             />
           )}
           {activePage === 'profile' && (
             <ProfileView
+              posts={feedPosts}
               enrollments={enrollments}
               courseProgress={courseProgress}
               coursePaymentStatus={coursePaymentStatus}
@@ -3623,6 +4413,7 @@ function App() {
               benefitEmailDeliveries={benefitEmailDeliveries}
               visualPreferences={visualPreferences}
               setVisualPreferences={setVisualPreferences}
+              openPrivacyCenter={() => requestPrivacyConsent('consultar termos e privacidade')}
             />
           )}
           {activePage === 'opportunities' && (
@@ -3637,6 +4428,23 @@ function App() {
               setProfileResumeDetails={setProfileResumeDetails}
               currentUser={currentUser}
               openPage={openPage}
+              requestAuthentication={requestAuthentication}
+            />
+          )}
+          {activePage === 'private-chat' && (
+            <PrivateChatWidget
+              conversations={privateConversations}
+              currentUser={currentUser}
+              isOpen
+              asPage
+              onOpenChange={setPrivateChatOpen}
+              onClosePage={() => goBack('feed')}
+              socialGraph={socialGraph}
+              requestedConversationHandle={requestedPrivateConversation}
+              clearRequestedConversation={() => setRequestedPrivateConversation(null)}
+              setConversations={setPrivateConversations}
+              requirePrivacyConsent={requireAuthenticatedAction}
+              openPrivacyCenter={() => requestPrivacyConsent('consultar termos e privacidade')}
             />
           )}
           {activePage === 'benefits' && (
@@ -3671,6 +4479,7 @@ function App() {
               goBack={goBack}
               openPage={openPage}
               currentUser={currentUser}
+              onSubscriptionPending={markSubscriptionPaymentProcessing}
             />
           )}
         </section>
@@ -3686,16 +4495,54 @@ function App() {
           onConfirm={confirmCommunityAccess}
         />
       )}
-      {currentUser && (
+      {authGate && (
+        <AuthRequiredModal
+          actionLabel={authGate.actionLabel}
+          onClose={() => setAuthGate(null)}
+          onLogin={() => {
+            setAuthGate(null);
+            openPage('profile');
+          }}
+          onSignup={() => {
+            setAuthGate(null);
+            openPage('profile', { signupChoice: true });
+          }}
+        />
+      )}
+      {privacyGate && (
+        <PrivacyConsentModal
+          actionLabel={privacyGate.actionLabel}
+          onAccept={acceptPrivacyConsent}
+          onClose={() => setPrivacyGate(null)}
+        />
+      )}
+      {subscriptionGate && (
+        <SubscriptionRequiredModal
+          actionLabel={subscriptionGate.actionLabel}
+          onClose={() => setSubscriptionGate(null)}
+          onPlans={() => {
+            setSubscriptionGate(null);
+            openPage('partners');
+          }}
+          onCheckout={() => {
+            setSubscriptionGate(null);
+            openPage('subscription-checkout');
+          }}
+        />
+      )}
+      {currentUser && activePage !== 'private-chat' && (
         <PrivateChatWidget
           conversations={privateConversations}
           currentUser={currentUser}
           isOpen={privateChatOpen}
           onOpenChange={setPrivateChatOpen}
+          openChatPage={() => openPage('private-chat')}
           socialGraph={socialGraph}
           requestedConversationHandle={requestedPrivateConversation}
           clearRequestedConversation={() => setRequestedPrivateConversation(null)}
           setConversations={setPrivateConversations}
+          requirePrivacyConsent={requireAuthenticatedAction}
+          openPrivacyCenter={() => requestPrivacyConsent('consultar termos e privacidade')}
         />
       )}
       <SupportWidget
@@ -3705,6 +4552,149 @@ function App() {
       />
       <MediaViewer viewer={mediaViewer} onClose={closeMediaViewer} />
     </main>
+  );
+}
+
+function AuthRequiredModal({ actionLabel, onClose, onLogin, onSignup }) {
+  return (
+    <div className="floating-backdrop" onClick={onClose}>
+      <section className="floating-modal auth-required-modal" onClick={(event) => event.stopPropagation()}>
+        <button className="modal-close-button" type="button" onClick={onClose}>
+          Fechar
+        </button>
+        <span className="section-kicker">Acesso restrito</span>
+        <h3>Entre para {actionLabel}</h3>
+        <p>
+          Visitantes podem visualizar Feed, Oportunidades, Eventos e Benefícios. Para interagir,
+          enviar dados, salvar, se inscrever, se candidatar ou resgatar benefícios, é necessário
+          login e aceite dos Termos de Uso e da Política de Privacidade.
+        </p>
+        <div className="button-row">
+          <button type="button" onClick={onLogin}>Entrar</button>
+          <button className="light" type="button" onClick={onSignup}>Criar conta</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SubscriptionRequiredModal({ actionLabel, onClose, onPlans, onCheckout }) {
+  return (
+    <div className="floating-backdrop" onClick={onClose}>
+      <section className="floating-modal subscription-required-modal" onClick={(event) => event.stopPropagation()}>
+        <button className="modal-close-button" type="button" onClick={onClose}>
+          Fechar
+        </button>
+        <span className="section-kicker">Assinatura necessária</span>
+        <h3>Ative um plano para {actionLabel}</h3>
+        <p>
+          Sua conta já pode navegar pelas áreas públicas, mas ações privadas e áreas
+          assinadas só são liberadas depois da confirmação de pagamento pelo gateway.
+        </p>
+        <div className="subscription-status-panel">
+          <strong>Status da conta: pagamento pendente</strong>
+          <span>Cadastro → LGPD → plano → checkout → webhook → conta ativa.</span>
+        </div>
+        <div className="button-row">
+          <button type="button" onClick={onPlans}>Escolher plano</button>
+          <button className="light" type="button" onClick={onCheckout}>Ir para checkout</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PrivacyConsentModal({ actionLabel, onAccept, onClose }) {
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  const [acceptedDataUse, setAcceptedDataUse] = useState(false);
+  const canContinue = acceptedTerms && acceptedPrivacy && acceptedDataUse;
+
+  return (
+    <div className="floating-backdrop" onClick={onClose}>
+      <section className="floating-modal privacy-consent-modal" onClick={(event) => event.stopPropagation()}>
+        <button className="modal-close-button" type="button" onClick={onClose}>
+          Fechar
+        </button>
+        <span className="section-kicker">Privacidade e uso de dados</span>
+        <h3>Consentimento necessário</h3>
+        <p>
+          Para {actionLabel}, a plataforma precisa tratar dados do seu perfil,
+          interações, mensagens, inscrições, candidaturas e registros operacionais.
+        </p>
+
+        <div className="privacy-consent-sections">
+          <details open>
+            <summary>Termos de Uso</summary>
+            <p>
+              Você concorda em usar a plataforma de forma lícita, respeitar outros usuários,
+              não publicar conteúdo abusivo e assumir responsabilidade pelas informações enviadas.
+            </p>
+          </details>
+          <details>
+            <summary>Política de Privacidade</summary>
+            <p>
+              Coletamos dados de autenticação, perfil, atividades, comunicações, cursos,
+              eventos, oportunidades e benefícios para operar a conta, proteger o sistema e
+              registrar ações necessárias à prestação do serviço.
+            </p>
+          </details>
+          <details>
+            <summary>Governança LGPD</summary>
+            <p>
+              O aceite registra versão dos termos, versão da política, data, navegador e
+              metadados disponíveis. Você pode solicitar exportação ou exclusão dos dados
+              conforme regras legais de retenção e auditoria.
+            </p>
+          </details>
+        </div>
+
+        <p className="policy-note">
+          Ao continuar, você autoriza o tratamento dos seus dados para autenticação,
+          networking, comunicação interna, oportunidades, eventos, cursos, benefícios,
+          marketplace e demais funcionalidades disponibilizadas pela plataforma.
+        </p>
+
+        <div className="privacy-consent-checklist">
+          <label className="terms-consent-check">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              onChange={(event) => setAcceptedTerms(event.target.checked)}
+            />
+            <span>Li e concordo com os Termos de Uso.</span>
+          </label>
+          <label className="terms-consent-check">
+            <input
+              type="checkbox"
+              checked={acceptedPrivacy}
+              onChange={(event) => setAcceptedPrivacy(event.target.checked)}
+            />
+            <span>Li e concordo com a Política de Privacidade.</span>
+          </label>
+          <label className="terms-consent-check">
+            <input
+              type="checkbox"
+              checked={acceptedDataUse}
+              onChange={(event) => setAcceptedDataUse(event.target.checked)}
+            />
+            <span>Autorizo o tratamento dos meus dados conforme a LGPD.</span>
+          </label>
+        </div>
+
+        <div className="button-row">
+          <button className="light" type="button" onClick={onClose}>
+            Cancelar
+          </button>
+          <button type="button" disabled={!canContinue} onClick={onAccept}>
+            Aceitar e continuar
+          </button>
+        </div>
+        <small>
+          Versões: Termos {TERMS_VERSION} · Privacidade {PRIVACY_VERSION}
+        </small>
+      </section>
+    </div>
   );
 }
 
@@ -3812,6 +4802,9 @@ function MediaViewer({ viewer, onClose }) {
   }
 
   const youtubeVideo = viewer.type === 'youtube' ? getYouTubeVideo(viewer.src) : null;
+  const youtubeEmbedUrl = youtubeVideo
+    ? getInlineYouTubeEmbedUrl(youtubeVideo, { autoplay: true, muted: true })
+    : viewer.embedUrl;
   const isVideo = viewer.type === 'video';
   const isYoutube = Boolean(youtubeVideo || viewer.embedUrl);
   const content = (
@@ -3850,7 +4843,9 @@ function MediaViewer({ viewer, onClose }) {
               {isYoutube ? (
                 <iframe
                   title={viewer.title ?? 'Vídeo do YouTube'}
-                  src={viewer.embedUrl ?? youtubeVideo?.embedUrl}
+                  src={youtubeEmbedUrl}
+                  loading="lazy"
+                  referrerPolicy="strict-origin-when-cross-origin"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowFullScreen
                 />
@@ -4021,7 +5016,7 @@ function CommunitySidePanel({
             key={community.id}
             onClick={() => openCommunity(community.id)}
           >
-            <span>{community.name.slice(0, 2).toUpperCase()}</span>
+            <CommunityAvatar community={community} />
           <div>
             <strong>{community.name}</strong>
             <small>
@@ -4053,6 +5048,75 @@ function CommunitySidePanel({
   );
 }
 
+function getNotificationCategory(notice = {}) {
+  const text = `${notice.title ?? ''} ${notice.type ?? ''} ${notice.channel ?? ''}`.toLowerCase();
+  if (text.includes('ponto') || text.includes('recompensa') || text.includes('+')) return 'Pontuação';
+  if (text.includes('candidatura') || text.includes('currículo') || text.includes('vaga') || text.includes('rh')) return 'Oportunidades';
+  if (text.includes('evento') || text.includes('inscrição')) return 'Eventos';
+  if (text.includes('benefício') || text.includes('beneficio') || text.includes('whatsapp automático')) return 'Benefícios';
+  if (text.includes('curso') || text.includes('aula')) return 'Cursos';
+  if (text.includes('amizade') || text.includes('seguir') || text.includes('seguidor') || text.includes('comentário')) return 'Social';
+  return 'Sistema';
+}
+
+function getNotificationIcon(category) {
+  const icons = {
+    Social: 'S',
+    Oportunidades: 'O',
+    Eventos: 'E',
+    Benefícios: 'B',
+    Sistema: '!',
+    Pontuação: '+',
+    Cursos: 'C',
+  };
+  return icons[category] ?? '!';
+}
+
+function getNotificationPoints(title = '') {
+  const [, points] = String(title).match(/\+(\d+)\s*pontos?/i) ?? [];
+  return Number(points ?? 0);
+}
+
+function groupNotificationItems(items = []) {
+  const grouped = [];
+  const pointsGroups = new Map();
+
+  items.forEach((item) => {
+    if (item.category !== 'Pontuação' || !item.points) {
+      grouped.push(item);
+      return;
+    }
+
+    const reason = item.title.replace(/^\+\d+\s*pontos?:\s*/i, '').trim() || 'atividades recentes';
+    const key = `${reason}-${item.read ? 'read' : 'unread'}`;
+    const current = pointsGroups.get(key) ?? {
+      ...item,
+      id: `points-${key}`,
+      title: '',
+      meta: '',
+      count: 0,
+      totalPoints: 0,
+      reason,
+    };
+    current.count += 1;
+    current.totalPoints += item.points;
+    current.read = current.read && item.read;
+    pointsGroups.set(key, current);
+  });
+
+  pointsGroups.forEach((group) => {
+    grouped.push({
+      ...group,
+      title: group.count > 1
+        ? `Você recebeu +${group.totalPoints} pontos por ${group.count} atividades recentes.`
+        : `+${group.totalPoints} pontos: ${group.reason}`,
+      meta: group.count > 1 ? group.reason : group.meta,
+    });
+  });
+
+  return grouped.sort((first, second) => Number(first.read) - Number(second.read));
+}
+
 function FloatingNotificationDock({
   unreadNotifications,
   isOpen,
@@ -4063,7 +5127,7 @@ function FloatingNotificationDock({
   setEventCreatorAlerts,
 }) {
   const dockRef = React.useRef(null);
-  const notificationItems = [
+  const rawNotificationItems = [
     ...(notifications ?? []).map((notice) => ({
       id: notice.id,
       title: notice.title,
@@ -4071,6 +5135,9 @@ function FloatingNotificationDock({
         ? `${getSocialProfileByHandle(notice.actorHandle)?.name ?? notice.actorHandle} • ${notice.channel}`
         : `Canal: ${notice.channel}`,
       read: notice.read,
+      category: getNotificationCategory(notice),
+      icon: getNotificationIcon(getNotificationCategory(notice)),
+      points: getNotificationPoints(notice.title),
     })),
     ...(eventCreatorAlerts ?? []).map((alert) => ({
       id: alert.id,
@@ -4079,8 +5146,12 @@ function FloatingNotificationDock({
         ? `${alert.eventTitle} • ${alert.attendeeName ?? 'Participante'}`
         : 'Eventos',
       read: alert.read,
+      category: 'Eventos',
+      icon: getNotificationIcon('Eventos'),
+      points: 0,
     })),
   ];
+  const notificationItems = groupNotificationItems(rawNotificationItems);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -4108,6 +5179,7 @@ function FloatingNotificationDock({
               <span className="section-kicker">Notificações</span>
               <strong>Atualizações recentes</strong>
             </div>
+            {unreadNotifications > 0 && <em>{unreadNotifications} não lida(s)</em>}
             <button type="button" onClick={markAllRead}>
               Marcar lidas
             </button>
@@ -4117,9 +5189,10 @@ function FloatingNotificationDock({
               <p className="empty-state">Nenhuma notificação no momento.</p>
             ) : notificationItems.map((item) => (
               <article className={item.read ? '' : 'unread'} key={item.id}>
-                <span>{item.read ? '✓' : '•'}</span>
+                <span>{item.icon}</span>
                 <div>
                   <strong>{item.title}</strong>
+                  <b>{item.category}</b>
                   <small>{item.meta}</small>
                 </div>
               </article>
@@ -4128,7 +5201,7 @@ function FloatingNotificationDock({
         </section>
       )}
       <button
-        className="floating-notification-fab"
+        className={unreadNotifications > 0 && !isOpen ? 'floating-notification-fab has-unread' : 'floating-notification-fab'}
         type="button"
         onClick={() => onOpenChange((current) => !current)}
         aria-label="Abrir notificações"
@@ -4144,11 +5217,16 @@ function PrivateChatWidget({
   conversations,
   currentUser,
   isOpen,
+  asPage = false,
   onOpenChange,
+  onClosePage,
+  openChatPage,
   socialGraph,
   requestedConversationHandle,
   clearRequestedConversation,
   setConversations,
+  requirePrivacyConsent,
+  openPrivacyCenter,
 }) {
   const widgetRef = React.useRef(null);
   const [activeConversationId, setActiveConversationId] = useState(conversations[0]?.id ?? '');
@@ -4173,9 +5251,10 @@ function PrivateChatWidget({
   const otherConversations = conversations.filter((conversation) => !isPrimaryConversation(conversation));
   const visibleConversations = conversationTab === 'main' ? primaryConversations : otherConversations;
   const activeConversationVisible = visibleConversations.some((conversation) => conversation.id === activeConversation?.id);
+  const chatIsVisible = asPage || isOpen;
 
   useEffect(() => {
-    if (!isOpen) return undefined;
+    if (!chatIsVisible || asPage) return undefined;
 
     function closeOnOutsideClick(event) {
       if (widgetRef.current?.contains(event.target)) return;
@@ -4184,10 +5263,10 @@ function PrivateChatWidget({
 
     document.addEventListener('pointerdown', closeOnOutsideClick);
     return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
-  }, [isOpen, onOpenChange]);
+  }, [chatIsVisible, asPage, onOpenChange]);
 
   useEffect(() => {
-    if (!isOpen || !requestedConversationHandle) return;
+    if (!chatIsVisible || !requestedConversationHandle) return;
     const requestedConversation = conversations.find(
       (conversation) => conversation.participantHandle === requestedConversationHandle,
     );
@@ -4196,15 +5275,15 @@ function PrivateChatWidget({
     setConversationTab(nextTab);
     openConversation(requestedConversation.id);
     clearRequestedConversation?.();
-  }, [isOpen, requestedConversationHandle, conversations]);
+  }, [chatIsVisible, requestedConversationHandle, conversations]);
 
   useEffect(() => {
-    if (!isOpen || activeConversationVisible) return;
+    if (!chatIsVisible || activeConversationVisible) return;
     const nextConversation = visibleConversations[0];
     if (nextConversation) {
       setActiveConversationId(nextConversation.id);
     }
-  }, [isOpen, conversationTab, visibleConversations.length, activeConversationVisible]);
+  }, [chatIsVisible, conversationTab, visibleConversations.length, activeConversationVisible]);
 
   function openConversation(conversationId) {
     setActiveConversationId(conversationId);
@@ -4244,6 +5323,7 @@ function PrivateChatWidget({
     event?.preventDefault();
     const body = draft.trim();
     if (!body || !activeConversation) return;
+    if (!requirePrivacyConsent?.('enviar mensagem privada')) return;
     const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     setConversations((current) =>
       current.map((conversation) =>
@@ -4267,11 +5347,32 @@ function PrivateChatWidget({
     setDraft('');
   }
 
+  function handleFabClick() {
+    if (openChatPage && window.matchMedia('(max-width: 760px)').matches) {
+      openChatPage();
+      return;
+    }
+    onOpenChange((current) => !current);
+  }
+
+  function closeChat() {
+    if (asPage) {
+      onClosePage?.();
+      return;
+    }
+    onOpenChange(false);
+  }
+
   return (
-    <aside className={isOpen ? 'private-chat-widget open' : 'private-chat-widget'} ref={widgetRef}>
-      {isOpen && (
+    <aside className={`${chatIsVisible ? 'private-chat-widget open' : 'private-chat-widget'}${asPage ? ' as-page' : ''}`} ref={widgetRef}>
+      {chatIsVisible && (
         <section className="private-chat-window" aria-label="Conversas privadas">
           <header>
+            {asPage && (
+              <button className="private-chat-back-button" type="button" onClick={closeChat}>
+                Voltar
+              </button>
+            )}
             <div>
               <span className="section-kicker">Mensagens</span>
               <strong>Conversas privadas</strong>
@@ -4280,7 +5381,8 @@ function PrivateChatWidget({
               <button type="button" aria-label="Pesquisar pessoas" onClick={() => setSearchOpen((current) => !current)}>
                 ⌕
               </button>
-              <button type="button" onClick={() => onOpenChange(false)}>Fechar</button>
+              <button type="button" onClick={openPrivacyCenter}>Privacidade</button>
+              <button type="button" onClick={closeChat}>Fechar</button>
             </div>
           </header>
 
@@ -4308,14 +5410,14 @@ function PrivateChatWidget({
 
           <div className="private-chat-tabs">
             <button
-              className={conversationTab === 'main' ? 'active' : ''}
+              className={conversationTab === 'main' ? 'private-chat-tab-button active' : 'private-chat-tab-button'}
               type="button"
               onClick={() => setConversationTab('main')}
             >
               Principal <span>{primaryConversations.length}</span>
             </button>
             <button
-              className={conversationTab === 'others' ? 'active' : ''}
+              className={conversationTab === 'others' ? 'private-chat-tab-button active' : 'private-chat-tab-button'}
               type="button"
               onClick={() => setConversationTab('others')}
             >
@@ -4336,15 +5438,15 @@ function PrivateChatWidget({
                   const lastMessage = conversation.messages.at(-1);
                   return (
                     <button
-                      className={activeConversation.id === conversation.id ? 'active' : ''}
+                      className={activeConversation.id === conversation.id ? 'private-conversation-button active' : 'private-conversation-button'}
                       key={conversation.id}
                       type="button"
                       onClick={() => openConversation(conversation.id)}
                     >
                       <Avatar initials={conversation.participantInitials} photo={conversation.participantPhoto} />
-                      <span>
-                        <strong>{conversation.participantName}</strong>
-                        <small>{lastMessage?.body ?? 'Nova conversa privada'}</small>
+                      <span className="private-conversation-summary">
+                        <strong className="private-conversation-name">{conversation.participantName}</strong>
+                        <bdi className="private-conversation-preview">{lastMessage?.body ?? 'Nova conversa privada'}</bdi>
                       </span>
                       {conversation.unread > 0 && <em>{conversation.unread}</em>}
                     </button>
@@ -4375,6 +5477,11 @@ function PrivateChatWidget({
                   <input
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+                      event.preventDefault();
+                      sendMessage(event);
+                    }}
                     placeholder="Mensagem privada"
                   />
                   <button type="submit">Enviar</button>
@@ -4384,12 +5491,43 @@ function PrivateChatWidget({
           )}
         </section>
       )}
-      <button className="private-chat-fab" type="button" onClick={() => onOpenChange((current) => !current)} aria-label="Abrir conversas privadas">
-        💬
-        {unreadTotal > 0 && <em>{unreadTotal}</em>}
-      </button>
+      {!asPage && (
+        <button className="private-chat-fab" type="button" onClick={handleFabClick} aria-label="Abrir conversas privadas">
+          💬
+          {unreadTotal > 0 && <em>{unreadTotal}</em>}
+        </button>
+      )}
     </aside>
   );
+}
+
+function classifySupportRequest(message) {
+  const text = message.toLowerCase();
+  const criticalTerms = ['fraude', 'vazamento', 'invad', 'jurid', 'processo', 'violencia', 'assedio', 'banir', 'bloqueio'];
+  const highTerms = ['pagamento', 'pix', 'boleto', 'cartao', 'cartão', 'cobranca', 'cobrança', 'reembolso', 'cpf', 'rg', 'cnpj', 'documento', 'erro', 'bug'];
+  const mediumTerms = ['perfil', 'curso', 'evento', 'oportunidade', 'comunidade', 'beneficio', 'benefício', 'mensagem'];
+
+  if (criticalTerms.some((term) => text.includes(term))) {
+    return { category: 'Critico', priority: 'CRITICAL', shouldEscalate: true };
+  }
+
+  if (highTerms.some((term) => text.includes(term))) {
+    return { category: 'Operacional sensivel', priority: 'HIGH', shouldEscalate: true };
+  }
+
+  if (mediumTerms.some((term) => text.includes(term))) {
+    return { category: 'Uso da plataforma', priority: 'MEDIUM', shouldEscalate: false };
+  }
+
+  return { category: 'Duvida geral', priority: 'LOW', shouldEscalate: false };
+}
+
+function summarizeSupportConversation(conversation, nextMessage = '') {
+  return [...conversation, ...(nextMessage ? [{ from: 'user', body: nextMessage }] : [])]
+    .slice(-8)
+    .map((item) => `${item.from}: ${item.body}`)
+    .join('\n')
+    .slice(0, 1800);
 }
 
 function SupportWidget({ currentUser, requestedContext, clearRequestedContext }) {
@@ -4403,8 +5541,8 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
   const [status, setStatus] = useState('');
   const [conversation, setConversation] = useState([
     {
-      from: 'support',
-      body: 'Sou o suporte da plataforma. Posso responder coisas simples com IA ou abrir atendimento com uma pessoa.',
+      from: 'ai',
+      body: 'Sou a IA de suporte da MeetPoint. Primeiro tento resolver por aqui; se for caso sensivel ou nao resolvido, abro um ticket humano com o historico completo.',
     },
   ]);
 
@@ -4414,12 +5552,17 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
     segment: currentUser?.label,
   };
 
-  function createLocalHumanTicket(reason) {
+  function createLocalHumanTicket(reason, context = {}) {
+    const classification = context.classification ?? classifySupportRequest(reason);
     const ticketId = `MP-SUP-${Date.now().toString(36).toUpperCase()}`;
     const ticket = {
       id: ticketId,
       reason,
       requester,
+      category: classification.category,
+      priority: classification.priority,
+      conversationSummary: context.conversationSummary ?? summarizeSupportConversation(conversation, reason),
+      attempts: context.attempts ?? ['ai'],
       createdAt: new Date().toISOString(),
       status: 'OPEN',
       channel: 'human',
@@ -4469,6 +5612,11 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
   }, [isOpen]);
 
   function localSupportAnswer(text) {
+    const classification = classifySupportRequest(text);
+    if (classification.shouldEscalate) {
+      return 'Esse caso precisa de atendimento humano porque envolve dados, pagamento, seguranca, erro critico ou solicitacao administrativa. Vou abrir um ticket com o contexto desta conversa.';
+    }
+
     const normalized = text.toLowerCase();
     if (normalized.includes('senha')) {
       return 'Para recuperar senha, entre no login e clique em Esqueci a senha. Se errar 3 vezes, o sistema também mostra uma notificação de recuperação.';
@@ -4485,7 +5633,7 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
     if (normalized.includes('perfil')) {
       return 'No Perfil você acompanha cursos, progresso, comunidades, documentos e dados da conta. Alterações sensíveis como CPF/RG exigem verificação.';
     }
-    return 'Consigo ajudar com login, cursos, pagamentos, comunidades, encontros e perfil. Para casos sensíveis, use a aba Pessoa para chamar suporte humano.';
+    return 'Consigo ajudar com login, cursos, comunidades, eventos, oportunidades e perfil. Se a resposta nao resolver, eu encaminho para uma pessoa com o historico da conversa.';
   }
 
   async function sendSupportMessage(event) {
@@ -4493,9 +5641,11 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
     if (!message.trim()) return;
 
     const userMessage = message.trim();
+    const classification = classifySupportRequest(userMessage);
+    const conversationSummary = summarizeSupportConversation(conversation, userMessage);
     setConversation((current) => [...current, { from: 'user', body: userMessage }]);
     setMessage('');
-    setStatus('Enviando...');
+    setStatus('IA analisando solicitacao...');
 
     try {
       if (mode === 'suggestion') {
@@ -4504,6 +5654,9 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
           body: JSON.stringify({
             subject,
             message: userMessage,
+            category: classification.category,
+            priority: classification.priority,
+            conversationSummary,
             ...requester,
           }),
         });
@@ -4520,6 +5673,9 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
         body: JSON.stringify({
           message: mode === 'human' ? `Quero falar com uma pessoa. ${userMessage}` : userMessage,
           preferredChannel: mode,
+          category: classification.category,
+          priority: mode === 'human' ? 'HIGH' : classification.priority,
+          conversationSummary,
           ...requester,
         }),
       });
@@ -4531,6 +5687,18 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
         },
       ]);
       setStatus(result.escalated ? 'Atendimento humano acionado.' : 'Respondido pela IA.');
+
+      if (mode === 'ai' && classification.shouldEscalate && !result.escalated) {
+        const ticketId = createLocalHumanTicket(userMessage, { classification, conversationSummary });
+        setConversation((current) => [
+          ...current,
+          {
+            from: 'support',
+            body: `Classifiquei como ${classification.category} (${classification.priority}) e abri atendimento humano com o historico. Protocolo local: ${ticketId}.`,
+          },
+        ]);
+        setStatus(`Escalado para humano. Protocolo ${ticketId}.`);
+      }
     } catch {
       if (mode === 'suggestion') {
         setConversation((current) => [
@@ -4545,7 +5713,11 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
       }
 
       if (mode === 'human') {
-        const ticketId = createLocalHumanTicket(userMessage);
+        const ticketId = createLocalHumanTicket(userMessage, {
+          classification: { ...classification, priority: 'HIGH' },
+          conversationSummary,
+          attempts: ['human-request'],
+        });
         setConversation((current) => [
           ...current,
           {
@@ -4554,6 +5726,23 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
           },
         ]);
         setStatus(`Atendimento humano acionado. Protocolo ${ticketId}.`);
+        return;
+      }
+
+      if (classification.shouldEscalate) {
+        const ticketId = createLocalHumanTicket(userMessage, { classification, conversationSummary });
+        setConversation((current) => [
+          ...current,
+          {
+            from: 'ai',
+            body: localSupportAnswer(userMessage),
+          },
+          {
+            from: 'support',
+            body: `Ticket humano aberto com categoria ${classification.category} e prioridade ${classification.priority}. Protocolo: ${ticketId}.`,
+          },
+        ]);
+        setStatus(`Escalado para humano. Protocolo ${ticketId}.`);
         return;
       }
 
@@ -4571,6 +5760,8 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
   async function escalateToHuman() {
     const escalationMessage = message.trim()
       || 'A IA não resolveu minha dúvida. Quero falar com uma pessoa do suporte.';
+    const classification = classifySupportRequest(escalationMessage);
+    const conversationSummary = summarizeSupportConversation(conversation, escalationMessage);
 
     setMode('human');
     setMessage('');
@@ -4589,6 +5780,9 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
         body: JSON.stringify({
           message: `Quero falar com uma pessoa. ${escalationMessage}`,
           preferredChannel: 'human',
+          category: classification.category,
+          priority: classification.priority === 'LOW' ? 'MEDIUM' : classification.priority,
+          conversationSummary,
           ...requester,
         }),
       });
@@ -4602,7 +5796,14 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
       ]);
       setStatus('Atendimento humano acionado.');
     } catch {
-      const ticketId = createLocalHumanTicket(escalationMessage);
+      const ticketId = createLocalHumanTicket(escalationMessage, {
+        classification: {
+          ...classification,
+          priority: classification.priority === 'LOW' ? 'MEDIUM' : classification.priority,
+        },
+        conversationSummary,
+        attempts: ['ai', 'manual-escalation'],
+      });
       setConversation((current) => [
         ...current,
         {
@@ -4621,16 +5822,20 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
           <header>
             <div>
               <span className="section-kicker">Suporte</span>
-              <strong>Atendimento da plataforma</strong>
+              <strong>Assistente IA da plataforma</strong>
             </div>
-            <button onClick={() => setIsOpen(false)}>Fechar</button>
+            <button className="support-close-button" type="button" onClick={() => setIsOpen(false)}>Fechar</button>
           </header>
 
           <div className="support-mode-tabs">
-            <button type="button" className={mode === 'ai' ? 'active' : ''} onClick={() => setMode('ai')}>IA</button>
-            <button type="button" className={mode === 'human' ? 'active' : ''} onClick={() => setMode('human')}>Pessoa</button>
-            <button type="button" className={mode === 'suggestion' ? 'active' : ''} onClick={() => setMode('suggestion')}>Sugestão</button>
+            <button type="button" className={mode === 'ai' ? 'support-mode-button active' : 'support-mode-button'} onClick={() => setMode('ai')}>IA primeiro</button>
+            <button type="button" className={mode === 'human' ? 'support-mode-button active' : 'support-mode-button'} onClick={() => setMode('human')}>Escalar</button>
+            <button type="button" className={mode === 'suggestion' ? 'support-mode-button active' : 'support-mode-button'} onClick={() => setMode('suggestion')}>Sugestão</button>
           </div>
+
+          <p className="support-ai-note">
+            A IA resolve duvidas simples. Casos sensiveis viram ticket com categoria, prioridade e historico.
+          </p>
 
           {mode === 'suggestion' && (
             <label>
@@ -4656,12 +5861,12 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
                 mode === 'suggestion'
                   ? 'Descreva o que você quer melhorar na plataforma'
                   : mode === 'human'
-                    ? 'Descreva o problema para uma pessoa do suporte'
-                    : 'Pergunte algo simples para a IA'
+                    ? 'Descreva o problema para escalar com contexto'
+                    : 'Pergunte para a IA de suporte'
               }
             />
-            <button type="submit">
-              {mode === 'suggestion' ? 'Enviar sugestão' : mode === 'human' ? 'Chamar pessoa' : 'Perguntar'}
+            <button className="support-submit-button" type="submit">
+              {mode === 'suggestion' ? 'Enviar sugestão' : mode === 'human' ? 'Abrir ticket' : 'Perguntar IA'}
             </button>
           </form>
           {mode === 'ai' && (
@@ -4672,7 +5877,7 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
           {status && <small>{status}</small>}
         </section>
       )}
-      <button className="support-fab" onClick={() => setIsOpen((current) => !current)}>
+      <button className="support-fab" type="button" aria-label="Abrir suporte" onClick={() => setIsOpen((current) => !current)}>
         Suporte
       </button>
     </aside>
@@ -4682,6 +5887,7 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
 function getValidPageIds() {
   return new Set([
     ...navigation.map((item) => item.id),
+    'private-chat',
     'checkout',
     'subscription-checkout',
     'course-create',
@@ -4734,6 +5940,10 @@ function getCurrentRouteState(historyState = {}) {
     signupChoice: Boolean(signupParam) && !signupSegment,
     url,
   });
+}
+
+function isPublicDomainEntry(url = new URL(window.location.href)) {
+  return !url.searchParams.has('page') && !url.searchParams.has('signup');
 }
 
 function getSignupSegmentFromUrl(url = new URL(window.location.href)) {
@@ -4900,6 +6110,24 @@ function getFeedPriority(post, followingHandles, interests, interestScores = {})
   };
 }
 
+function getPostSortTimestamp(value) {
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  const displayDate = String(value).match(/(\d{2})\/(\d{2})\/(\d{4}),?\s+(\d{2}):(\d{2})/);
+  if (displayDate) {
+    const [, day, month, year, hour, minute] = displayDate;
+    return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)).getTime();
+  }
+  const directTimestamp = Date.parse(value);
+  return Number.isNaN(directTimestamp) ? 0 : directTimestamp;
+}
+
+function compareFeedItemsByNewest(first, second) {
+  const firstTimestamp = getPostSortTimestamp(first.post.createdAt);
+  const secondTimestamp = getPostSortTimestamp(second.post.createdAt);
+  return secondTimestamp - firstTimestamp || second.priority.score - first.priority.score;
+}
+
 function scrollToFeedTarget(selector, block = 'center') {
   setTimeout(() => {
     document.querySelector(selector)?.scrollIntoView({
@@ -4998,7 +6226,7 @@ function FeedView({
       if (filter === 'vagas') return /vaga|oportunidade|emprego|freela|currículo/.test(haystack);
       return true;
     })
-    .sort((first, second) => second.priority.score - first.priority.score);
+    .sort(compareFeedItemsByNewest);
   const peopleResults = socialProfiles.filter((profile) => {
     const query = peopleQuery.trim().toLowerCase();
     if (!query) return true;
@@ -5168,10 +6396,43 @@ function FeedView({
     .slice()
     .sort((a, b) => `${a.date ?? ''} ${a.time ?? ''}`.localeCompare(`${b.date ?? ''} ${b.time ?? ''}`))
     .slice(0, 3);
+  const feedShortcutItems = [
+    {
+      id: 'communities',
+      title: 'Comunidades',
+      description: 'Explore grupos profissionais',
+      icon: '👥',
+    },
+    {
+      id: 'events',
+      title: 'Eventos',
+      description: 'Encontros e lives proximos',
+      icon: '📅',
+    },
+    {
+      id: 'opportunities',
+      title: 'Oportunidades',
+      description: 'Vagas e parcerias abertas',
+      icon: '💼',
+    },
+    {
+      id: 'benefits',
+      title: 'Beneficios',
+      description: 'Descontos e vantagens',
+      icon: '🎁',
+    },
+  ];
   const selectedProfileEvents = selectedProfile ? getProfileEvents(selectedProfile, communityEvents) : [];
   const selectedProfileOpportunities = selectedProfile ? getProfileOpportunities(selectedProfile, jobs) : [];
+  const selectedProfilePosts = selectedProfile ? getProfilePosts(selectedProfile, posts) : [];
   const selectedProfileStats = selectedProfile
-    ? getViewedProfileStats(selectedProfile, socialGraph, selectedProfileEvents, selectedProfileOpportunities)
+    ? getViewedProfileStats(
+        selectedProfile,
+        socialGraph,
+        selectedProfilePosts,
+        selectedProfileEvents,
+        selectedProfileOpportunities,
+      )
     : null;
 
   return (
@@ -5196,10 +6457,15 @@ function FeedView({
               <small>Rápido</small>
             </div>
             <div className="feed-shortcut-grid">
-              <button type="button" onClick={() => openPage('communities')}>Comunidades</button>
-              <button type="button" onClick={() => openPage('events')}>Eventos</button>
-              <button type="button" onClick={() => openPage('opportunities')}>Vagas</button>
-              <button type="button" onClick={() => openPage('benefits')}>Benefícios</button>
+              {feedShortcutItems.map((item) => (
+                <button className="feed-shortcut-card" key={item.id} type="button" onClick={() => openPage(item.id)}>
+                  <span aria-hidden="true">{item.icon}</span>
+                  <span>
+                    <strong>{item.title}</strong>
+                    <small>{item.description}</small>
+                  </span>
+                </button>
+              ))}
             </div>
           </section>
         </aside>
@@ -5226,6 +6492,11 @@ function FeedView({
                 className="platform-textarea feed-textarea feed-textarea-compact"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+                  event.preventDefault();
+                  submitPost(event);
+                }}
                 placeholder="O que você quer compartilhar?"
               />
               <button type="submit" className="composer-publish-button">
@@ -5251,7 +6522,7 @@ function FeedView({
                   <strong>Vídeo</strong>
                 </button>
               </div>
-              <button className="light" type="button" onClick={() => openPage('event-create')}>
+              <button className="composer-event-button" type="button" onClick={() => openPage('event-create')}>
                 + Evento
               </button>
               <details className="composer-advanced composer-advanced-compact">
@@ -5315,7 +6586,7 @@ function FeedView({
                     placeholder="https://www.youtube.com/watch?v=..."
                   />
                 </label>
-                <small>Suba o vídeo no YouTube e cole o link aqui. A plataforma reproduz em janela média.</small>
+                <small>Suba o vídeo no YouTube e cole o link aqui. No feed, o vídeo reproduz dentro do próprio post.</small>
               </div>
             )}
             {media && (
@@ -5403,6 +6674,11 @@ function FeedView({
                 </div>
               </div>
             </details>
+            {showFeedRefreshHint && (
+              <button className="feed-refresh-hint" type="button" onClick={refreshVisibleFeed}>
+                Ver novos posts
+              </button>
+            )}
             <div className="feed-toolbar-status">
               {selectedHashtag
                 ? `Mostrando ${selectedHashtag}`
@@ -5419,7 +6695,7 @@ function FeedView({
             <div>
               {hashtagStats.slice(0, 5).map((item) => (
                 <button
-                  className={selectedHashtag === item.tag ? 'active' : ''}
+                  className={selectedHashtag === item.tag ? 'feed-side-card-button active' : 'feed-side-card-button'}
                   key={item.tag}
                   type="button"
                   onClick={() => {
@@ -5434,12 +6710,6 @@ function FeedView({
               ))}
             </div>
           </div>
-
-          {showFeedRefreshHint && (
-            <button className="feed-refresh-hint" type="button" onClick={refreshVisibleFeed}>
-              Ver novos posts
-            </button>
-          )}
 
           <div className="post-list">
             {visiblePosts.length === 0 ? (
@@ -5488,6 +6758,7 @@ function FeedView({
               <div className="interest-chip-list">
                 {topInterestSignals.map((item) => (
                   <button
+                    className="feed-side-card-button"
                     key={item.signal}
                     type="button"
                     onClick={() => {
@@ -5507,7 +6778,7 @@ function FeedView({
             <div className="trend-tag-list">
               {trendingTags.map((tag) => (
                 <button
-                  className={selectedTrendTag === tag ? 'active' : ''}
+                  className={selectedTrendTag === tag ? 'feed-side-card-button active' : 'feed-side-card-button'}
                   key={tag}
                   type="button"
                   onClick={() => {
@@ -5526,7 +6797,7 @@ function FeedView({
             <div className="hashtag-list">
               {hashtagStats.map((item) => (
                 <button
-                  className={selectedHashtag === item.tag ? 'active' : ''}
+                  className={selectedHashtag === item.tag ? 'feed-side-card-button active' : 'feed-side-card-button'}
                   key={item.tag}
                   type="button"
                   onClick={() => {
@@ -5591,6 +6862,7 @@ function FeedView({
           currentUser={currentUser}
           currentUserPhoto={profilePhoto}
           profileStats={selectedProfileStats}
+          profilePosts={selectedProfilePosts}
           profileEvents={selectedProfileEvents}
           profileOpportunities={selectedProfileOpportunities}
           blockProfile={blockProfile}
@@ -5650,8 +6922,13 @@ function PeopleDiscovery({
         type="button"
         onClick={() => setIsOpen((current) => !current)}
       >
-        <strong>Encontrar pessoas</strong>
-        <span>{peopleResults.length}</span>
+        <span className="people-discovery-icon" aria-hidden="true">🔎</span>
+        <span className="people-discovery-label">
+          <strong>Encontrar pessoas</strong>
+          <small>Conexões e perfis</small>
+        </span>
+        <span className="people-count">{peopleResults.length}</span>
+        <span className="people-discovery-arrow" aria-hidden="true">{isOpen ? '↑' : '→'}</span>
       </button>
       {isOpen && (
         <div className="people-discovery-body">
@@ -5666,7 +6943,7 @@ function PeopleDiscovery({
             {!peopleQuery.trim() && (
               <div>
                 {recentSearches.map((term) => (
-                  <button key={term} type="button" onClick={() => setPeopleQuery(term)}>
+                  <button className="people-chip-button" key={term} type="button" onClick={() => setPeopleQuery(term)}>
                     {term}
                   </button>
                 ))}
@@ -5691,11 +6968,11 @@ function PeopleDiscovery({
                     </span>
                   </button>
                   <div className="person-actions">
-                    <button type="button" onClick={() => followProfile(profile.handle)}>
+                    <button className="person-action-button" type="button" onClick={() => followProfile(profile.handle)}>
                       {isFollowing ? 'Deixar' : 'Seguir'}
                     </button>
                     <button
-                      className="light"
+                      className="light person-action-button"
                       disabled={requestSent}
                       type="button"
                       onClick={() => requestFriendship(profile.handle)}
@@ -5711,7 +6988,7 @@ function PeopleDiscovery({
             <strong>Sugestões</strong>
             <div>
               {suggestedPeople.map((profile) => (
-                <button key={profile.id} type="button" onClick={() => setSelectedProfile(profile)}>
+                <button className="people-chip-button" key={profile.id} type="button" onClick={() => setSelectedProfile(profile)}>
                   {profile.name}
                 </button>
               ))}
@@ -5735,6 +7012,7 @@ function SocialProfileModal({
   currentUser,
   currentUserPhoto,
   profileStats,
+  profilePosts = [],
   profileEvents = [],
   profileOpportunities = [],
   blockProfile,
@@ -5755,7 +7033,7 @@ function SocialProfileModal({
     [...friendProfiles, ...followingProfiles, ...followerProfiles].some((item) => item.handle === handle),
   );
   const commonProfiles = getConnectionProfiles(commonHandles).slice(0, 3);
-  const stats = profileStats ?? getViewedProfileStats(profile, socialGraph, profileEvents, profileOpportunities);
+  const stats = profileStats ?? getViewedProfileStats(profile, socialGraph, profilePosts, profileEvents, profileOpportunities);
   const sectionTitle = {
     friends: 'Amigos',
     followers: 'Seguidores',
@@ -5834,7 +7112,17 @@ function SocialProfileModal({
       ) : <p className="empty-state">Nenhuma oportunidade ativa para este perfil.</p>;
     }
 
-    return (
+    return profilePosts.length ? (
+      <div className="social-mini-list">
+        {profilePosts.map((post) => (
+          <article key={post.id}>
+            <strong>{post.tag}</strong>
+            <small>{post.city} • {post.createdAt ?? 'Agora'}</small>
+            <p>{post.body}</p>
+          </article>
+        ))}
+      </div>
+    ) : (
       <div className="profile-post-grid">
         {profile.interests.map((interest) => (
           <article key={interest}>
@@ -5861,12 +7149,12 @@ function SocialProfileModal({
           </div>
         </div>
         <div className="social-profile-stats">
-          <button type="button" onClick={() => setActiveSection('friends')}><strong>{stats.friends}</strong><span>amigos</span></button>
-          <button type="button" onClick={() => setActiveSection('followers')}><strong>{formatSocialCount(stats.followers)}</strong><span>seguidores</span></button>
-          <button type="button" onClick={() => setActiveSection('following')}><strong>{stats.following}</strong><span>seguindo</span></button>
-          <button type="button" onClick={() => setActiveSection('posts')}><strong>{stats.posts}</strong><span>posts</span></button>
-          <button type="button" onClick={() => setActiveSection('events')}><strong>{stats.events}</strong><span>eventos</span></button>
-          <button type="button" onClick={() => setActiveSection('opportunities')}><strong>{stats.opportunities}</strong><span>oportunidades</span></button>
+          <button type="button" onClick={() => setActiveSection('friends')}><strong>{formatExactCount(stats.friends)}</strong><span>{formatCountLabel(stats.friends, 'amigo', 'amigos')}</span></button>
+          <button type="button" onClick={() => setActiveSection('followers')}><strong>{formatExactCount(stats.followers)}</strong><span>{formatCountLabel(stats.followers, 'seguidor', 'seguidores')}</span></button>
+          <button type="button" onClick={() => setActiveSection('following')}><strong>{formatExactCount(stats.following)}</strong><span>seguindo</span></button>
+          <button type="button" onClick={() => setActiveSection('posts')}><strong>{formatExactCount(stats.posts)}</strong><span>{formatCountLabel(stats.posts, 'post', 'posts')}</span></button>
+          <button type="button" onClick={() => setActiveSection('events')}><strong>{formatExactCount(stats.events)}</strong><span>{formatCountLabel(stats.events, 'evento', 'eventos')}</span></button>
+          <button type="button" onClick={() => setActiveSection('opportunities')}><strong>{formatExactCount(stats.opportunities)}</strong><span>{formatCountLabel(stats.opportunities, 'oportunidade', 'oportunidades')}</span></button>
         </div>
         {commonProfiles.length > 0 && (
           <div className="mutual-connection-strip">
@@ -5964,12 +7252,13 @@ function FeedPostCard({
   const [reactionsOpen, setReactionsOpen] = useState(false);
   const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [inlineYoutubePlaying, setInlineYoutubePlaying] = useState(false);
+  const [youtubeFallbackVisible, setYoutubeFallbackVisible] = useState(false);
 const postRef = React.useRef(null);
 const reactionPickerRef = React.useRef(null);
 const reactionDetailRef = React.useRef(null);
 const commentPanelRef = React.useRef(null);
 const reactionHoldTimerRef = React.useRef(null);
-const youtubeHoverTimerRef = React.useRef(null);
 const reactionHoldOpenedRef = React.useRef(false);
 const impressionRegisteredRef = React.useRef(false);
 
@@ -6026,7 +7315,6 @@ useEffect(() => {
 
 useEffect(() => () => {
   window.clearTimeout(reactionHoldTimerRef.current);
-  window.clearTimeout(youtubeHoverTimerRef.current);
 }, []);
 
 useEffect(() => {
@@ -6126,16 +7414,19 @@ function sharePost() {
     setReactionPickerOpen((current) => !current);
   }
 
-  const selectedReaction =
-    reactionLabelById[post.selectedReaction] ?? feedReactions[0];
-  const youtubeVideo = post.mediaType === 'youtube' ? getYouTubeVideo(post.mediaUrl) : null;
+	  const selectedReaction =
+	    reactionLabelById[post.selectedReaction] ?? feedReactions[0];
+	  const youtubeVideo = post.mediaType === 'youtube' ? getYouTubeVideo(post.mediaUrl) : null;
+  const inlineYoutubeEmbedUrl = youtubeVideo
+    ? getInlineYouTubeEmbedUrl(youtubeVideo, { autoplay: inlineYoutubePlaying, muted: inlineYoutubePlaying })
+    : '';
 
   function openPostMediaPreview() {
     if (youtubeVideo) {
       openMediaViewer?.({
         type: 'youtube',
         src: youtubeVideo.watchUrl,
-        embedUrl: post.mediaEmbedUrl || youtubeVideo.embedUrl,
+        embedUrl: getInlineYouTubeEmbedUrl(youtubeVideo, { autoplay: true, muted: true }),
         title: post.tag ? `${post.tag} • ${post.author}` : post.author,
         caption: `${post.author} - ${post.city}`,
       });
@@ -6148,16 +7439,17 @@ function sharePost() {
       title: post.tag ? `${post.tag} • ${post.author}` : post.author,
       caption: `${post.author} - ${post.city}`,
     });
-  }
+	  }
 
-  function schedulePostVideoPreview() {
+  function playYoutubeInline() {
     if (!youtubeVideo) return;
-    window.clearTimeout(youtubeHoverTimerRef.current);
-    youtubeHoverTimerRef.current = window.setTimeout(openPostMediaPreview, 320);
+    setYoutubeFallbackVisible(false);
+    setInlineYoutubePlaying(true);
   }
 
-  function cancelPostVideoPreview() {
-    window.clearTimeout(youtubeHoverTimerRef.current);
+  function openYoutubeInNewTab() {
+    if (!youtubeVideo) return;
+    window.open(youtubeVideo.watchUrl, '_blank', 'noopener,noreferrer');
   }
 
   return (
@@ -6336,36 +7628,55 @@ post.body && (
   </div>
 )
       )}
-      {post.mediaUrl && post.mediaType === 'youtube' && youtubeVideo && (
-        <div className="post-youtube-card">
-          <button
-            className="post-media youtube-media"
-            type="button"
-            onClick={openPostMediaPreview}
-            onMouseEnter={schedulePostVideoPreview}
-            onMouseLeave={cancelPostVideoPreview}
-            onFocus={schedulePostVideoPreview}
-            onBlur={cancelPostVideoPreview}
-          >
-            <img src={post.mediaThumbnailUrl || youtubeVideo.thumbnailUrl} alt="" loading="lazy" decoding="async" />
-            <span className="youtube-play-overlay">▶</span>
-            <span className="media-credit">
-              {post.author} - {post.city}
-            </span>
-          </button>
-          <button
-            className="youtube-link-chip"
-            type="button"
-            onClick={openPostMediaPreview}
-            onMouseEnter={schedulePostVideoPreview}
-            onMouseLeave={cancelPostVideoPreview}
-            onFocus={schedulePostVideoPreview}
-            onBlur={cancelPostVideoPreview}
-          >
-            {youtubeVideo.watchUrl}
-          </button>
-        </div>
-      )}
+	      {post.mediaUrl && post.mediaType === 'youtube' && youtubeVideo && (
+	        <div className="post-youtube-card">
+          {inlineYoutubePlaying ? (
+              <div className="post-media youtube-media youtube-inline-player video-wrapper">
+                <iframe
+                  title={`Vídeo do YouTube - ${post.author}`}
+                  src={inlineYoutubeEmbedUrl}
+                  loading="lazy"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  onError={() => setYoutubeFallbackVisible(true)}
+                />
+                <span className="media-credit">
+                  Tocando mutado. Use o controle do player para ativar o som.
+                </span>
+              </div>
+            ) : (
+              <button
+                className="post-media youtube-media"
+                type="button"
+                onClick={playYoutubeInline}
+                aria-label="Reproduzir vídeo do YouTube no feed"
+              >
+                <img src={post.mediaThumbnailUrl || youtubeVideo.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+                <span className="youtube-play-overlay">▶</span>
+                <span className="media-credit">
+                  {post.author} - {post.city}
+                </span>
+              </button>
+            )}
+	          <button
+	            className="youtube-link-chip"
+	            type="button"
+	            onClick={openYoutubeInNewTab}
+	          >
+	            Assistir no YouTube
+	          </button>
+            {youtubeFallbackVisible && (
+              <div className="youtube-embed-fallback">
+                <strong>Se o player mostrar erro, este vídeo bloqueia incorporação externa.</strong>
+                <span>Você ainda pode assistir diretamente no YouTube sem quebrar o feed.</span>
+                <button type="button" onClick={openYoutubeInNewTab}>
+                  Abrir no YouTube
+                </button>
+              </div>
+            )}
+	        </div>
+	      )}
       {post.mediaUrl && post.mediaType !== 'youtube' && (
         <div
           className="post-media"
@@ -6439,7 +7750,7 @@ post.body && (
             </section>
           )}
         </div>
-        <button data-comment-trigger-id={post.id} onClick={toggleCommentsPanel}>
+        <button className="comment-count-button" data-comment-trigger-id={post.id} onClick={toggleCommentsPanel}>
           {comments.length} comentário(s)
         </button>
       </div>
@@ -6450,7 +7761,7 @@ post.body && (
               {feedReactions.map((reaction) => (
                 <button
                   aria-label={reaction.label}
-                  className={post.selectedReaction === reaction.id ? 'active' : ''}
+                  className={post.selectedReaction === reaction.id ? 'reaction-picker-button active' : 'reaction-picker-button'}
                   key={reaction.id}
                   onClick={() => selectReaction(reaction.id)}
                   role="menuitem"
@@ -6616,6 +7927,7 @@ function OpportunitiesView({
   setProfileResumeDetails,
   currentUser,
   openPage,
+  requestAuthentication,
 }) {
   const [search, setSearch] = useState('');
   const [type, setType] = useState('Todas');
@@ -6625,6 +7937,7 @@ function OpportunitiesView({
   const [showResumeCreate, setShowResumeCreate] = useState(false);
   const [opportunityNotice, setOpportunityNotice] = useState('');
   const [resumeMode, setResumeMode] = useState('profile');
+  const [customResumeName, setCustomResumeName] = useState('currículo importado nesta candidatura');
   const [resumeDraft, setResumeDraft] = useState({
     objective: profileResumeDetails?.objective ?? '',
     experience: profileResumeDetails?.experience ?? '',
@@ -6710,10 +8023,20 @@ function OpportunitiesView({
   );
   const selectedJobContactMethods = selectedJob ? normalizeOpportunityContactMethods(selectedJob) : [];
   const selectedJobAllowsApplication =
-    Boolean(selectedJob) && canRegisterResume && selectedJobContactMethods.includes('application');
+    Boolean(selectedJob) && selectedJobContactMethods.includes('application');
   const selectedJobAllowsWhatsapp = Boolean(selectedJob) && selectedJobContactMethods.includes('whatsapp');
   const selectedJobAllowsEmail = Boolean(selectedJob) && selectedJobContactMethods.includes('email');
   const selectedJobAllowsPlatform = Boolean(selectedJob) && selectedJobContactMethods.includes('platform');
+  const selectedJobEmailAction = selectedJob
+    ? buildOpportunityEmailAction(selectedJob, currentUser, profileResumeName)
+    : null;
+  const applicationJobEmailAction = applicationJob
+    ? buildOpportunityEmailAction(
+        applicationJob,
+        currentUser,
+        resumeMode === 'profile' ? profileResumeName : customResumeName,
+      )
+    : null;
 
   function resetJobDraft() {
     setJobDraft({
@@ -6795,6 +8118,24 @@ function OpportunitiesView({
     setProfileResumeName('currículo manual cadastrado');
     setShowResumeCreate(false);
     setOpportunityNotice('Currículo manual salvo para candidaturas.');
+  }
+
+  function handleOpportunityEmailClick(event, job, resumeName = profileResumeName) {
+    if (!currentUser) {
+      event.preventDefault();
+      requestAuthentication('entrar em contato por email');
+      return;
+    }
+    const emailAction = buildOpportunityEmailAction(job, currentUser, resumeName);
+    if (!emailAction.recipient) {
+      event.preventDefault();
+      setOpportunityNotice('Esta oportunidade não informou email de contato. Use outro canal disponível.');
+      return;
+    }
+
+    setOpportunityNotice(
+      `Abrindo email para ${emailAction.recipient}. Anexe o currículo antes de enviar, se necessário.`,
+    );
   }
 
   return (
@@ -6898,12 +8239,12 @@ function OpportunitiesView({
       <div className="job-grid">
         {visibleJobs.map((job) => {
           const contactMethods = normalizeOpportunityContactMethods(job);
-          const showApplicationContact = canRegisterResume && contactMethods.includes('application');
+          const showApplicationContact = contactMethods.includes('application');
           const showWhatsappContact = contactMethods.includes('whatsapp');
           const showEmailContact = contactMethods.includes('email');
           const showPlatformContact = contactMethods.includes('platform');
           const alreadyApplied = applications.some((application) => application.jobId === job.id);
-          const mailSubject = encodeURIComponent(`Interesse em ${job.title}`);
+          const emailAction = buildOpportunityEmailAction(job, currentUser, profileResumeName);
           return (
           <article className="job-card" key={job.id}>
             <header className="compact-card-header">
@@ -6922,7 +8263,9 @@ function OpportunitiesView({
                       : 'Candidatar-se',
                     description: 'Usar currículo do perfil ou importar outro',
                     disabled: applications.some((application) => application.jobId === job.id),
-                    onClick: () => setApplicationJob(job),
+	                    onClick: () => (currentUser && canRegisterResume
+                        ? setApplicationJob(job)
+                        : requestAuthentication('candidatar-se à oportunidade')),
                   },
                 ]}
               />
@@ -6943,18 +8286,26 @@ function OpportunitiesView({
                 <button
                   type="button"
                   disabled={alreadyApplied}
-                  onClick={() => setApplicationJob(job)}
+	                  onClick={() => (currentUser && canRegisterResume
+                      ? setApplicationJob(job)
+                      : requestAuthentication('candidatar-se à oportunidade'))}
                 >
                   {alreadyApplied ? 'Candidatura enviada' : 'Candidatar-se'}
                 </button>
               )}
               {showWhatsappContact && (
-                <a
-                  className="contact-channel"
-                  href={`https://wa.me/${onlyDigits(job.whatsapp ?? '')}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
+	                <a
+	                  className="contact-channel"
+	                  href={`https://wa.me/${onlyDigits(job.whatsapp ?? '')}`}
+	                  target="_blank"
+	                  rel="noreferrer"
+                    onClick={(event) => {
+                      if (!currentUser) {
+                        event.preventDefault();
+                        requestAuthentication('entrar em contato por WhatsApp');
+                      }
+                    }}
+	                >
                   <span aria-hidden="true">☏</span>
                   WhatsApp
                 </a>
@@ -6962,7 +8313,13 @@ function OpportunitiesView({
               {showEmailContact && (
                 <a
                   className="contact-channel"
-                  href={`mailto:${job.rhEmail}?subject=${mailSubject}`}
+                  href={emailAction.href || '#'}
+                  onClick={(event) => handleOpportunityEmailClick(event, job)}
+                  title={
+                    emailAction.recipient
+                      ? `Enviar email para ${emailAction.recipient}`
+                      : 'Email de contato não informado'
+                  }
                 >
                   <span aria-hidden="true">✉</span>
                   Email
@@ -6970,10 +8327,12 @@ function OpportunitiesView({
               )}
               {showPlatformContact && (
                 <button
-                  className="contact-channel"
-                  type="button"
-                  onClick={() => setOpportunityNotice(`Mensagem interna aberta para ${job.company}.`)}
-                >
+	                  className="contact-channel"
+	                  type="button"
+	                  onClick={() => (currentUser
+                      ? setOpportunityNotice(`Mensagem interna aberta para ${job.company}.`)
+                      : requestAuthentication('enviar mensagem pela plataforma'))}
+	                >
                   <span aria-hidden="true">●</span>
                   Mensagem
                 </button>
@@ -6995,7 +8354,13 @@ function OpportunitiesView({
               <article><strong>O que exige</strong><p>{selectedJob.requirements}</p></article>
               <article><strong>O que oferece</strong><p>{selectedJob.benefits}</p></article>
               {(selectedJobAllowsEmail || selectedJobAllowsApplication) && (
-                <article><strong>Email responsável</strong><p>{selectedJob.rhEmail}</p></article>
+                <article>
+                  <strong>Email responsável</strong>
+                  <p>{selectedJob.rhEmail || 'Email não informado'}</p>
+                  <small>
+                    O botão de email abre uma mensagem preenchida. Anexe o currículo no cliente de email antes de enviar.
+                  </small>
+                </article>
               )}
               {selectedJobAllowsWhatsapp && (
                 <article><strong>WhatsApp</strong><p>{selectedJob.whatsapp}</p></article>
@@ -7003,25 +8368,46 @@ function OpportunitiesView({
             </div>
             <div className="button-row">
               {selectedJobAllowsApplication && (
-                <button onClick={() => { setApplicationJob(selectedJob); setSelectedJob(null); }}>
+	                <button onClick={() => {
+                    if (!currentUser || !canRegisterResume) {
+                      requestAuthentication('candidatar-se à oportunidade');
+                      return;
+                    }
+                    setApplicationJob(selectedJob);
+                    setSelectedJob(null);
+                  }}>
                   Candidatar-se
                 </button>
               )}
               {selectedJobAllowsWhatsapp && (
-                <a className="button-link" href={`https://wa.me/${onlyDigits(selectedJob.whatsapp ?? '')}`} target="_blank" rel="noreferrer">
+	                <a
+                    className="button-link"
+                    href={`https://wa.me/${onlyDigits(selectedJob.whatsapp ?? '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => {
+                      if (!currentUser) {
+                        event.preventDefault();
+                        requestAuthentication('entrar em contato por WhatsApp');
+                      }
+                    }}
+                  >
                   Chamar no WhatsApp
                 </a>
               )}
               {selectedJobAllowsEmail && (
                 <a
                   className="button-link light"
-                  href={`mailto:${selectedJob.rhEmail}?subject=${encodeURIComponent(`Interesse em ${selectedJob.title}`)}`}
+                  href={selectedJobEmailAction?.href || '#'}
+                  onClick={(event) => handleOpportunityEmailClick(event, selectedJob)}
                 >
                   Enviar email
                 </a>
               )}
               {selectedJobAllowsPlatform && (
-                <button className="light" onClick={() => setOpportunityNotice(`Mensagem interna aberta para ${selectedJob.company}.`)}>
+	                <button className="light" onClick={() => (currentUser
+                    ? setOpportunityNotice(`Mensagem interna aberta para ${selectedJob.company}.`)
+                    : requestAuthentication('enviar mensagem pela plataforma'))}>
                   Mensagem pela plataforma
                 </button>
               )}
@@ -7138,13 +8524,13 @@ function OpportunitiesView({
             <div className="opportunity-type-grid">
               {opportunityTypeOptions.map((option) => (
                 <button
-                  className={jobDraft.type === option.type ? 'active' : ''}
+                  className={jobDraft.type === option.type ? 'opportunity-choice active' : 'opportunity-choice'}
                   key={option.type}
                   type="button"
                   onClick={() => selectOpportunityType(option)}
                 >
-                  <strong>{option.title}</strong>
-                  <small>{option.description}</small>
+                  <strong className="opportunity-choice-title">{option.title}</strong>
+                  <small className="opportunity-choice-description">{option.description}</small>
                 </button>
               ))}
             </div>
@@ -7157,15 +8543,15 @@ function OpportunitiesView({
                 const isActive = normalizeOpportunityContactMethods(jobDraft).includes(method.id);
                 return (
                   <button
-                    className={isActive ? 'active' : ''}
+                    className={isActive ? 'contact-method-choice active' : 'contact-method-choice'}
                     key={method.id}
                     type="button"
                     aria-pressed={isActive}
                     onClick={() => toggleJobContactMethod(method.id)}
                   >
-                    <span aria-hidden="true">{method.icon}</span>
-                    <strong>{method.label}</strong>
-                    <small>{method.description}</small>
+                    <span className="contact-method-icon" aria-hidden="true">{method.icon}</span>
+                    <strong className="contact-method-title">{method.label}</strong>
+                    <small className="contact-method-description">{method.description}</small>
                   </button>
                 );
               })}
@@ -7219,10 +8605,24 @@ function OpportunitiesView({
               </button>
             </div>
             {resumeMode === 'custom' && (
-              <FileUpload label="Currículo para esta vaga" action="Importar arquivo" accept=".pdf,.doc,.docx" />
+              <FileUpload
+                label="Currículo para esta vaga"
+                action={customResumeName}
+                accept=".pdf,.doc,.docx"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) setCustomResumeName(file.name);
+                }}
+              />
             )}
             {!currentUser && (
               <p className="policy-note">Entre na conta antes de enviar a candidatura.</p>
+            )}
+            {hasOpportunityContactMethod(applicationJob, 'email') && (
+              <p className="policy-note">
+                Email do responsável: {applicationJob.rhEmail || 'não informado'}.
+                Ao enviar por email, o navegador abre a mensagem preenchida e você anexa o currículo.
+              </p>
             )}
             <div className="button-row">
               <button
@@ -7237,6 +8637,21 @@ function OpportunitiesView({
               >
                 Enviar candidatura
               </button>
+              {hasOpportunityContactMethod(applicationJob, 'email') && (
+                <a
+                  className="button-link light"
+                  href={applicationJobEmailAction?.href || '#'}
+                  onClick={(event) =>
+                    handleOpportunityEmailClick(
+                      event,
+                      applicationJob,
+                      resumeMode === 'profile' ? profileResumeName : customResumeName,
+                    )
+                  }
+                >
+                  Enviar por email
+                </a>
+              )}
               <button className="light" onClick={() => setApplicationJob(null)}>
                 Voltar
               </button>
@@ -7259,9 +8674,11 @@ function BenefitsView({ benefits, redemptions, userPoints, redeemBenefit, curren
     <section>
       <div className="benefit-toolbar">
         <strong>
-          {hasSubscription
-            ? `${userPoints} pontos disponíveis`
-            : 'Assinatura obrigatória para visualizar cupons'}
+          {currentUser
+            ? hasSubscription
+              ? `${userPoints} pontos disponíveis`
+              : 'Assinatura obrigatória para resgatar cupons'
+            : 'Entre para resgatar benefícios'}
         </strong>
         <div className="compact-filter-control">
           <span>{category}</span>
@@ -7280,37 +8697,45 @@ function BenefitsView({ benefits, redemptions, userPoints, redeemBenefit, curren
           const redeemed = redemptions.includes(benefit.id);
           const blocked = !hasSubscription || (userPoints < benefit.pointsCost && !redeemed);
           return (
-            <article className={hasSubscription ? 'benefit-card' : 'benefit-card locked'} key={benefit.id}>
+              <article className={hasSubscription ? 'benefit-card' : 'benefit-card locked'} key={benefit.id}>
               <header className="compact-card-header">
                 <span>{benefit.category}</span>
                 <strong className="benefit-availability">
                   {hasSubscription && !blocked && !redeemed ? 'Disponível' : redeemed ? 'Resgatado' : 'Bloqueado'}
                 </strong>
               </header>
-              <h3>{hasSubscription ? benefit.title : 'Benefício exclusivo'}</h3>
+              <h3>{benefit.title}</h3>
               <p>
-                {hasSubscription
-                  ? `${benefit.partner} - ${benefit.city}`
-                  : 'Assine para ver o parceiro, desconto e regra de resgate.'}
+                {benefit.partner} - {benefit.city}
               </p>
-              <strong>{hasSubscription ? `${benefit.pointsCost} pontos` : 'Clube fechado'}</strong>
+              <strong>{benefit.pointsCost} pontos</strong>
               {hasSubscription && redeemed && (
                 <p className="benefit-delivery-note">
-                  Enviado por app, email ({maskEmail(currentUser.email)}) e WhatsApp.
+                  Enviado por app, email ({maskEmail(getContactEmail(currentUser))}) e WhatsApp.
                 </p>
               )}
               <small>
-                {hasSubscription
-                  ? `${benefit.redemptions} resgates registrados`
-                  : 'Disponível para PF, PJ, patrocinador e parceiro ativo'}
+                {benefit.redemptions} resgates registrados
               </small>
               <button
                 className="benefit-redeem-button"
                 disabled={hasSubscription && (blocked || redeemed)}
                 type="button"
-                onClick={() => (hasSubscription ? redeemBenefit(benefit.id) : openPage('partners'))}
+                onClick={() => {
+                  if (!currentUser) {
+                    redeemBenefit(benefit.id);
+                    return;
+                  }
+                  if (hasSubscription) {
+                    redeemBenefit(benefit.id);
+                    return;
+                  }
+                  openPage('partners');
+                }}
               >
-                {hasSubscription
+                {!currentUser
+                  ? 'Entrar para resgatar'
+                  : hasSubscription
                   ? redeemed
                     ? 'Benefício enviado'
                     : blocked
@@ -7690,7 +9115,7 @@ function PartnersView({ leads, registerPartnerLead, openPage, openSupport }) {
   );
 }
 
-function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser }) {
+function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubscriptionPending }) {
   const [paymentMethod, setPaymentMethod] = useState('pix');
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [paymentNotice, setPaymentNotice] = useState('');
@@ -7710,11 +9135,39 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser }) {
     boleto: 'Boleto',
   };
 
-  function confirmSubscription() {
+  async function confirmSubscription() {
+    if (!currentUser) {
+      setPaymentNotice('Entre na conta antes de iniciar o checkout de assinatura.');
+      openPage('profile');
+      return;
+    }
+
+    let intent = {
+      status: plan.price > 0 ? 'PENDING_PAYMENT' : 'PAYMENT_PROCESSING',
+      paymentProvider: paymentMethod,
+      externalSubscriptionId: `local-${Date.now()}`,
+    };
+    try {
+      intent = await subscriptionRequest('/checkout-intent', {
+        method: 'POST',
+        body: JSON.stringify({
+          planId: plan.subscriptionPlanId,
+          paymentProvider: paymentMethod,
+          billingCycle,
+        }),
+      });
+    } catch {
+      // Mantem o fluxo local pendente quando a API nao esta disponivel.
+    }
+
+    onSubscriptionPending?.(plan, {
+      ...intent,
+      paymentProvider: paymentMethod,
+    });
     setPaymentNotice(
       plan.price > 0
-        ? `Assinatura ${plan.name} confirmada por ${paymentLabels[paymentMethod]} no mock.`
-        : 'Cadastro de embaixador enviado para validação comercial.',
+        ? `Pagamento iniciado. A assinatura ${plan.name} só será ativada após confirmação do webhook do gateway.`
+        : 'Cadastro de embaixador enviado para validação comercial. A liberação depende de aprovação.',
     );
   }
 
@@ -7731,7 +9184,7 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser }) {
           <span className="section-kicker">Dados da conta</span>
           <h3>{currentUser ? currentUser.name : 'Nova assinatura'}</h3>
           <label>Nome completo ou razao social<input defaultValue={currentUser?.name ?? ''} placeholder="Nome do assinante" /></label>
-          <label>Email<input defaultValue={currentUser?.email ?? ''} placeholder="email@dominio.com" /></label>
+          <label>Email real para cobrança<input defaultValue={getContactEmail(currentUser)} placeholder="email@dominio.com" /></label>
           <label>CPF/CNPJ<input placeholder="Documento do pagador" /></label>
           <label>Celular<input placeholder="+55 00 00000-0000" /></label>
         </section>
@@ -7828,6 +9281,36 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser }) {
   );
 }
 
+function ExternalCourseLinkCard({ course }) {
+  const preview = getExternalCoursePreview(
+    course.externalCourseUrl,
+    course.externalPlatformName || course.title,
+  );
+  if (!preview) return null;
+
+  return (
+    <a
+      className="external-course-link-card"
+      href={preview.url}
+      target="_blank"
+      rel="noreferrer"
+    >
+      <span className="external-course-thumb">
+        {preview.thumbnailUrl ? (
+          <img src={preview.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+        ) : (
+          <b>{preview.host.slice(0, 2).toUpperCase()}</b>
+        )}
+      </span>
+      <span>
+        <strong>{course.externalPlatformName || preview.title}</strong>
+        <small>{preview.host}</small>
+      </span>
+      <b>↗</b>
+    </a>
+  );
+}
+
 function CoursesView({
   courses,
   selectedCourse,
@@ -7898,6 +9381,10 @@ function CoursesView({
           <p className="empty-state">Nenhum curso encontrado com esses filtros.</p>
         ) : visibleCourses.map((course) => {
           const modules = normalizeCourseModules(course);
+          const externalPreview = getExternalCoursePreview(
+            course.externalCourseUrl,
+            course.externalPlatformName || course.title,
+          );
           return (
             <button
               className={
@@ -7909,13 +9396,33 @@ function CoursesView({
               onClick={() => setSelectedCourseId(course.id)}
             >
               <span className="pill">{course.tag}</span>
-              <div className="mock-product">
-                <strong>{course.isFree ? 'FREE' : `R$${course.price}`}</strong>
-              </div>
+              {course.deliveryMode === 'external' && externalPreview ? (
+                <div className={`mock-product external-course-preview ${externalPreview.thumbnailUrl ? 'has-thumbnail' : ''}`}>
+                  {externalPreview.thumbnailUrl ? (
+                    <img src={externalPreview.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+                  ) : (
+                    <strong>{externalPreview.host.slice(0, 2).toUpperCase()}</strong>
+                  )}
+                  <span>{externalPreview.host}</span>
+                </div>
+              ) : (
+                <div className="mock-product">
+                  <strong>{course.isFree ? 'FREE' : `R$${course.price}`}</strong>
+                </div>
+              )}
               <h3>{course.title}</h3>
               <div className="course-card-meta compact">
-                <span>{modules.length} módulo(s)</span>
-                <span>{getCourseLessonCount(course)} aula(s)</span>
+                {course.deliveryMode === 'external' ? (
+                  <>
+                    <span>Divulgação externa</span>
+                    <span>{externalPreview?.host ?? 'Link externo'}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{modules.length} módulo(s)</span>
+                    <span>{getCourseLessonCount(course)} aula(s)</span>
+                  </>
+                )}
               </div>
               {(courseProgress[course.id] ?? 0) > 0 && (
                 <small>{courseProgress[course.id]}% concluído</small>
@@ -7933,15 +9440,19 @@ function CoursesView({
             Produtor: {selectedCourse.instructor}. Publicação: {selectedCourse.company}.
             Aula ao vivo: {formatDateTime(selectedCourse.liveDate)}.
           </p>
-          <div className="course-detail-curriculum">
-            {normalizeCourseModules(selectedCourse).slice(0, 4).map((module, index) => (
-              <article key={module.id}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                <strong>{module.title}</strong>
-                <small>{module.lessons.length} aula(s) • {module.release}</small>
-              </article>
-            ))}
-          </div>
+          {selectedCourse.deliveryMode === 'external' ? (
+            <ExternalCourseLinkCard course={selectedCourse} />
+          ) : (
+            <div className="course-detail-curriculum">
+              {normalizeCourseModules(selectedCourse).slice(0, 4).map((module, index) => (
+                <article key={module.id}>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  <strong>{module.title}</strong>
+                  <small>{module.lessons.length} aula(s) • {module.release}</small>
+                </article>
+              ))}
+            </div>
+          )}
           {!selectedCourse.isFree && (
             <p className="policy-note">
               A plataforma retém {selectedCourse.platformFeePercent}% de cada venda
@@ -7949,13 +9460,19 @@ function CoursesView({
             </p>
           )}
         </div>
-        <button onClick={() => startCheckout(selectedCourse.id)}>
-          {enrollments.includes(selectedCourse.id)
-            ? 'Ver no perfil'
-            : selectedCourse.isFree
-              ? 'Inscrever grátis'
-              : `Comprar por R$ ${selectedCourse.price}`}
-        </button>
+        {selectedCourse.deliveryMode === 'external' && selectedCourse.externalCourseUrl ? (
+          <button onClick={() => window.open(normalizeExternalUrl(selectedCourse.externalCourseUrl), '_blank', 'noopener,noreferrer')}>
+            Acessar plataforma externa
+          </button>
+        ) : (
+          <button onClick={() => startCheckout(selectedCourse.id)}>
+            {enrollments.includes(selectedCourse.id)
+              ? 'Ver no perfil'
+              : selectedCourse.isFree
+                ? 'Inscrever grátis'
+                : `Comprar por R$ ${selectedCourse.price}`}
+          </button>
+        )}
       </aside>
 
       <section className="created-courses-section">
@@ -7964,17 +9481,40 @@ function CoursesView({
           <p className="empty-state">Nenhum curso criado ainda.</p>
         ) : (
           <div className="created-course-list">
-            {createdCourses.map((course) => (
-              <button
-                className={`created-course-card ${course.color}`}
-                key={course.id}
-                onClick={() => openCreatedCourse(course.id)}
-              >
-                <strong>{course.title}</strong>
-                <span>{course.published ? 'Publicado' : 'Rascunho'}</span>
-                <small>{course.isFree ? 'Gratuito' : `R$ ${course.price}`}</small>
-              </button>
-            ))}
+            {createdCourses.map((course) => {
+              const issues = course.published ? [] : getCoursePublicationIssues(course);
+              const visibleIssues = issues.slice(0, 3);
+              return (
+                <button
+                  className={`created-course-card ${course.published ? course.color : 'draft-neutral'} ${course.published ? 'published' : 'draft'}`}
+                  key={course.id}
+                  onClick={() => openCreatedCourse(course.id)}
+                >
+                  <strong>{course.title || 'Curso sem nome'}</strong>
+                  <span className="created-course-status">{course.published ? 'Publicado' : 'Rascunho'}</span>
+                  <small>
+                    {course.tag || 'Tema pendente'} • {course.isFree ? 'Gratuito' : `R$ ${course.price || 0}`}
+                  </small>
+                  <small>
+                    {course.updatedAt || course.createdAt
+                      ? `Atualizado: ${formatDateTime(course.updatedAt ?? course.createdAt)}`
+                      : 'Criado nesta sessão'}
+                  </small>
+                  {!course.published && issues.length > 0 && (
+                    <div className="created-course-missing">
+                      <span>Falta completar</span>
+                      {visibleIssues.map((issue) => (
+                        <small key={issue.id}>{issue.label}</small>
+                      ))}
+                      {issues.length > visibleIssues.length && (
+                        <small>+{issues.length - visibleIssues.length} item(ns)</small>
+                      )}
+                    </div>
+                  )}
+                  <span className="created-course-action">Continuar edição</span>
+                </button>
+              );
+            })}
           </div>
         )}
       </section>
@@ -8001,6 +9541,9 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
     price: '497',
     liveDate: '2026-06-20T19:00',
     linkedCompany: linkedCompanies[0] ?? '',
+    deliveryMode: 'internal',
+    externalCourseUrl: '',
+    externalPlatformName: '',
   });
   const [modules, setModules] = useState([
     {
@@ -8037,6 +9580,10 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+    if (field === 'email') {
+      setEmailVerificationSent(false);
+      setSignupNotice('');
+    }
   }
 
   function updateModule(moduleId, field, value) {
@@ -8114,6 +9661,20 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
 
   const lessonCount = modules.reduce((total, module) => total + module.lessons.length, 0);
   const selectedTopic = resolveCourseTopic(form.topic, form.customTopic);
+  const draftCourseForValidation = {
+    ...form,
+    title: form.title,
+    tag: selectedTopic,
+    topic: selectedTopic,
+    isFree: pricingMode === 'free',
+    price: pricingMode === 'free' ? 0 : Number(form.price || 0),
+    deliveryMode: form.deliveryMode,
+    externalCourseUrl: form.externalCourseUrl,
+    modules,
+  };
+  const creationIssues = getCoursePublicationIssues(draftCourseForValidation, modules);
+  const creationIssueIds = new Set(creationIssues.map((issue) => issue.id));
+  const hasCreationIssue = (issueId) => creationIssueIds.has(issueId);
 
   return (
     <section className="zoom-in">
@@ -8132,7 +9693,7 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
       <div className="create-course-form advanced-course-form">
         <section className="builder-card">
           <span className="section-kicker">Informações do curso</span>
-          <label>
+          <label className={hasCreationIssue('course-title') ? 'required-missing' : ''}>
             Nome do curso
             <input
               value={form.title}
@@ -8140,7 +9701,7 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
               placeholder="Ex: Curso completo de comunidade"
             />
           </label>
-          <label>
+          <label className={hasCreationIssue('course-topic') ? 'required-missing' : ''}>
             Tema do curso
             <select
               value={form.topic}
@@ -8161,7 +9722,7 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
               />
             </label>
           )}
-          <label>
+          <label className={hasCreationIssue('course-description') ? 'required-missing' : ''}>
             Descrição
             <textarea
               value={form.description}
@@ -8172,6 +9733,59 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
           <div className="course-implementation-note">
             <strong>Estrutura recomendada</strong>
             <p>Use módulos curtos, aula com objetivo claro, tema bem definido, material de apoio e uma regra objetiva para liberar a próxima etapa.</p>
+          </div>
+          <div className="course-implementation-note external-course-mode-panel">
+            <strong>Modelo de entrega</strong>
+            <p>
+              Hospede o curso dentro da Core Academy ou use esta área para divulgar
+              um curso que já está em outra plataforma.
+            </p>
+            <div className="pricing-switch">
+              <button
+                className={form.deliveryMode === 'internal' ? 'active' : ''}
+                type="button"
+                onClick={() => update('deliveryMode', 'internal')}
+              >
+                Curso interno
+              </button>
+              <button
+                className={form.deliveryMode === 'external' ? 'active' : ''}
+                type="button"
+                onClick={() => update('deliveryMode', 'external')}
+              >
+                Divulgação externa
+              </button>
+            </div>
+            {form.deliveryMode === 'external' && (
+              <>
+                <label className={hasCreationIssue('course-external-url') ? 'required-missing' : ''}>
+                  Link da plataforma externa
+                  <input
+                    id="course-external-url-field"
+                    value={form.externalCourseUrl}
+                    onChange={(event) => update('externalCourseUrl', event.target.value)}
+                    placeholder="https://hotmart.com/... ou https://youtube.com/..."
+                  />
+                </label>
+                <label>
+                  Nome da plataforma
+                  <input
+                    value={form.externalPlatformName}
+                    onChange={(event) => update('externalPlatformName', event.target.value)}
+                    placeholder="Hotmart, Eduzz, Kiwify, YouTube..."
+                  />
+                </label>
+                {getExternalCoursePreview(form.externalCourseUrl, form.externalPlatformName || form.title) && (
+                  <ExternalCourseLinkCard
+                    course={{
+                      title: form.title || 'Curso externo',
+                      externalCourseUrl: form.externalCourseUrl,
+                      externalPlatformName: form.externalPlatformName,
+                    }}
+                  />
+                )}
+              </>
+            )}
           </div>
           {isStudent && (
             <div className="course-implementation-note">
@@ -8259,7 +9873,7 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
           </div>
           {pricingMode === 'paid' && (
             <>
-              <label>
+              <label className={hasCreationIssue('course-price') ? 'required-missing' : ''}>
                 Valor do curso
                 <input
                   type="number"
@@ -8286,6 +9900,19 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
               onChange={(event) => update('liveDate', event.target.value)}
             />
           </label>
+          <div className={creationIssues.length ? 'course-create-missing-panel' : 'course-create-ready-panel'}>
+            <strong>{creationIssues.length ? 'Falta completar' : 'Rascunho com base preenchida'}</strong>
+            {creationIssues.length ? (
+              creationIssues.slice(0, 6).map((issue) => (
+                <span key={issue.id}>{issue.label}: {issue.detail}</span>
+              ))
+            ) : (
+              <span>Informações mínimas prontas para abrir o builder e publicar depois.</span>
+            )}
+            {creationIssues.length > 6 && (
+              <span>+{creationIssues.length - 6} pendência(s) no restante da estrutura.</span>
+            )}
+          </div>
           <button
             onClick={() =>
               createCourse({
@@ -8295,6 +9922,9 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
                 isFree: pricingMode === 'free',
                 publicationMode,
                 linkedCompany: publicationMode === 'company' ? form.linkedCompany : '',
+                deliveryMode: form.deliveryMode,
+                externalCourseUrl: form.externalCourseUrl,
+                externalPlatformName: form.externalPlatformName,
                 modules,
               })
             }
@@ -8315,7 +9945,14 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
 
         <div className="module-planner-list">
           {modules.map((module, moduleIndex) => (
-            <article className="module-builder-card" key={module.id}>
+            <article
+              className={
+                creationIssues.some((issue) => issue.id.startsWith(`${module.id}-`))
+                  ? 'module-builder-card required-missing'
+                  : 'module-builder-card'
+              }
+              key={module.id}
+            >
               <header>
                 <span>{String(moduleIndex + 1).padStart(2, '0')}</span>
                 <div>
@@ -8341,7 +9978,14 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
 
               <div className="lesson-builder-list">
                 {module.lessons.map((lesson, lessonIndex) => (
-                  <section className="lesson-builder-row" key={lesson.id}>
+                  <section
+                    className={
+                      creationIssues.some((issue) => issue.id.startsWith(`${lesson.id}-`))
+                        ? 'lesson-builder-row required-missing'
+                        : 'lesson-builder-row'
+                    }
+                    key={lesson.id}
+                  >
                     <span>{lessonIndex + 1}</span>
                     <input
                       value={lesson.title}
@@ -9110,6 +10754,7 @@ function CommunitiesView({
   addCommunityMember,
   removeCommunityMember,
   updateCommunityName,
+  updateCommunityPhoto,
   deleteEmptyCommunity,
 }) {
   const [draft, setDraft] = useState('');
@@ -9357,6 +11002,18 @@ function CommunitiesView({
     setAdminStatus('Nome da comunidade atualizado.');
   }
 
+  function handleCommunityPhotoChange(event) {
+    const file = event.target.files?.[0];
+    if (!file || !activeCommunity?.id) return;
+    if (!activeCommunity.isAdmin) {
+      setAdminStatus('Somente admin pode alterar a foto da comunidade.');
+      return;
+    }
+
+    updateCommunityPhoto(activeCommunity.id, URL.createObjectURL(file));
+    setAdminStatus('Foto da comunidade atualizada.');
+  }
+
   function addMemberToCommunity() {
     const name = memberDraft.trim();
     if (!activeCommunity?.id || !name) return;
@@ -9447,10 +11104,19 @@ function CommunitiesView({
     return (
       <>
         <header className="community-details-header">
-          <div>
-            <span className="section-kicker">{activeCommunity.type}</span>
-            <h3>{activeCommunity.name}</h3>
-            <p>{activeCommunity.topic}</p>
+          <div className="community-details-identity">
+            <CommunityAvatar community={activeCommunity} className="community-details-avatar" />
+            <div>
+              <span className="section-kicker">{activeCommunity.type}</span>
+              <h3>{activeCommunity.name}</h3>
+              <p>{activeCommunity.topic}</p>
+              {activeCommunity.isAdmin && (
+                <label className="community-photo-upload compact">
+                  <input type="file" accept="image/*" onChange={handleCommunityPhotoChange} />
+                  <span>{activeCommunity.photo ? 'Trocar foto' : 'Adicionar foto'}</span>
+                </label>
+              )}
+            </div>
           </div>
           <button className="light" type="button" onClick={() => setCommunityDetailsOpen(false)}>
             Fechar detalhes
@@ -9645,7 +11311,7 @@ function CommunitiesView({
                     type="button"
                     onClick={() => setCommunityDetailsOpen(true)}
                   >
-                    <span className="community-title-avatar">{getInitials(activeCommunity.name)}</span>
+                    <CommunityAvatar community={activeCommunity} className="community-title-avatar" />
                     <div>
                       <strong>{activeCommunity.name}</strong>
                       <small>
@@ -9879,6 +11545,7 @@ function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
     accessMode: 'public',
     password: '',
     color: 'yellow',
+    photo: '',
   });
   const [customNiche, setCustomNiche] = useState('');
   const [relatedOptions, setRelatedOptions] = useState(defaultRelatedOptions);
@@ -9887,6 +11554,12 @@ function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleCommunityCreatePhoto(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    updateForm('photo', URL.createObjectURL(file));
   }
 
   function submit(event) {
@@ -9933,6 +11606,16 @@ function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
       <form className="create-community-form" onSubmit={submit}>
         <section className="builder-card">
           <span className="section-kicker">Identidade</span>
+          <div className="community-photo-field">
+            <CommunityAvatar
+              community={{ name: form.name || 'Nova comunidade', photo: form.photo }}
+              className="community-create-avatar"
+            />
+            <label className="community-photo-upload">
+              <input type="file" accept="image/*" onChange={handleCommunityCreatePhoto} />
+              <span>{form.photo ? 'Trocar foto da comunidade' : 'Adicionar foto da comunidade'}</span>
+            </label>
+          </div>
           <label>
             Nome da comunidade
             <input
@@ -10055,6 +11738,10 @@ function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
 
         <aside className={`admin-card ${form.color}`}>
           <span className="section-kicker">Preview</span>
+          <CommunityAvatar
+            community={{ name: form.name || 'Nome da comunidade', photo: form.photo }}
+            className="community-preview-avatar"
+          />
           <h2>{form.name || 'Nome da comunidade'}</h2>
           <p>{form.topic || 'Assunto da comunidade'}</p>
           <p>{form.relatedTo === 'Outro curso ou tema' ? customRelatedTo || 'Tema próprio' : form.relatedTo}</p>
@@ -10092,6 +11779,10 @@ function CreateEventCallView({ createEventCall, currentUser, goBack }) {
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+    if (field === 'email') {
+      setEmailVerificationSent(false);
+      setSignupNotice('');
+    }
   }
 
   function submit(event) {
@@ -10264,7 +11955,7 @@ function CreateEventCallView({ createEventCall, currentUser, goBack }) {
           Exigir documento na inscrição
         </label>
         <p className="policy-note">
-          Toda inscrição exige login, nome, email e WhatsApp. Documento fica protegido e aparece ao criador apenas como enviado.
+          Toda inscrição exige login, nome, email real e WhatsApp. Documento fica protegido e aparece ao criador apenas como enviado.
         </p>
         <div className="button-row">
           <button type="submit">Publicar chamada</button>
@@ -10284,6 +11975,7 @@ function EventsView({
   eventRegistrations,
   openPage,
   registerEventAttendance,
+  requestAuthentication,
 }) {
   const [eventSearch, setEventSearch] = useState('');
   const [eventFilter, setEventFilter] = useState('Próximos');
@@ -10294,7 +11986,7 @@ function EventsView({
   const [eventPaymentNotice, setEventPaymentNotice] = useState('');
   const [eventRegistrationDraft, setEventRegistrationDraft] = useState({
     fullName: currentUser?.name ?? '',
-    email: currentUser?.email ?? '',
+    email: getContactEmail(currentUser),
     whatsapp: '',
     documentNumber: '',
     company: '',
@@ -10355,6 +12047,10 @@ function EventsView({
     .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
 
   function vote(eventId, answer) {
+    if (!currentUser) {
+      requestAuthentication(answer === 'yes' ? 'inscrever-se em evento' : 'responder evento');
+      return;
+    }
     setVotes((current) => ({
       ...current,
       [eventId]: answer,
@@ -10383,14 +12079,14 @@ function EventsView({
 
   function startEventRegistration(event) {
     if (!currentUser) {
-      openPage('profile');
+      requestAuthentication('inscrever-se em evento');
       return;
     }
     setRegistrationEvent(event);
     setEventPaymentNotice('');
     setEventRegistrationDraft({
       fullName: currentUser.name ?? '',
-      email: currentUser.email ?? '',
+      email: getContactEmail(currentUser),
       whatsapp: '',
       documentNumber: '',
       company: currentUser.segment === 'company' ? currentUser.name : '',
@@ -10637,8 +12333,9 @@ function EventsView({
                 />
               </label>
               <label>
-                Email
+                Email real para confirmação
                 <input
+                  type="email"
                   value={eventRegistrationDraft.email}
                   onChange={(event) => updateRegistrationDraft('email', event.target.value)}
                 />
@@ -10708,6 +12405,7 @@ function EventsView({
 
 // Tela Perfil: login, cadastro, dados publicos, documentos, pontos e painel por segmento.
 function ProfileView({
+  posts = [],
   enrollments,
   courseProgress,
   coursePaymentStatus,
@@ -10743,16 +12441,18 @@ function ProfileView({
   benefitEmailDeliveries,
   visualPreferences,
   setVisualPreferences,
+  openPrivacyCenter,
 }) {
   const enrolledCourses = courses.filter((course) =>
     enrollments.includes(course.id),
   );
   const [activeProfilePanel, setActiveProfilePanel] = useState('');
+  const ownProfilePosts = getOwnProfilePosts(currentUser, posts);
   const ownProfileEvents = getOwnProfileEvents(currentUser, communityEvents);
   const ownProfileOpportunities = getOwnProfileOpportunities(currentUser, jobs);
   const ownSocialStats = currentUser
-    ? getOwnProfileStats(socialGraph, ownProfileEvents, ownProfileOpportunities)
-    : { friends: 0, followers: 0, following: 0, events: 0, opportunities: 0 };
+    ? getOwnProfileStats(socialGraph, ownProfilePosts, ownProfileEvents, ownProfileOpportunities)
+    : { friends: 0, followers: 0, following: 0, posts: 0, events: 0, opportunities: 0 };
   const ownSocialProfile = getCurrentUserSocialProfile(currentUser, profilePublicInfo, profilePhoto);
 
   useEffect(() => {
@@ -10767,35 +12467,15 @@ function ProfileView({
     setProfilePhoto(URL.createObjectURL(file));
   }
 
-  async function loginWithEmail(email, password) {
+  async function loginWithEmail(email, password, consent = {}) {
     const normalizedEmail = email.trim().toLowerCase();
-    const account =
-      demoAccounts[normalizedEmail] ??
-      (normalizedEmail.includes('admin')
-        ? demoAccounts['admin@meetpoint.com']
-        : normalizedEmail.includes('empresa')
-        ? demoAccounts['empresa@coreacademy.com']
-        : normalizedEmail.includes('autonomo') || normalizedEmail.includes('autônomo')
-          ? demoAccounts['autonomo@coreacademy.com']
-        : normalizedEmail.includes('pj') || normalizedEmail.includes('professor')
-          ? demoAccounts['professor@coreacademy.com']
-          : normalizedEmail.includes('suporte') || normalizedEmail.includes('funcionario') || normalizedEmail.includes('funcionário')
-            ? demoAccounts['suporte@meetpoint.com']
-            : demoAccounts['aluno@meetpoint.com']);
-    try {
-      const result = await demoLoginRequest(normalizedEmail || account.email, password);
-      activateUserSession({
-        ...account,
-        email: normalizedEmail || account.email,
-        backendUser: result.user,
-      }, result.accessToken);
-    } catch {
-      activateUserSession({
-        ...account,
-        email: normalizedEmail || account.email,
-        backendOffline: true,
-      }, '');
-    }
+    const result = await loginRequest(normalizedEmail, password, consent);
+    const account = mapBackendUserToAccount(result.user, {
+      email: normalizedEmail,
+      termsConsent: result.termsConsent ?? createTermsConsentRecord(normalizedEmail),
+      privacyConsent: result.privacyConsent ?? createPrivacyConsentRecord(normalizedEmail),
+    });
+    activateUserSession(account, result.accessToken);
   }
 
   if (!currentUser) {
@@ -10811,11 +12491,12 @@ function ProfileView({
             <LoginPanel
               loginWithEmail={loginWithEmail}
               setAuthMode={setAuthMode}
+              openPrivacyCenter={openPrivacyCenter}
             />
           </>
         )}
         {authMode === 'signup' && (
-          <SignupView setAuthMode={setAuthMode} />
+          <SignupView setAuthMode={setAuthMode} openPrivacyCenter={openPrivacyCenter} openPage={openPage} />
         )}
         {authMode === 'forgot' && (
           <ForgotPasswordView setAuthMode={setAuthMode} />
@@ -10835,7 +12516,21 @@ function ProfileView({
         userPoints={userPoints}
         socialStats={ownSocialStats}
         onOpenSocialPanel={setActiveProfilePanel}
+        benefits={benefits}
+        openPage={openPage}
       />
+
+      <section className="profile-card privacy-settings-card">
+        <div>
+          <span className="section-kicker">Privacidade</span>
+          <h3>Termos de Uso e Privacidade</h3>
+          <p>
+            Revise o consentimento, versões aceitas e regras de uso de dados para mensagens,
+            networking, cursos, oportunidades, eventos e benefícios.
+          </p>
+        </div>
+        <button type="button" onClick={openPrivacyCenter}>Privacidade e Uso de Dados</button>
+      </section>
 
       {activeProfilePanel && (
         <ProfileSocialPanel
@@ -10843,6 +12538,7 @@ function ProfileView({
           setActivePanel={setActiveProfilePanel}
           socialGraph={socialGraph}
           currentUserProfile={ownSocialProfile}
+          profilePosts={ownProfilePosts}
           profileEvents={ownProfileEvents}
           profileOpportunities={ownProfileOpportunities}
           followProfile={followProfile}
@@ -10878,12 +12574,14 @@ function ProfileView({
             Empresa ou equipe interna não reaproveita o estado do perfil anterior.
           </p>
           <div className="session-identity-grid">
-            <span>Email</span>
+            <span>Acesso</span>
             <strong>{maskEmail(currentUser.email)}</strong>
+            <span>Email real</span>
+            <strong>{maskEmail(getContactEmail(currentUser))}</strong>
             <span>Perfil</span>
             <strong>{getAccountTypeCode(currentUser)}</strong>
             <span>Escopo</span>
-            <strong>{currentUser.backendUser?.tenantId ? 'Tenant JWT' : 'Sessão local'}</strong>
+            <strong>{currentUser.backendUser ? 'JWT validado' : 'Sessão não validada'}</strong>
           </div>
         </section>
 
@@ -10985,8 +12683,10 @@ function SensitiveDataVerificationCard({ currentUser }) {
         A plataforma valida autenticidade antes de aplicar a mudança.
       </p>
       <div className="protected-data-summary">
-        <span>Conta</span>
+        <span>Acesso</span>
         <strong>{maskEmail(currentUser.email)}</strong>
+        <span>Email real</span>
+        <strong>{maskEmail(getContactEmail(currentUser))}</strong>
         <span>Tipo</span>
         <strong>{getAccountTypeLabel(currentUser)}</strong>
       </div>
@@ -11100,6 +12800,7 @@ function ProfileSocialPanel({
   setActivePanel,
   socialGraph,
   currentUserProfile,
+  profilePosts = [],
   profileEvents,
   profileOpportunities,
   followProfile,
@@ -11111,6 +12812,7 @@ function ProfileSocialPanel({
     friends: 'Amigos',
     followers: 'Seguidores',
     following: 'Seguindo',
+    posts: 'Posts',
     events: 'Eventos',
     opportunities: 'Oportunidades',
     blocked: 'Bloqueados',
@@ -11172,6 +12874,19 @@ function ProfileSocialPanel({
     }
     if (activePanel === 'blocked') {
       return renderConnectionRows(blockedProfiles, 'Nenhum perfil bloqueado.');
+    }
+    if (activePanel === 'posts') {
+      return profilePosts.length ? (
+        <div className="social-mini-list">
+          {profilePosts.map((post) => (
+            <article key={post.id}>
+              <strong>{post.tag}</strong>
+              <small>{post.city} • {post.createdAt ?? 'Agora'}</small>
+              <p>{post.body}</p>
+            </article>
+          ))}
+        </div>
+      ) : <p className="empty-state">Nenhum post publicado por este perfil.</p>;
     }
     if (activePanel === 'events') {
       return profileEvents.length ? (
@@ -11320,23 +13035,73 @@ function ProfileHero({
   userPoints,
   socialStats,
   onOpenSocialPanel,
+  benefits = [],
+  openPage,
 }) {
   const handle = getUserHandle(currentUser);
   const displayName = profilePublicInfo.displayName || currentUser?.name;
+  const [cropEditor, setCropEditor] = useState(null);
+  const [pointsModalOpen, setPointsModalOpen] = useState(false);
+  const redeemableBenefits = useMemo(
+    () =>
+      [...benefits].sort(
+        (left, right) =>
+          Number(left.pointsCost ?? 0) - Number(right.pointsCost ?? 0),
+      ),
+    [benefits],
+  );
+
+  function closeCropEditor() {
+    if (cropEditor?.sourceUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(cropEditor.sourceUrl);
+    }
+    setCropEditor(null);
+  }
 
   function handlePhotoChange(event) {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
-    setProfilePhoto(URL.createObjectURL(file));
+    setCropEditor({
+      target: 'photo',
+      sourceUrl: URL.createObjectURL(file),
+      outputWidth: 720,
+      outputHeight: 720,
+      shape: 'avatar',
+      kicker: 'Foto de perfil',
+      title: 'Ajustar corte da foto',
+      description: 'Use zoom e movimento para definir como sua foto aparecerá no perfil.',
+    });
   }
 
   function handleCoverChange(event) {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
+    setCropEditor({
+      target: 'cover',
+      sourceUrl: URL.createObjectURL(file),
+      outputWidth: 1800,
+      outputHeight: 560,
+      shape: 'cover',
+      kicker: 'Capa do perfil',
+      title: 'Ajustar corte da capa',
+      description: 'A capa é larga. Posicione a imagem para não cortar rostos, textos ou detalhes importantes.',
+    });
+  }
+
+  function applyCroppedImage(dataUrl) {
+    if (cropEditor?.target === 'photo') {
+      setProfilePhoto(dataUrl);
+      closeCropEditor();
+      return;
+    }
+
     setProfilePublicInfo((current) => ({
       ...current,
-      coverPhoto: URL.createObjectURL(file),
+      coverPhoto: dataUrl,
     }));
+    closeCropEditor();
   }
 
   function scrollToProfileSection(selector) {
@@ -11356,8 +13121,8 @@ function ProfileHero({
     <section className="modern-profile-hero">
       <label className="profile-cover-upload">
         <div
-          className="profile-cover-band"
-          style={profilePublicInfo.coverPhoto ? { backgroundImage: `url(${profilePublicInfo.coverPhoto})` } : undefined}
+          className={profilePublicInfo.coverPhoto ? 'profile-cover-band has-cover' : 'profile-cover-band'}
+          style={profilePublicInfo.coverPhoto ? { '--profile-cover-image': `url(${profilePublicInfo.coverPhoto})` } : undefined}
         />
         <input type="file" accept="image/*" onChange={handleCoverChange} />
         <span>{profilePublicInfo.coverPhoto ? 'Trocar capa' : 'Adicionar capa'}</span>
@@ -11366,7 +13131,7 @@ function ProfileHero({
         <label className="profile-avatar-upload">
           <Avatar initials={getInitials(displayName || 'MP')} photo={profilePhoto} />
           <input type="file" accept="image/*" onChange={handlePhotoChange} />
-          <span>{profilePhoto ? 'Trocar foto' : 'Adicionar foto'}</span>
+          <span className="profile-avatar-action">{profilePhoto ? 'Trocar foto' : 'Adicionar foto'}</span>
         </label>
         <div className="modern-profile-copy">
           <span className="section-kicker">{getAccountTypeLabel(currentUser)}</span>
@@ -11395,18 +13160,102 @@ function ProfileHero({
         </div>
       </div>
       <div className="modern-profile-stats">
-        <article><strong>{userPoints}</strong><span>pontos</span></article>
-        <button type="button" onClick={() => onOpenSocialPanel('friends')}><strong>{socialStats.friends}</strong><span>amigos</span></button>
-        <button type="button" onClick={() => onOpenSocialPanel('followers')}><strong>{formatSocialCount(socialStats.followers)}</strong><span>seguidores</span></button>
-        <button type="button" onClick={() => onOpenSocialPanel('following')}><strong>{socialStats.following}</strong><span>seguindo</span></button>
-        <button type="button" onClick={() => onOpenSocialPanel('events')}><strong>{socialStats.events}</strong><span>eventos</span></button>
-        <button type="button" onClick={() => onOpenSocialPanel('opportunities')}><strong>{socialStats.opportunities}</strong><span>oportunidades</span></button>
+        <button className="profile-stat-card" type="button" onClick={() => setPointsModalOpen(true)}><strong>{formatExactCount(userPoints)}</strong><span>{formatCountLabel(userPoints, 'ponto', 'pontos')}</span></button>
+        <button className="profile-stat-card" type="button" onClick={() => onOpenSocialPanel('friends')}><strong>{formatExactCount(socialStats.friends)}</strong><span>{formatCountLabel(socialStats.friends, 'amigo', 'amigos')}</span></button>
+        <button className="profile-stat-card" type="button" onClick={() => onOpenSocialPanel('followers')}><strong>{formatExactCount(socialStats.followers)}</strong><span>{formatCountLabel(socialStats.followers, 'seguidor', 'seguidores')}</span></button>
+        <button className="profile-stat-card" type="button" onClick={() => onOpenSocialPanel('following')}><strong>{formatExactCount(socialStats.following)}</strong><span>seguindo</span></button>
+        <button className="profile-stat-card" type="button" onClick={() => onOpenSocialPanel('posts')}><strong>{formatExactCount(socialStats.posts)}</strong><span>{formatCountLabel(socialStats.posts, 'post', 'posts')}</span></button>
+        <button className="profile-stat-card" type="button" onClick={() => onOpenSocialPanel('events')}><strong>{formatExactCount(socialStats.events)}</strong><span>{formatCountLabel(socialStats.events, 'evento', 'eventos')}</span></button>
+        <button className="profile-stat-card" type="button" onClick={() => onOpenSocialPanel('opportunities')}><strong>{formatExactCount(socialStats.opportunities)}</strong><span>{formatCountLabel(socialStats.opportunities, 'oportunidade', 'oportunidades')}</span></button>
       </div>
+      {pointsModalOpen && (
+        <ProfilePointsModal
+          benefits={redeemableBenefits}
+          onClose={() => setPointsModalOpen(false)}
+          openPage={openPage}
+          userPoints={userPoints}
+        />
+      )}
+      {cropEditor && (
+        <ImageCropModal
+          editor={cropEditor}
+          onCancel={closeCropEditor}
+          onConfirm={applyCroppedImage}
+        />
+      )}
     </section>
   );
 }
 
-function getContrastText(hexColor) {
+function ProfilePointsModal({ benefits, onClose, openPage, userPoints }) {
+  const availableBenefits = benefits.filter(
+    (benefit) => Number(benefit.pointsCost ?? 0) <= userPoints,
+  );
+  const nextBenefits = benefits.filter(
+    (benefit) => Number(benefit.pointsCost ?? 0) > userPoints,
+  );
+
+  function openBenefitsPage() {
+    onClose();
+    openPage?.('benefits');
+  }
+
+  return (
+    <div className="floating-backdrop profile-points-backdrop" onClick={onClose}>
+      <section className="floating-modal profile-points-modal" onClick={(event) => event.stopPropagation()}>
+        <button className="modal-close-button" type="button" onClick={onClose}>
+          Fechar
+        </button>
+        <span className="section-kicker">Carteira de pontos</span>
+        <h3>{formatExactCount(userPoints)} {formatCountLabel(userPoints, 'ponto disponível', 'pontos disponíveis')}</h3>
+        <p>
+          Use seus pontos para trocar por benefícios, cupons, ingressos e vantagens de parceiros.
+        </p>
+
+        <div className="points-benefit-summary">
+          <article>
+            <strong>{availableBenefits.length}</strong>
+            <span>disponíveis agora</span>
+          </article>
+          <article>
+            <strong>{nextBenefits.length}</strong>
+            <span>faltando pontos</span>
+          </article>
+        </div>
+
+        <div className="points-benefit-list">
+          {benefits.length ? (
+            benefits.map((benefit) => {
+              const cost = Number(benefit.pointsCost ?? 0);
+              const canRedeem = cost <= userPoints;
+              return (
+                <article className={canRedeem ? 'points-benefit-item available' : 'points-benefit-item'} key={benefit.id}>
+                  <div>
+                    <strong>{benefit.title}</strong>
+                    <span>{benefit.partner} • {benefit.category}</span>
+                  </div>
+                  <div>
+                    <b>{formatExactCount(cost)} pts</b>
+                    <small>{canRedeem ? 'Pode trocar' : `Faltam ${formatExactCount(cost - userPoints)} pts`}</small>
+                  </div>
+                </article>
+              );
+            })
+          ) : (
+            <p className="empty-state">Nenhum benefício cadastrado para troca por pontos.</p>
+          )}
+        </div>
+
+        <div className="button-row">
+          <button type="button" onClick={openBenefitsPage}>Ver benefícios</button>
+          <button className="light" type="button" onClick={onClose}>Continuar no perfil</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function getRelativeLuminance(hexColor) {
   const normalized = hexColor.replace('#', '');
   const value = normalized.length === 3
     ? normalized.split('').map((item) => item + item).join('')
@@ -11415,8 +13264,27 @@ function getContrastText(hexColor) {
   const [lr, lg, lb] = [r, g, b].map((channel) =>
     channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
   );
-  const luminance = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
-  return luminance > 0.52 ? '#111318' : '#ffffff';
+  return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+}
+
+function getContrastRatio(foreground, background) {
+  const foregroundLuminance = getRelativeLuminance(foreground);
+  const backgroundLuminance = getRelativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function getReadableTextColor(background, preferredText = '') {
+  if (preferredText && getContrastRatio(preferredText, background) >= 4.5) {
+    return preferredText;
+  }
+
+  const darkText = '#111318';
+  const lightText = '#ffffff';
+  return getContrastRatio(darkText, background) >= getContrastRatio(lightText, background)
+    ? darkText
+    : lightText;
 }
 
 // Personalizacao visual: controla tema, cores e filtros de imagem do prototipo.
@@ -11468,8 +13336,12 @@ function SystemCustomizationPanel({ preferences, setPreferences }) {
     setConfirmNotice('Cores aplicadas somente nesta conta.');
   }
 
-  const buttonText = getContrastText(colorDraft.button);
-  const highlightText = getContrastText(colorDraft.highlight);
+  const buttonText = getReadableTextColor(colorDraft.button);
+  const highlightText = getReadableTextColor(colorDraft.highlight);
+  const textPreviewBackground =
+    getContrastRatio(colorDraft.text, '#fffdf7') >= getContrastRatio(colorDraft.text, '#111318')
+      ? '#fffdf7'
+      : '#111318';
 
   return (
     <>
@@ -11500,7 +13372,7 @@ function SystemCustomizationPanel({ preferences, setPreferences }) {
       </div>
 
       <div className="theme-mode-switch" role="group" aria-label="Modo do tema">
-        {['light', 'dark', 'custom'].map((mode) => (
+        {['light', 'dark', 'auto', 'custom'].map((mode) => (
           <button
             className={preferences.mode === mode ? 'active' : ''}
             key={mode}
@@ -11508,15 +13380,26 @@ function SystemCustomizationPanel({ preferences, setPreferences }) {
             onClick={() => {
               updatePreference('mode', mode);
               if (mode === 'custom') setConfirmNotice('Ajuste as cores e confirme para aplicar.');
+              if (mode !== 'custom') setConfirmNotice('');
             }}
           >
-            <strong>{mode === 'light' ? 'Claro' : mode === 'dark' ? 'Escuro' : 'Personalizado'}</strong>
+            <strong>
+              {mode === 'light'
+                ? 'Claro'
+                : mode === 'dark'
+                  ? 'Escuro'
+                  : mode === 'auto'
+                    ? 'Automático'
+                    : 'Personalizado'}
+            </strong>
             <small>
               {mode === 'light'
                 ? 'Mais limpo'
                 : mode === 'dark'
                   ? 'Baixa luz'
-                  : 'Suas cores'}
+                  : mode === 'auto'
+                    ? 'Segue o sistema'
+                    : 'Suas cores'}
             </small>
           </button>
         ))}
@@ -11531,13 +13414,17 @@ function SystemCustomizationPanel({ preferences, setPreferences }) {
           ['text', 'Cor da letra', 'Textos principais'],
         ].map(([key, label, hint]) => {
           const previewBackground = colorDraft[key] ?? defaultVisualPreferences[key];
-          const textColor = getContrastText(previewBackground);
+          const isTextToken = key === 'text';
+          const textColor = isTextToken ? previewBackground : getReadableTextColor(previewBackground);
           return (
           <label key={key}>
             <span>{label}</span>
             <small>{hint}</small>
-            <strong style={{ background: previewBackground, color: textColor }}>
-              {key === 'text'
+            <strong
+              className="theme-color-preview"
+              style={{ '--preview-bg': isTextToken ? textPreviewBackground : previewBackground, '--preview-fg': textColor }}
+            >
+              {isTextToken
                 ? 'Prévia do texto'
                 : textColor === '#ffffff'
                   ? 'Texto claro'
@@ -11596,9 +13483,9 @@ function SystemCustomizationPanel({ preferences, setPreferences }) {
       </div>
 
       <div className="theme-contrast-preview">
-        <span style={{ background: colorDraft.button, color: buttonText }}>Botão</span>
-        <span style={{ background: colorDraft.highlight, color: highlightText }}>Destaque</span>
-        <span style={{ color: colorDraft.text }}>Texto</span>
+        <span className="theme-token-preview" style={{ '--preview-bg': colorDraft.button, '--preview-fg': buttonText }}>Botão</span>
+        <span className="theme-token-preview" style={{ '--preview-bg': colorDraft.highlight, '--preview-fg': highlightText }}>Destaque</span>
+        <span className="theme-token-preview" style={{ '--preview-bg': textPreviewBackground, '--preview-fg': colorDraft.text }}>Texto</span>
       </div>
           </section>
         </div>
@@ -11608,23 +13495,38 @@ function SystemCustomizationPanel({ preferences, setPreferences }) {
 }
 
 // Login: identifica o tipo de conta pelo email e aceita Enter no formulario.
-function LoginPanel({ loginWithEmail, setAuthMode }) {
-  const [email, setEmail] = useState('');
+function LoginPanel({ loginWithEmail, setAuthMode, openPrivacyCenter }) {
+  const [email, setEmail] = useState(() => getLastSignupLoginEmail());
   const [password, setPassword] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [failedAttempts, setFailedAttempts] = useState(0);
+  const [loginNotice, setLoginNotice] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function submitLogin(event) {
     event?.preventDefault();
     if (isSubmitting) return;
-    if (password !== '123456') {
-      setFailedAttempts((current) => current + 1);
+    if (!termsAccepted) {
+      setLoginNotice('Aceite os Termos de Uso e a Política de Privacidade para continuar.');
       return;
     }
+
     setIsSubmitting(true);
-    setFailedAttempts(0);
-    await loginWithEmail(email, password);
-    setIsSubmitting(false);
+    setLoginNotice('');
+    try {
+      await loginWithEmail(email, password, {
+        termsAccepted,
+        termsVersion: TERMS_VERSION,
+        privacyVersion: PRIVACY_VERSION,
+        consentType: REQUIRED_CONSENT_TYPE,
+      });
+      setFailedAttempts(0);
+    } catch {
+      setFailedAttempts((current) => current + 1);
+      setLoginNotice('Email ou senha inválidos, ou conta sem permissão ativa.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleLoginKeyDown(event) {
@@ -11643,17 +13545,14 @@ function LoginPanel({ loginWithEmail, setAuthMode }) {
     <form className="profile-card login-panel" onSubmit={submitLogin}>
       <span className="section-kicker">Acesso</span>
       <h3>Email e senha</h3>
-      <p>
-        O email define automaticamente se a conta é PF, PJ, Empresa ou acesso
-        interno. O tipo só é escolhido no cadastro.
-      </p>
+      <p>Digite seu email e senha para acessar a plataforma.</p>
       <label>
         Email
         <input
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           onKeyDown={handleLoginKeyDown}
-          placeholder="email@dominio.com"
+          placeholder="email"
         />
       </label>
       <label>
@@ -11666,6 +13565,21 @@ function LoginPanel({ loginWithEmail, setAuthMode }) {
           placeholder="Digite sua senha"
         />
       </label>
+      <label className="terms-consent-check">
+        <input
+          type="checkbox"
+          checked={termsAccepted}
+          onChange={(event) => setTermsAccepted(event.target.checked)}
+        />
+        <span>{TERMS_CONSENT_TEXT}</span>
+      </label>
+      <p className="policy-note">
+        A plataforma usa esses dados para manter sua conta, registrar interações,
+        operar feed, oportunidades, eventos, benefícios e comunicação interna.
+      </p>
+      <button className="privacy-inline-button light" type="button" onClick={openPrivacyCenter}>
+        Termos de Uso e Privacidade
+      </button>
       <div className="button-row">
         <button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Entrando...' : 'Entrar'}
@@ -11679,6 +13593,7 @@ function LoginPanel({ loginWithEmail, setAuthMode }) {
           Senha incorreta. Tentativa {failedAttempts} de 3.
         </p>
       )}
+      {loginNotice && <p className="invalid-note">{loginNotice}</p>}
       {failedAttempts >= 3 && (
         <button className="forgot-notification" type="button" onClick={() => setAuthMode('forgot')}>
           Esqueceu senha?
@@ -11692,7 +13607,7 @@ function LoginPanel({ loginWithEmail, setAuthMode }) {
 }
 
 // Cadastro: escolha PF/PJ/Empresa, dados obrigatorios e configuracao do perfil publico.
-function SignupView({ setAuthMode }) {
+function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
   const [segment, setSegment] = useState(() => getSignupSegmentFromUrl());
   const [signupStep, setSignupStep] = useState('basic');
   const [form, setForm] = useState({
@@ -11710,11 +13625,22 @@ function SignupView({ setAuthMode }) {
     passwordConfirm: '',
     confirmationCode: '',
     city: '',
+    state: '',
     bio: '',
     website: '',
     area: '',
     profilePhoto: '',
     coverPhoto: '',
+    termsAccepted: false,
+    privacyAccepted: false,
+    dataProcessingAccepted: false,
+  });
+  const [signupNotice, setSignupNotice] = useState('');
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false);
+  const [rgVerification, setRgVerification] = useState({
+    status: 'idle',
+    fileName: '',
+    notice: '',
   });
   const isPfSignup = segment === 'pf';
   const isPjSignup = segment === 'pj';
@@ -11726,15 +13652,36 @@ function SignupView({ setAuthMode }) {
         ? 'Cadastro PJ'
         : 'Cadastro de empresa';
   const publicName = form.displayName || form.tradeName || form.legalName || segmentTitle;
+  const contactEmail = form.email.trim().toLowerCase();
+  const platformAccessEmail = contactEmail;
+  const showInvalidEmail = Boolean(contactEmail) && !isValidRealContactEmail(contactEmail);
 
   const normalizedCpf = onlyDigits(form.cpf);
   const normalizedCnpj = onlyDigits(form.cnpj);
+  const rgHasAcceptedStructure = validateRg(form.rg);
+  const rgIsOfficiallyVerified = rgVerification.status === 'verified';
+  const rgDocumentReceived = rgVerification.status === 'pending';
+  const rgIsAcceptedForSignup = rgHasAcceptedStructure && (rgIsOfficiallyVerified || rgDocumentReceived);
+  const rgStatus =
+    !form.rg
+      ? 'RG obrigatório.'
+      : !rgHasAcceptedStructure
+        ? 'RG inválido.'
+        : rgIsOfficiallyVerified
+          ? 'RG validado oficialmente.'
+          : rgVerification.status === 'checking'
+            ? 'Validando RG...'
+            : rgDocumentReceived
+              ? 'Documento recebido. A validação manual será feita pela equipe.'
+              : 'Envie o documento para validar o RG.';
   const cpfStatus =
     normalizedCpf.length === 11
       ? validateCpf(normalizedCpf)
         ? 'CPF válido'
-        : 'CPF inválido'
-      : 'Digite 11 números';
+        : 'CPF inválido.'
+      : form.cpf
+        ? 'CPF inválido.'
+        : 'CPF obrigatório.';
   const cnpjStatus =
     normalizedCnpj.length === 14
       ? validateCnpj(normalizedCnpj)
@@ -11750,6 +13697,9 @@ function SignupView({ setAuthMode }) {
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+    if (field === 'rg') {
+      setRgVerification({ status: 'idle', fileName: '', notice: '' });
+    }
   }
 
   function updateSignupImage(field, event) {
@@ -11789,8 +13739,90 @@ function SignupView({ setAuthMode }) {
     setAuthMode('login');
   }
 
+  async function requestRgOfficialVerification(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!validateRg(form.rg)) {
+      setRgVerification({
+        status: 'rejected',
+        fileName: file.name,
+        notice: 'RG inválido.',
+      });
+      return;
+    }
+
+    if (!DOCUMENT_VALIDATION_ENDPOINT) {
+      setRgVerification({
+        status: 'pending',
+        fileName: file.name,
+        notice: 'Documento recebido para validação manual.',
+      });
+      return;
+    }
+
+    setRgVerification({
+      status: 'checking',
+      fileName: file.name,
+      notice: 'Validando RG...',
+    });
+
+    try {
+      const payload = new FormData();
+      payload.append('rg', form.rg);
+      payload.append('cpf', normalizedCpf);
+      payload.append('legalName', form.legalName.trim());
+      payload.append('document', file);
+
+      const response = await fetch(DOCUMENT_VALIDATION_ENDPOINT, {
+        method: 'POST',
+        body: payload,
+      });
+      const result = await response.json().catch(() => ({}));
+      const verified = Boolean(result.verified ?? result.ok);
+
+      setRgVerification({
+        status: verified ? 'verified' : 'rejected',
+        fileName: file.name,
+        notice: verified ? 'RG validado oficialmente.' : 'RG inválido.',
+      });
+    } catch {
+      setRgVerification({
+        status: 'rejected',
+        fileName: file.name,
+        notice: 'RG inválido.',
+      });
+    }
+  }
+
+  function validateBasicSignup() {
+    if (!form.legalName.trim()) return 'Preencha o nome principal do cadastro.';
+    if (!isValidRealContactEmail(contactEmail)) return 'Email inválido.';
+    if (!platformAccessEmail) return 'Email inválido.';
+    if (form.password.length < 8) return 'A senha precisa ter pelo menos 8 caracteres.';
+    if (!/[A-Z]/.test(form.password) || !/[a-z]/.test(form.password) || !/\d/.test(form.password)) {
+      return 'A senha precisa conter letra maiúscula, letra minúscula e número.';
+    }
+    if (form.password !== form.passwordConfirm) return 'A confirmação da senha não confere.';
+    if (!form.termsAccepted || !form.privacyAccepted || !form.dataProcessingAccepted) {
+      return 'Aceite os Termos de Uso, a Política de Privacidade e o tratamento de dados LGPD para concluir o cadastro.';
+    }
+    if (isPfSignup && !isAdult(form.birthDate)) return 'Cadastro PF exige idade mínima de 18 anos.';
+    if (isPfSignup && !validateCpf(normalizedCpf)) return 'CPF inválido.';
+    if (isPfSignup && !rgHasAcceptedStructure) return 'RG inválido.';
+    if (isPfSignup && !rgIsAcceptedForSignup) return 'Envie uma foto ou PDF do RG/CNH para continuar.';
+    if ((isPjSignup || isCompanySignup) && !validateCnpj(normalizedCnpj)) return 'Informe um CNPJ válido.';
+    return '';
+  }
+
   function continueToProfileSetup(event) {
     event.preventDefault();
+    const validationError = validateBasicSignup();
+    if (validationError) {
+      setSignupNotice(validationError);
+      return;
+    }
+    setSignupNotice('');
     setSignupStep('profile');
     setTimeout(() => {
       document.querySelector('.signup-profile-setup')?.scrollIntoView({
@@ -11798,6 +13830,64 @@ function SignupView({ setAuthMode }) {
         block: 'start',
       });
     }, 80);
+  }
+
+  async function finishSignup() {
+    if (isCreatingAccount) return;
+    if (!form.city.trim()) {
+      setSignupNotice('Informe a cidade.');
+      return;
+    }
+    if (!form.state.trim()) {
+      setSignupNotice('Informe o estado.');
+      return;
+    }
+
+    setIsCreatingAccount(true);
+    setSignupNotice('');
+
+    try {
+      await registerRequest({
+        name: (form.displayName || form.tradeName || form.legalName).trim(),
+        email: contactEmail,
+        password: form.password,
+        passwordConfirm: form.passwordConfirm,
+        city: form.city.trim(),
+        state: form.state.trim(),
+        profileImage: form.profilePhoto || undefined,
+        bio: form.bio.trim() || undefined,
+        acceptedTerms: form.termsAccepted,
+        acceptedPrivacyPolicy: form.privacyAccepted && form.dataProcessingAccepted,
+        termsVersion: TERMS_VERSION,
+        privacyVersion: PRIVACY_VERSION,
+      });
+      localStorage.setItem(LAST_SIGNUP_LOGIN_KEY, contactEmail);
+      setSignupNotice('Cadastro criado no banco. Entre com email e senha para acessar.');
+      setAuthMode('login');
+      openPage?.('profile');
+    } catch (error) {
+      const message = String(error?.message ?? '');
+      setSignupNotice(getSignupFailureMessage(message, error));
+    } finally {
+      setIsCreatingAccount(false);
+    }
+  }
+
+  function getSignupFailureMessage(message, error) {
+    if (message.includes('already registered')) return 'Este email já está cadastrado.';
+    if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
+      return 'Não foi possível conectar à API de cadastro. Verifique se o backend está ativo no cPanel e se a URL da API aponta para /meetpoint.';
+    }
+    if (error?.status === 404 || error?.status === 405) {
+      return 'A rota de cadastro não foi encontrada no servidor. O frontend está publicado, mas a API /auth/register não respondeu nesse endereço.';
+    }
+    if (message.includes('password must contain')) {
+      return 'A senha precisa conter letra maiúscula, letra minúscula e número.';
+    }
+    if (message.includes('Terms and privacy policy')) {
+      return 'Aceite os Termos de Uso, a Política de Privacidade e o tratamento de dados para concluir.';
+    }
+    return 'Não foi possível criar o cadastro. Verifique os dados e tente novamente.';
   }
 
   return (
@@ -11812,7 +13902,7 @@ function SignupView({ setAuthMode }) {
       />
       {!segment && (
         <div className="floating-modal-layer">
-          <div className="floating-modal">
+          <div className="floating-modal signup-choice-modal">
             <header className="modal-header-row">
               <div>
                 <span className="section-kicker">Tipo de cadastro</span>
@@ -11889,13 +13979,17 @@ function SignupView({ setAuthMode }) {
               </label>
             )}
             <label>
-              Email
+              Email real para contato
               <input
+                type="email"
                 value={form.email}
                 onChange={(event) => update('email', event.target.value)}
-                placeholder={isCompanySignup ? 'contato@empresa.com' : 'email@dominio.com'}
+                placeholder={isCompanySignup ? 'contato@empresa.com.br' : 'seuemail@gmail.com'}
               />
             </label>
+            {showInvalidEmail && (
+              <p className="invalid-note">Email inválido.</p>
+            )}
             <label>
               WhatsApp ou telefone
               <input
@@ -12007,10 +14101,15 @@ function SignupView({ setAuthMode }) {
                     maxLength="12"
                   />
                 </label>
-                <p className={onlyDigits(form.rg).length >= 7 ? 'valid-note' : 'invalid-note'}>
-                  {onlyDigits(form.rg).length >= 7 ? 'RG preenchido' : 'Informe um RG válido'}
+                <p className={rgIsAcceptedForSignup ? 'valid-note' : 'invalid-note'}>
+                  {rgStatus}
                 </p>
-                <FileUpload label="RG ou CNH" action="Enviar documento" accept=".pdf,image/*" />
+                <FileUpload
+                  label="RG ou CNH"
+                  action="Validar RG"
+                  accept=".pdf,image/*"
+                  onChange={requestRgOfficialVerification}
+                />
                 <FileUpload label="Comprovante opcional" action="Enviar comprovante" accept=".pdf,image/*" />
               </>
             )}
@@ -12024,18 +14123,61 @@ function SignupView({ setAuthMode }) {
 
           <section className="profile-card blue">
             <span className="section-kicker">Confirmação</span>
-            <h3>Email de confirmação</h3>
+            <h3>Email da conta</h3>
             <p>
-              O sistema envia um código por email. Depois disso, a próxima etapa completa o perfil público.
+              O email real será usado para login, recuperação de senha, notificações,
+              vagas, eventos e cursos.
             </p>
-            <label>
-              Código recebido
-              <input
-                value={form.confirmationCode}
-                onChange={(event) => update('confirmationCode', event.target.value)}
-                placeholder="000000"
-              />
-            </label>
+            <div className="signup-email-summary">
+              <strong>{contactEmail ? maskEmail(contactEmail) : 'Informe um email válido'}</strong>
+              <small>
+                A conta será criada com este email ao finalizar o cadastro. Esta tela não envia código por email.
+              </small>
+            </div>
+            <div className="signup-privacy-consent-box">
+              <strong>Termos e privacidade obrigatórios</strong>
+              <p>
+                Para concluir o cadastro, você precisa aceitar formalmente as regras
+                da plataforma e autorizar o tratamento dos dados necessários ao uso do MeetPoint.
+              </p>
+              <label className="terms-consent-check">
+                <input
+                  type="checkbox"
+                  checked={form.termsAccepted}
+                  onChange={(event) => update('termsAccepted', event.target.checked)}
+                />
+                <span>Li e concordo com os Termos de Uso.</span>
+              </label>
+              <label className="terms-consent-check">
+                <input
+                  type="checkbox"
+                  checked={form.privacyAccepted}
+                  onChange={(event) => update('privacyAccepted', event.target.checked)}
+                />
+                <span>Li e concordo com a Política de Privacidade.</span>
+              </label>
+              <label className="terms-consent-check">
+                <input
+                  type="checkbox"
+                  checked={form.dataProcessingAccepted}
+                  onChange={(event) => update('dataProcessingAccepted', event.target.checked)}
+                />
+                <span>{TERMS_CONSENT_TEXT}</span>
+              </label>
+            </div>
+            <p className="policy-note">
+              O aceite autoriza armazenamento e tratamento dos dados necessários para conta,
+              interações, oportunidades, eventos, benefícios, comunicação interna e registros
+              operacionais da plataforma.
+            </p>
+            <button className="privacy-inline-button light" type="button" onClick={openPrivacyCenter}>
+              Termos de Uso e Privacidade
+            </button>
+            {signupNotice && (
+              <p className={signupNotice.includes('enviado') ? 'valid-note' : 'invalid-note'}>
+                {signupNotice}
+              </p>
+            )}
             <button type="submit">Continuar para configurar perfil</button>
           </section>
         </form>
@@ -12060,6 +14202,7 @@ function SignupView({ setAuthMode }) {
             </label>
             <strong>{publicName}</strong>
             <small>{getAccountTypeLabel(segment)} • {form.city || 'Cidade não informada'}</small>
+            <small>Email real protegido: {maskEmail(contactEmail)}</small>
           </section>
 
           <section className="profile-card signup-profile-form">
@@ -12074,11 +14217,20 @@ function SignupView({ setAuthMode }) {
               />
             </label>
             <label>
-              Cidade ou região
+              Cidade
               <input
                 value={form.city}
                 onChange={(event) => update('city', event.target.value)}
-                placeholder="Ex: Londrina, PR"
+                placeholder="Ex: Londrina"
+              />
+            </label>
+            <label>
+              Estado
+              <input
+                value={form.state}
+                onChange={(event) => update('state', event.target.value)}
+                placeholder="Ex: PR"
+                maxLength="2"
               />
             </label>
             <label>
@@ -12109,10 +14261,11 @@ function SignupView({ setAuthMode }) {
               <button className="light" type="button" onClick={() => setSignupStep('basic')}>
                 Voltar aos dados
               </button>
-              <button type="button" onClick={() => setAuthMode('login')}>
-                Finalizar cadastro e ir para login
+              <button type="button" onClick={finishSignup} disabled={isCreatingAccount}>
+                {isCreatingAccount ? 'Criando cadastro...' : 'Finalizar cadastro e ir para login'}
               </button>
             </div>
+            {signupNotice && <p className="invalid-note signup-submit-notice">{signupNotice}</p>}
           </section>
 
           <section className="profile-card signup-profile-checklist">
@@ -12120,7 +14273,7 @@ function SignupView({ setAuthMode }) {
             <h3>Antes de liberar a conta</h3>
             <p>O protótipo já organiza o que precisa ser validado pelo backend antes da conta operar dinheiro, vagas ou cursos.</p>
             <ul>
-              <li>Dados básicos confirmados por email.</li>
+              <li>Email real confirmado e guardado para notificações.</li>
               <li>Documentos enviados para verificação.</li>
               <li>Perfil público com foto, capa e descrição.</li>
               <li>{isPfSignup ? 'PF liberada para cursos, comunidades e oportunidades.' : 'PJ/Empresa liberada conforme validação jurídica.'}</li>
@@ -13511,6 +15664,126 @@ function Avatar({ initials, photo }) {
   );
 }
 
+// Recorte de imagem: permite ajustar zoom e posição antes de salvar foto/capa.
+function ImageCropModal({ editor, onCancel, onConfirm }) {
+  const canvasRef = useRef(null);
+  const [imageElement, setImageElement] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [offsetX, setOffsetX] = useState(0);
+  const [offsetY, setOffsetY] = useState(0);
+
+  useEffect(() => {
+    const image = new Image();
+    image.onload = () => setImageElement(image);
+    image.src = editor.sourceUrl;
+  }, [editor.sourceUrl]);
+
+  useEffect(() => {
+    if (!imageElement || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    const outputWidth = editor.outputWidth;
+    const outputHeight = editor.outputHeight;
+    const baseScale = Math.max(
+      outputWidth / imageElement.naturalWidth,
+      outputHeight / imageElement.naturalHeight,
+    );
+    const scale = baseScale * zoom;
+    const drawWidth = imageElement.naturalWidth * scale;
+    const drawHeight = imageElement.naturalHeight * scale;
+    const maxOffsetX = Math.max((drawWidth - outputWidth) / 2, 0);
+    const maxOffsetY = Math.max((drawHeight - outputHeight) / 2, 0);
+    const drawX = (outputWidth - drawWidth) / 2 + (offsetX / 100) * maxOffsetX;
+    const drawY = (outputHeight - drawHeight) / 2 + (offsetY / 100) * maxOffsetY;
+
+    context.clearRect(0, 0, outputWidth, outputHeight);
+    context.fillStyle = '#fffaf0';
+    context.fillRect(0, 0, outputWidth, outputHeight);
+    context.drawImage(imageElement, drawX, drawY, drawWidth, drawHeight);
+  }, [editor.outputHeight, editor.outputWidth, imageElement, offsetX, offsetY, zoom]);
+
+  function confirmCrop() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    onConfirm(canvas.toDataURL('image/jpeg', 0.92));
+  }
+
+  return createPortal(
+    <div className="floating-backdrop image-crop-backdrop" onClick={onCancel}>
+      <section className="floating-modal image-crop-modal" onClick={(event) => event.stopPropagation()}>
+        <header className="modal-header-row">
+          <div>
+            <span className="section-kicker">{editor.kicker}</span>
+            <h3>{editor.title}</h3>
+            <p>{editor.description}</p>
+          </div>
+          <button className="light modal-inline-close" type="button" onClick={onCancel}>
+            Cancelar
+          </button>
+        </header>
+
+        <div className={`crop-canvas-frame ${editor.shape}`}>
+          <canvas
+            ref={canvasRef}
+            width={editor.outputWidth}
+            height={editor.outputHeight}
+            aria-label="Prévia do corte da imagem"
+          />
+        </div>
+
+        <div className="crop-control-grid">
+          <label>
+            Zoom
+            <input
+              type="range"
+              min="1"
+              max="3"
+              step="0.01"
+              value={zoom}
+              onChange={(event) => setZoom(Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Mover horizontal
+            <input
+              type="range"
+              min="-100"
+              max="100"
+              step="1"
+              value={offsetX}
+              onChange={(event) => setOffsetX(Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Mover vertical
+            <input
+              type="range"
+              min="-100"
+              max="100"
+              step="1"
+              value={offsetY}
+              onChange={(event) => setOffsetY(Number(event.target.value))}
+            />
+          </label>
+        </div>
+
+        <div className="button-row">
+          <button type="button" onClick={confirmCrop} disabled={!imageElement}>
+            Aplicar corte
+          </button>
+          <button className="light" type="button" onClick={() => { setZoom(1); setOffsetX(0); setOffsetY(0); }}>
+            Centralizar
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 // Upload estilizado: oculta o input nativo e mostra um botao alinhado ao layout.
 function FileUpload({ label, action, accept, onChange }) {
   const [fileName, setFileName] = useState('');
@@ -13523,9 +15796,9 @@ function FileUpload({ label, action, accept, onChange }) {
 
   return (
     <label className="file-upload">
-      {label}
+      <strong className="file-upload-label">{label}</strong>
       <input type="file" accept={accept} onChange={handleChange} />
-      <span>{fileName || action}</span>
+      <span className="file-upload-action">{fileName || action}</span>
     </label>
   );
 }
@@ -13692,11 +15965,13 @@ function formatCnpj(value) {
 }
 
 function formatRg(value) {
-  return onlyDigits(value)
+  return value
+    .toUpperCase()
+    .replace(/[^0-9X]/g, '')
     .slice(0, 9)
-    .replace(/(\d{2})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d{1})$/, '$1-$2');
+    .replace(/^(\d{2})([0-9X])/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})([0-9X])/, '$1.$2.$3')
+    .replace(/^(\d{2})\.(\d{3})\.(\d{3})([0-9X])$/, '$1.$2.$3-$4');
 }
 
 function getAdultBirthDateMax() {
@@ -13716,6 +15991,15 @@ function validateCpf(cpf) {
     return result === 10 ? 0 : result;
   };
   return calc(10) === Number(cpf[9]) && calc(11) === Number(cpf[10]);
+}
+
+function validateRg(value) {
+  const rg = value.toUpperCase().replace(/[^0-9X]/g, '');
+  const digits = rg.replace(/\D/g, '');
+  if (rg.length < 7 || rg.length > 9) return false;
+  if (!/^\d{7,8}[\dX]?$/.test(rg)) return false;
+  if (digits.length < 7 || /^(\d)\1+$/.test(digits)) return false;
+  return true;
 }
 
 function validateCnpj(cnpj) {

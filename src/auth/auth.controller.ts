@@ -1,28 +1,56 @@
-import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { Request, Response } from 'express';
+import { CookieOptions, Request, Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
-import { DemoLoginDto } from './dto/demo-login.dto';
+import { LoginDto } from './dto/login.dto';
+import { PrivacyConsentDto } from './dto/privacy-consent.dto';
+import { RegisterDto } from './dto/register.dto';
 import { JwtPayload } from './jwt.strategy';
+
+const ACCESS_TOKEN_COOKIE = 'access_token';
+const ACCESS_TOKEN_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('register')
+  register(@Body() dto: RegisterDto, @Req() request: Request) {
+    return this.authService.register(dto, {
+      ip: getClientIp(request),
+      userAgent: request.get('user-agent') ?? '',
+    });
+  }
+
+  @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @Post('demo-login')
-  demoLogin(@Body() dto: DemoLoginDto, @Res({ passthrough: true }) response: Response) {
-    const login = this.authService.demoLogin(dto);
-    response.cookie('access_token', login.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 8 * 60 * 60 * 1000,
-      path: '/',
+  @Post('login')
+  async login(
+    @Body() dto: LoginDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const login = await this.authService.login(dto, {
+      ip: getClientIp(request),
+      userAgent: request.get('user-agent') ?? '',
+    });
+    response.cookie(ACCESS_TOKEN_COOKIE, login.accessToken, {
+      ...getAuthCookieOptions(),
+      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
     });
     return login;
+  }
+
+  @Get('me')
+  me(@Req() request: Request & { user?: JwtPayload }) {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Authenticated user is required');
+    }
+
+    return this.authService.getAuthenticatedUser(request.user);
   }
 
   @Post('logout')
@@ -30,8 +58,23 @@ export class AuthController {
     @Req() request: Request & { user?: JwtPayload },
     @Res({ passthrough: true }) response: Response,
   ) {
-    response.clearCookie('access_token', { path: '/' });
+    response.clearCookie(ACCESS_TOKEN_COOKIE, getAuthCookieOptions());
     return this.authService.logout(request.user);
+  }
+
+  @Post('privacy-consent')
+  async acceptPrivacyConsent(
+    @Body() dto: PrivacyConsentDto,
+    @Req() request: Request & { user?: JwtPayload },
+  ) {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Authenticated user is required');
+    }
+
+    return this.authService.acceptPrivacyConsent(request.user.sub, dto, {
+      ip: getClientIp(request),
+      userAgent: request.get('user-agent') ?? '',
+    });
   }
 
   @Public()
@@ -39,4 +82,26 @@ export class AuthController {
   jwks() {
     return this.authService.jwks();
   }
+}
+
+function getClientIp(request: Request) {
+  const forwardedFor = request.get('x-forwarded-for')?.split(',')[0]?.trim();
+  return forwardedFor || request.ip || '';
+}
+
+function getAuthCookieOptions(): CookieOptions {
+  return {
+    httpOnly: true,
+    secure: shouldUseSecureCookie(),
+    sameSite: 'lax',
+    path: '/',
+  };
+}
+
+function shouldUseSecureCookie() {
+  const configured = process.env.COOKIE_SECURE?.trim().toLowerCase();
+  if (configured === 'true') return true;
+  if (configured === 'false') return false;
+
+  return process.env.NODE_ENV === 'production';
 }

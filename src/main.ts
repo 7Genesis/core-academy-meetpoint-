@@ -2,12 +2,15 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { randomUUID } from 'crypto';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { validateRuntimeConfig } from './config/validate-runtime-config';
 
 async function bootstrap() {
+  await loadRuntimeEnv();
   validateRuntimeConfig();
   const isProduction = process.env.NODE_ENV === 'production';
   const app = await NestFactory.create(AppModule, { rawBody: true });
@@ -23,10 +26,26 @@ async function bootstrap() {
                 frameAncestors: ["'none'"],
                 formAction: ["'self'"],
                 objectSrc: ["'none'"],
-                imgSrc: ["'self'", 'data:', 'https:'],
+                frameSrc: [
+                  "'self'",
+                  'https://www.youtube.com',
+                  'https://www.youtube-nocookie.com',
+                ],
+                childSrc: [
+                  "'self'",
+                  'https://www.youtube.com',
+                  'https://www.youtube-nocookie.com',
+                ],
+                imgSrc: [
+                  "'self'",
+                  'data:',
+                  'https:',
+                  'https://i.ytimg.com',
+                  'https://img.youtube.com',
+                ],
                 mediaSrc: ["'self'", 'blob:', 'https:'],
                 fontSrc: ["'self'", 'data:'],
-                scriptSrc: ["'self'"],
+                scriptSrc: ["'self'", 'https://www.youtube.com', 'https://s.ytimg.com'],
                 scriptSrcAttr: ["'none'"],
                 styleSrc: ["'self'", "'unsafe-inline'"],
                 connectSrc: ["'self'", ...resolveCspConnectSources()],
@@ -47,7 +66,7 @@ async function bootstrap() {
       noSniff: true,
       originAgentCluster: true,
       permittedCrossDomainPolicies: { permittedPolicies: 'none' },
-      referrerPolicy: { policy: 'no-referrer' },
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     }),
   );
   app.use((request: Request, response: Response, next: NextFunction) => {
@@ -111,10 +130,42 @@ async function bootstrap() {
     SwaggerModule.setup('docs', app, document);
   }
 
-  await app.listen(process.env.PORT ?? 3000, '127.0.0.1');
+  await app.listen(Number(process.env.PORT ?? 3000));
 }
 
 void bootstrap();
+
+async function loadRuntimeEnv() {
+  const envPaths = [
+    resolve(process.cwd(), '.env'),
+    process.env.COREACADEMY_APP_ROOT
+      ? resolve(process.env.COREACADEMY_APP_ROOT, '.env')
+      : '',
+    '/home/nova3034/api-meetpoint/.env',
+  ].filter(Boolean);
+
+  for (const envPath of [...new Set(envPaths)]) {
+    if (existsSync(envPath)) {
+      const dotenv = await loadOptionalDotenv();
+      if (!dotenv) {
+        console.warn(`Runtime configuration warning: .env found at ${envPath}, but optional dotenv package is not installed.`);
+        continue;
+      }
+      dotenv.config({ path: envPath, override: false });
+    }
+  }
+}
+
+async function loadOptionalDotenv() {
+  try {
+    const dynamicImport = new Function('specifier', 'return import(specifier)') as (
+      specifier: string,
+    ) => Promise<{ config: (options: { path: string; override: boolean }) => void }>;
+    return await dynamicImport('dotenv');
+  } catch {
+    return null;
+  }
+}
 
 function resolveCorsOrigins() {
   const configuredOrigins =

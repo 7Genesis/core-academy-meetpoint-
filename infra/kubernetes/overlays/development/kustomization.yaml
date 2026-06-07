@@ -1,0 +1,13 @@
+resources:
+  - ../../base
+
+nameSuffix: -dev
+
+patches:
+  - target:
+      kind: Deployment
+      name: meetpoint-api
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1

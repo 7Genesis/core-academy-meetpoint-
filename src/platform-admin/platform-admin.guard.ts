@@ -5,7 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PlatformPermission } from '@prisma/client';
+import type { PlatformPermission } from '../common/prisma-enums';
 import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PLATFORM_PERMISSIONS_KEY } from './platform-permissions.decorator';

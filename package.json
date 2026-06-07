@@ -3,19 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "rm -rf dist && nest build",
+    "clean": "rm -rf dist frontend/dist tsconfig.tsbuildinfo",
+    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "prebuild": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; if [ ! -f \"$schema\" ] && [ -n \"$COREACADEMY_APP_ROOT\" ]; then schema=\"$COREACADEMY_APP_ROOT/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma generate --schema=\"$schema\"",
+    "postinstall": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; if [ ! -f \"$schema\" ] && [ -n \"$COREACADEMY_APP_ROOT\" ]; then schema=\"$COREACADEMY_APP_ROOT/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma generate --schema=\"$schema\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
+    "start:prod": "node dist/main.js",
     "frontend:dev": "vite --host 127.0.0.1 --port 5173 --strictPort frontend",
-    "frontend:build": "vite build frontend",
-    "lint": "eslint \"src/**/*.ts\" \"prisma/**/*.ts\"",
+    "frontend:build": "vite build frontend --base=/meetpoint/",
+    "lint": "eslint --no-error-on-unmatched-pattern \"src/**/*.ts\" \"prisma/**/*.ts\"",
     "db:rls": "psql \"$DATABASE_URL\" -f prisma/rls.sql",
-    "db:seed": "prisma db seed",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
-  },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "prisma:generate": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; if [ ! -f \"$schema\" ] && [ -n \"$COREACADEMY_APP_ROOT\" ]; then schema=\"$COREACADEMY_APP_ROOT/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma generate --schema=\"$schema\"",
+    "prisma:verify": "node -e \"const {UserRole, Prisma}=require('@prisma/client'); if (UserRole?.ADMIN !== 'ADMIN') throw new Error('Invalid Prisma Client: UserRole.ADMIN is missing'); console.log(JSON.stringify({prismaClient: Prisma.prismaVersion.client, userRoleAdmin: UserRole.ADMIN}))\"",
+    "prisma:migrate": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; if [ ! -f \"$schema\" ] && [ -n \"$COREACADEMY_APP_ROOT\" ]; then schema=\"$COREACADEMY_APP_ROOT/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate dev --schema=\"$schema\"",
+    "prisma:migrate:deploy": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; if [ ! -f \"$schema\" ] && [ -n \"$COREACADEMY_APP_ROOT\" ]; then schema=\"$COREACADEMY_APP_ROOT/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate deploy --schema=\"$schema\""
   },
   "dependencies": {
     "@nestjs/common": "^11.1.24",
@@ -28,11 +30,13 @@
     "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^5.22.0",
     "@vitejs/plugin-react": "^6.0.2",
+    "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "helmet": "^8.2.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "prisma": "^5.22.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "reflect-metadata": "^0.2.2",
@@ -42,19 +46,19 @@
     "vite": "^8.0.14"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@nestjs/cli": "^11.0.10",
     "@nestjs/schematics": "^11.0.9",
     "@nestjs/testing": "^11.1.24",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.1",
     "@types/passport-jwt": "^4.0.1",
-    "@typescript-eslint/eslint-plugin": "^8.17.0",
-    "@typescript-eslint/parser": "^8.17.0",
-    "eslint": "^9.16.0",
-    "prisma": "^5.22.0",
-    "source-map-support": "^0.5.21",
+    "@typescript-eslint/eslint-plugin": "^8.60.1",
+    "@typescript-eslint/parser": "^8.60.1",
+    "eslint": "^10.4.1",
     "ts-loader": "^9.5.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.60.1"
   }
 }

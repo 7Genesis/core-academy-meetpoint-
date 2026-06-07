@@ -1,10 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
-  EnrollmentPaymentStatus,
   SaleStatus,
+} from '@prisma/client';
+import {
+  EnrollmentPaymentStatus,
+  type EnrollmentPaymentStatus as EnrollmentPaymentStatusType,
   SupportTicketPriority,
   SupportTicketStatus,
-} from '@prisma/client';
+} from '../common/prisma-enums';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -19,7 +22,7 @@ export class EnrollmentsService {
       gateway?: string;
       gatewayPaymentId?: string;
       amountCents?: number;
-      paymentStatus?: EnrollmentPaymentStatus;
+      paymentStatus?: EnrollmentPaymentStatusType;
     },
   ) {
     return this.prisma.withTenant(tenantId, async (tx) => {

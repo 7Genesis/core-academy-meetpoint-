@@ -1,11 +1,14 @@
-import { PlatformPermission } from '@prisma/client';
 import { ArrayUnique, IsArray, IsBoolean, IsEnum, IsOptional } from 'class-validator';
+import {
+  PlatformPermission,
+  type PlatformPermission as PlatformPermissionType,
+} from '../../common/prisma-enums';
 
 export class UpdatePlatformStaffPermissionsDto {
   @IsArray()
   @ArrayUnique()
   @IsEnum(PlatformPermission, { each: true })
-  permissions!: PlatformPermission[];
+  permissions!: PlatformPermissionType[];
 
   @IsBoolean()
   @IsOptional()

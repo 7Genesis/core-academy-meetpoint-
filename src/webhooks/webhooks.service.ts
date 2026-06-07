@@ -3,8 +3,12 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { EnrollmentPaymentStatus, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import {
+  EnrollmentPaymentStatus,
+  type EnrollmentPaymentStatus as EnrollmentPaymentStatusType,
+} from '../common/prisma-enums';
 import { DataMaskingService } from '../common/security/data-masking.service';
 import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
@@ -34,7 +38,7 @@ type PaymentEventData = {
   courseId?: string;
   customerEmail?: string;
   gatewayPaymentId: string;
-  paymentStatus?: EnrollmentPaymentStatus;
+  paymentStatus?: EnrollmentPaymentStatusType;
   tenantId?: string;
   userId?: string;
 };
@@ -331,6 +335,7 @@ export class WebhooksService {
           tenantId,
           OR: [
             ...(emailHash ? [{ emailHash }] : []),
+            ...(emailHash ? [{ contactEmailHash: emailHash }] : []),
             { email },
           ],
         },

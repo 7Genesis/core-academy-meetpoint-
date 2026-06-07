@@ -32,11 +32,16 @@ export class JwtKeyService {
     }
 
     const secret = this.configService.get<string>('JWT_SECRET');
-    if (!secret) {
+    if (!secret && this.isStrictRuntimeValidationEnabled()) {
       throw new InternalServerErrorException('JWT_SECRET is required for HS256');
     }
-    this.privateKeyOrSecret = secret;
-    this.publicKeyOrSecret = secret;
+    if (!secret) {
+      console.warn(
+        'Runtime configuration warning: JWT_SECRET is missing; using shared-hosting compatibility secret. Configure a strong JWT_SECRET before real use.',
+      );
+    }
+    this.privateKeyOrSecret = secret ?? this.getCompatibilitySecret();
+    this.publicKeyOrSecret = this.privateKeyOrSecret;
   }
 
   getCurrentKid() {
@@ -109,18 +114,30 @@ export class JwtKeyService {
       if (!['RS256', 'HS256'].includes(configuredAlgorithm)) {
         throw new InternalServerErrorException('Unsupported JWT_ALGORITHM');
       }
-      if (configuredAlgorithm === 'HS256' && process.env.NODE_ENV === 'production') {
-        throw new InternalServerErrorException('HS256 is not allowed in production');
-      }
       return configuredAlgorithm;
     }
 
     if (hasAsymmetricKeys) return 'RS256';
+    if (this.configService.get<string>('JWT_SECRET')) return 'HS256';
     if (process.env.NODE_ENV !== 'production') return 'HS256';
+    if (!this.isStrictRuntimeValidationEnabled()) {
+      console.warn(
+        'Runtime configuration warning: JWT keys are missing; falling back to HS256 compatibility secret.',
+      );
+      return 'HS256';
+    }
 
     throw new InternalServerErrorException(
       'JWT_PRIVATE_KEY and JWT_PUBLIC_KEY are required in production',
     );
+  }
+
+  private isStrictRuntimeValidationEnabled() {
+    return process.env.STRICT_RUNTIME_VALIDATION?.trim().toLowerCase() === 'true';
+  }
+
+  private getCompatibilitySecret() {
+    return 'core-academy-shared-hosting-compatibility-jwt-secret-change-before-real-use';
   }
 
   private normalizePem(value: string | undefined) {

@@ -1,278 +1,86 @@
-# Arquitetura e UML
+# MeetPoint Architecture
 
-Este documento descreve a arquitetura alvo da plataforma MeetPoint/CoreAcademy.
-Ele separa o que ja esta estruturado no codigo do que ainda depende de banco,
-infraestrutura e integracoes reais.
+## Diagnostico Atual
 
-## Visao Executiva
+O projeto e um modular monolith em NestJS com Prisma/PostgreSQL no backend e React/Vite no frontend. A separacao backend/frontend existe fisicamente, mas o frontend ainda concentra fluxos extensos em `frontend/src/main.jsx`, incluindo regra visual, workflow de cadastro, perfil, eventos, comunidades e simulacoes de produto.
 
-A arquitetura correta para o produto e:
+Backend preservavel:
 
-- frontend React/Vite separado do backend;
-- backend NestJS modular;
-- PostgreSQL como banco principal;
-- Prisma como camada de acesso;
-- isolamento multi-tenant por `tenantId` e RLS;
-- JWT para autenticacao;
-- Redis para revogacao de token, cache, filas e rate limit futuro;
-- Stripe ou gateway equivalente para pagamentos;
-- storage/CDN externo para videos, PDFs e documentos;
-- IA de suporte via Ollama ou provedor substituivel.
+- `AuthModule` com JWT, cookies HttpOnly e revogacao por `jti`.
+- `TenantGuard`, `RolesGuard` e `PlatformAdminGuard`.
+- Prisma com RLS preparado por tenant.
+- `PlatformAdminModule`, pagamentos, webhooks, cursos, aulas, inscricoes e assinaturas.
+- Helmet, CORS configuravel, throttling e `ValidationPipe` global.
 
-## Status de Conexao
+Problemas encontrados:
 
-| Area | Status atual | Risco | Proximo passo |
-| --- | --- | --- | --- |
-| Frontend | Funcional, com muitos fluxos mockados | Medio | Trocar mocks por chamadas API por modulo |
-| Backend NestJS | Modular e compilando | Baixo/medio | Ampliar endpoints para feed, comunidades, eventos e oportunidades |
-| PostgreSQL/Prisma | Schema, migrations e RLS preparados | Medio | Conectar banco definitivo e rodar `migrate deploy` |
-| Auth/JWT | Estrutura criada | Medio | Remover login demo em producao e testar revogacao |
-| Stripe | Estrutura preparada | Medio/alto | Configurar chaves, webhooks e testes E2E |
-| Suporte IA/Humano | Fluxo frontend + endpoint backend | Medio | Persistir tickets no banco real e painel operacional |
-| CI/CD | Base criada | Medio | Configurar secrets e ambientes GitHub |
+- Nenhuma arquitetura RAG/agentes/vector store existia.
+- Nao havia Dockerfile, Compose ou manifests Kubernetes.
+- Observabilidade ainda e basica: request id existe, mas sem OpenTelemetry/tracing/metrica.
+- Frontend segue grande demais e mistura regras de negocio com UI.
+- Cache distribuido, filas e workers ainda nao existem.
+- O banco vetorial nao esta configurado; foi adicionado adapter `noop` para falhar com seguranca.
 
-## UML de Contexto
+Riscos tecnicos:
 
-```mermaid
-flowchart LR
-  User["Usuario Web/Mobile"] --> Frontend["React/Vite Frontend"]
-  Admin["Admin Central"] --> Frontend
-  Company["Empresa/PJ/PF"] --> Frontend
+- Crescimento do frontend em arquivo unico aumenta custo de mudanca.
+- RAG sem interfaces causaria acoplamento a vendor; por isso a primeira fase criou ports/adapters.
+- Agentes sem tool registry/permissions poderiam executar acoes criticas sem validacao.
+- Kubernetes sem probes e resource limits poderia causar deploy instavel.
 
-  Frontend --> API["NestJS API"]
-  API --> Prisma["Prisma ORM"]
-  Prisma --> Postgres["PostgreSQL + RLS"]
+Riscos de seguranca:
 
-  API --> Redis["Redis<br/>JWT blacklist, cache, filas"]
-  API --> Stripe["Stripe / Gateway"]
-  Stripe --> API
-  API --> Ollama["Ollama IA"]
-  Frontend --> Media["YouTube/Bunny/S3/CDN"]
-  API --> Email["Email/WhatsApp Provider"]
+- RAG pode vazar documentos se nao filtrar por `tenantId`, permissoes e access level.
+- Cache pode vazar dados entre tenants se a chave nao incluir tenant, usuario, permissoes e versao.
+- Prompt injection pode tentar sobrescrever politicas ou extrair secrets.
+- Logs de RAG podem capturar PII; a auditoria inicial registra hash da query, nao texto puro.
+
+Plano incremental recomendado:
+
+1. Manter modular monolith e endurecer auth/RBAC/cadastro.
+2. Adicionar ports/adapters para RAG, vector store, agentes e auditoria.
+3. Implementar pgvector como adapter inicial se o Postgres do ambiente suportar extensao.
+4. Adicionar fila para ingestao; BullMQ/Redis ou provider externo, conforme infraestrutura.
+5. Adicionar OpenTelemetry, Prometheus/Grafana/Loki/Tempo.
+6. Migrar frontend para modulos/componentes menores por dominio.
+7. Separar workers de ingestao quando volume justificar.
+
+## Arquitetura Alvo
+
+```text
+frontend/
+src/
+  auth/
+  platform-admin/
+  subscriptions/
+  rag/
+    domain/
+    application/
+    infrastructure/
+    ingestion/
+    query-router/
+    agents/
+  common/
+  config/
+  prisma/
+infra/
+  kubernetes/
+docs/
 ```
 
-## UML de Componentes
+Decisao: modular monolith primeiro. Microsservicos so devem ser criados quando houver pressao real de escala, ownership separado ou requisitos de isolamento operacional.
 
-```mermaid
-flowchart TB
-  subgraph Frontend["frontend/src"]
-    SPA["SPA React"]
-    UI["Componentes UI"]
-    State["Estado local/mock"]
-    APIClient["Camada futura services/api"]
-  end
+Componentes alvo:
 
-  subgraph Backend["src"]
-    Auth["auth"]
-    Tenants["tenants"]
-    Courses["courses/modules/lessons"]
-    Enrollments["enrollments/lesson-progress/certificates"]
-    Payments["payments/webhooks"]
-    Support["support"]
-    Admin["platform-admin"]
-    Common["common guards/security"]
-    PrismaModule["prisma"]
-  end
-
-  SPA --> UI
-  SPA --> State
-  SPA --> APIClient
-  APIClient --> Auth
-  APIClient --> Courses
-  APIClient --> Payments
-  APIClient --> Support
-  APIClient --> Admin
-
-  Auth --> Common
-  Tenants --> Common
-  Courses --> Common
-  Enrollments --> Common
-  Payments --> Common
-  Support --> Common
-  Admin --> Common
-
-  Common --> PrismaModule
-  PrismaModule --> DB["PostgreSQL"]
-```
-
-## UML de Dominio
-
-```mermaid
-classDiagram
-  class Tenant {
-    uuid id
-    string name
-    string subdomain
-    datetime createdAt
-  }
-
-  class User {
-    uuid id
-    string email
-    string password
-    UserRole role
-    uuid tenantId
-  }
-
-  class Course {
-    uuid id
-    string title
-    string description
-    string coverUrl
-    uuid tenantId
-  }
-
-  class Module {
-    uuid id
-    string title
-    int order
-    uuid courseId
-  }
-
-  class Lesson {
-    uuid id
-    string title
-    int order
-    string videoUrl
-    string attachmentUrl
-    uuid moduleId
-  }
-
-  class Enrollment {
-    uuid id
-    uuid userId
-    uuid courseId
-    int progressPercentage
-    boolean isCompleted
-  }
-
-  class LessonProgress {
-    uuid id
-    uuid userId
-    uuid lessonId
-    boolean isWatched
-  }
-
-  class Certificate {
-    uuid id
-    uuid userId
-    uuid courseId
-    uuid verificationCode
-  }
-
-  class SupportTicket {
-    uuid id
-    uuid tenantId
-    string requesterEmailHash
-    string requesterEmailEncrypted
-    string subject
-    string status
-  }
-
-  Tenant "1" --> "*" User
-  Tenant "1" --> "*" Course
-  Tenant "1" --> "*" SupportTicket
-  Course "1" --> "*" Module
-  Module "1" --> "*" Lesson
-  User "1" --> "*" Enrollment
-  Course "1" --> "*" Enrollment
-  User "1" --> "*" LessonProgress
-  Lesson "1" --> "*" LessonProgress
-  User "1" --> "*" Certificate
-  Course "1" --> "*" Certificate
-```
-
-## Fluxo de Requisicao Tenant
-
-```mermaid
-sequenceDiagram
-  participant F as Frontend
-  participant G as JwtAuthGuard
-  participant T as TenantGuard
-  participant S as Service
-  participant P as PrismaService
-  participant DB as PostgreSQL/RLS
-
-  F->>G: Request com Authorization
-  G->>G: Valida JWT, issuer, audience, kid
-  G->>T: Usuario autenticado
-  T->>T: Compara tenantId do JWT e X-Tenant-ID
-  T->>S: request.tenantId
-  S->>P: prisma.withTenant(tenantId)
-  P->>DB: SET app.current_tenant_id
-  DB-->>P: Dados filtrados por RLS
-  P-->>S: Resultado
-  S-->>F: Resposta
-```
-
-## Fluxo de Compra
-
-```mermaid
-sequenceDiagram
-  participant U as Usuario
-  participant F as Frontend
-  participant API as NestJS API
-  participant Pay as Stripe/Gateway
-  participant DB as PostgreSQL
-
-  U->>F: Clica em comprar curso
-  F->>API: POST /payments/course-checkout
-  API->>DB: Valida tenant, curso e usuario
-  API->>Pay: Cria checkout
-  Pay-->>F: URL de pagamento
-  U->>Pay: Conclui pagamento
-  Pay->>API: Webhook assinado
-  API->>DB: Cria/atualiza Enrollment
-  API->>DB: Registra status financeiro
-  F->>API: Consulta perfil/cursos
-  API-->>F: Curso liberado
-```
-
-## Fluxo de Suporte IA/Humano
-
-```mermaid
-sequenceDiagram
-  participant U as Usuario
-  participant F as Frontend
-  participant API as Support API
-  participant IA as Ollama
-  participant DB as PostgreSQL
-  participant Staff as Suporte Humano
-
-  U->>F: Abre suporte
-  F->>API: POST /support/chat
-  API->>IA: Pergunta simples
-  IA-->>API: Resposta curta
-  API-->>F: mode=ai
-  U->>F: Nao resolveu
-  F->>API: POST /support/chat preferredChannel=human
-  API->>DB: Cria SupportTicket
-  Staff->>DB: Assume ticket
-  API-->>F: Ticket aberto
-```
-
-## Fronteiras de Seguranca
-
-| Fronteira | Controle esperado |
-| --- | --- |
-| Browser -> API | JWT, CORS restrito, rate limit, validacao DTO |
-| API -> Banco | Prisma, `withTenant`, RLS, usuario sem bypass |
-| API -> Stripe | webhook assinado, idempotencia |
-| API -> Ollama | allowlist de origem, timeout, sem PII |
-| API -> Storage | URLs assinadas e expiracao |
-| Admin -> Dados sensiveis | RBAC/ABAC, mascaramento, auditoria |
-
-## Pontos que Ainda Precisam Virar API Real
-
-- feed, posts, comentarios, reacoes e algoritmo;
-- comunidades, membros, mensagens e moderacao;
-- conversas privadas;
-- oportunidades e candidaturas;
-- eventos e inscricoes;
-- beneficios e resgates;
-- pontos e ranking;
-- perfil social completo;
-- notificacoes.
-
-Essas areas hoje estao funcionais no prototipo visual, mas devem ser migradas
-para endpoints versionados antes de producao.
+- API principal NestJS.
+- Auth/RBAC/tenant isolation.
+- RAG application service.
+- Query router deterministico.
+- Ingestion workers.
+- Vector store adapter.
+- LLM/embedding providers.
+- Agent planner/executor/tool registry.
+- Audit logging.
+- Cache adapter tenant-aware.
+- Observability.
+- Kubernetes deployment layer.

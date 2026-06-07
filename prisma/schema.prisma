@@ -9,12 +9,27 @@ datasource db {
 
 enum UserRole {
   ADMIN
-  STUDENT
+  USER
 }
 
 enum AccountStatus {
+  PENDING_REGISTRATION
+  PENDING_PAYMENT
+  PAYMENT_PROCESSING
   ACTIVE
+  SUSPENDED
+  EXPIRED
+  CANCELLED
   BLOCKED
+}
+
+enum SubscriptionStatus {
+  PENDING_PAYMENT
+  PAYMENT_PROCESSING
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  CANCELLED
 }
 
 enum PlatformRole {
@@ -106,14 +121,29 @@ model Tenant {
 
 model User {
   id        String   @id @default(uuid()) @db.Uuid
+  /// Email interno usado para login na plataforma, por exemplo nome.gmail@meetpoint.com.
   email     String
   emailHash String?
   emailEncrypted String?
+  /// Email real verificado do usuario. Usado para notificacoes, recuperacao de senha, vagas, eventos e cursos.
+  contactEmailHash String?
+  contactEmailEncrypted String?
+  contactEmailVerifiedAt DateTime?
   password  String
-  role      UserRole @default(STUDENT)
+  passwordHash String?
+  name      String @default("")
+  city      String @default("")
+  state     String @default("")
+  profileImage String?
+  bio       String?
+  acceptedTerms Boolean @default(false)
+  acceptedPrivacyPolicy Boolean @default(false)
+  role      UserRole @default(USER)
   status    AccountStatus @default(ACTIVE)
   tenantId  String   @db.Uuid
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
   blockedAt DateTime?
   blockedReason String?
   lastLoginIpEncrypted String?
@@ -126,13 +156,126 @@ model User {
   supportTickets  SupportTicket[]
   courseSales      CourseSale[]
   paymentWebhookEvents PaymentWebhookEvent[]
+  termsConsents   TermsConsent[]
+  privacyConsents UserPrivacyConsent[]
+  subscriptions   Subscription[]
+  subscriptionAuditLogs SubscriptionAuditLog[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, emailHash])
+  @@unique([tenantId, contactEmailHash])
   @@index([tenantId])
   @@index([emailHash])
+  @@index([contactEmailHash])
   @@index([status])
   @@map("users")
+}
+
+model TermsConsent {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  termsVersion String
+  acceptedAt   DateTime @default(now())
+  ip           String?
+  userAgent    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([termsVersion])
+  @@map("terms_consents")
+}
+
+model UserPrivacyConsent {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  termsVersion   String
+  privacyVersion String
+  consentType    String
+  accepted       Boolean  @default(false)
+  acceptedAt     DateTime?
+  ipAddress      String?
+  userAgent      String?
+  country        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([termsVersion])
+  @@index([privacyVersion])
+  @@index([consentType])
+  @@map("user_privacy_consents")
+}
+
+model SubscriptionPlan {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  description    String?
+  price          Decimal  @db.Decimal(10, 2)
+  billingCycle   String
+  features       Json
+  maxStorage     Int?
+  maxUploads     Int?
+  maxCommunities Int?
+  maxMessages    Int?
+  maxEvents      Int?
+  maxCourses     Int?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@index([isActive])
+  @@index([billingCycle])
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id                     String             @id @default(uuid()) @db.Uuid
+  userId                 String             @db.Uuid
+  planId                 String             @db.Uuid
+  status                 SubscriptionStatus @default(PENDING_PAYMENT)
+  paymentProvider        String?
+  externalSubscriptionId String?
+  startedAt              DateTime?
+  expiresAt              DateTime?
+  renewalDate            DateTime?
+  cancelledAt            DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan      SubscriptionPlan       @relation(fields: [planId], references: [id], onDelete: Restrict)
+  auditLogs SubscriptionAuditLog[]
+
+  @@index([userId])
+  @@index([planId])
+  @@index([status])
+  @@index([externalSubscriptionId])
+  @@map("subscriptions")
+}
+
+model SubscriptionAuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  subscriptionId String   @db.Uuid
+  eventType      String
+  oldStatus      String?
+  newStatus      String?
+  paymentReference String?
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([subscriptionId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("subscription_audit_logs")
 }
 
 model Course {

@@ -1,4 +1,3 @@
-import { LessonCompletionRequirement } from '@prisma/client';
 import {
   IsEnum,
   IsInt,
@@ -11,6 +10,10 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import {
+  LessonCompletionRequirement,
+  type LessonCompletionRequirement as LessonCompletionRequirementType,
+} from '../../common/prisma-enums';
 
 export class CreateLessonDto {
   @IsString()
@@ -34,7 +37,7 @@ export class CreateLessonDto {
 
   @IsEnum(LessonCompletionRequirement)
   @IsOptional()
-  completionRequirement?: LessonCompletionRequirement;
+  completionRequirement?: LessonCompletionRequirementType;
 
   @IsInt()
   @Min(1)

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: meetpoint-api
+  namespace: meetpoint
+spec:
+  type: ClusterIP
+  selector:
+    app: meetpoint-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000

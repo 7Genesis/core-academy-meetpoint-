@@ -1,5 +1,5 @@
 import { SetMetadata } from '@nestjs/common';
-import { PlatformPermission } from '@prisma/client';
+import type { PlatformPermission } from '../common/prisma-enums';
 
 export const PLATFORM_PERMISSIONS_KEY = 'platformPermissions';
 

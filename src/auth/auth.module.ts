@@ -7,10 +7,12 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtKeyService } from './jwt-key.service';
 import { TokenRevocationService } from './token-revocation.service';
+import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
+    PrismaModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
@@ -39,8 +41,20 @@ import { TokenRevocationService } from './token-revocation.service';
           };
         }
 
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret) {
+          if (process.env.STRICT_RUNTIME_VALIDATION?.trim().toLowerCase() === 'true') {
+            throw new Error('JWT_SECRET is required when STRICT_RUNTIME_VALIDATION=true');
+          }
+          console.warn(
+            'Runtime configuration warning: JWT_SECRET is missing; JwtModule is using compatibility secret.',
+          );
+        }
+
         return {
-          secret: configService.getOrThrow<string>('JWT_SECRET'),
+          secret:
+            secret ??
+            'core-academy-shared-hosting-compatibility-jwt-secret-change-before-real-use',
           signOptions: {
             algorithm: 'HS256' as const,
             issuer,

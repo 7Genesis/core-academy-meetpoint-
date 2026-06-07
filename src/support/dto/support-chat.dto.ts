@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class SupportChatDto {
   @IsString()
@@ -25,4 +25,19 @@ export class SupportChatDto {
   @MaxLength(40)
   @IsOptional()
   preferredChannel?: string;
+
+  @IsString()
+  @MaxLength(80)
+  @IsOptional()
+  category?: string;
+
+  @IsString()
+  @IsIn(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'])
+  @IsOptional()
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  conversationSummary?: string;
 }

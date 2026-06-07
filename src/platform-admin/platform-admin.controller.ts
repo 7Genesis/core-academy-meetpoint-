@@ -9,9 +9,12 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { PlatformPermission, SupportTicketStatus } from '@prisma/client';
 import { Request } from 'express';
 import { PlatformWide } from '../common/decorators/platform-wide.decorator';
+import {
+  PlatformPermission,
+  type SupportTicketStatus,
+} from '../common/prisma-enums';
 import { BlockUserDto } from './dto/block-user.dto';
 import { CreatePlatformFeePayoutDto } from './dto/create-platform-fee-payout.dto';
 import { CreatePlatformStaffDto } from './dto/create-platform-staff.dto';

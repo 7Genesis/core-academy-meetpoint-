@@ -42,7 +42,7 @@ export class PlatformAdminService {
     ] = await this.prisma.withPlatformAdmin((tx) =>
       Promise.all([
         tx.tenant.count(),
-        tx.user.count({ where: { role: 'STUDENT' } }),
+        tx.user.count({ where: { role: 'USER' } }),
         tx.user.count({ where: { role: 'ADMIN' } }),
         tx.course.count(),
         tx.supportTicket.count({
@@ -184,7 +184,7 @@ export class PlatformAdminService {
     }
     if (type === 'students') {
       return this.prisma.withPlatformAdmin((tx) =>
-        this.listUsers(tx, 'STUDENT', query),
+        this.listUsers(tx, 'USER', query),
       );
     }
     if (type === 'teachers') {
@@ -468,7 +468,7 @@ export class PlatformAdminService {
 
   private async listUsers(
     tx: Prisma.TransactionClient,
-    role: 'ADMIN' | 'STUDENT',
+    role: 'ADMIN' | 'USER',
     search: string,
   ) {
     const users = await tx.user.findMany({

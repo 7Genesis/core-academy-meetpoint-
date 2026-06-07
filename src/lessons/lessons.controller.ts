@@ -1,7 +1,7 @@
 import { Body, Controller, Param, Patch, Post, Req } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
 import { Request } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequireActiveSubscription } from '../common/decorators/require-active-subscription.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CompleteLessonDto } from '../lesson-progress/dto/complete-lesson.dto';
 import { LessonProgressService } from '../lesson-progress/lesson-progress.service';
@@ -17,13 +17,15 @@ export class LessonsController {
     private readonly lessonProgressService: LessonProgressService,
   ) {}
 
-  @Roles(UserRole.ADMIN)
+  @Roles('ADMIN')
+  @RequireActiveSubscription()
   @Post()
   create(@Req() request: TenantRequest, @Body() dto: CreateLessonDto) {
     return this.lessonsService.create(request.tenantId, dto);
   }
 
   @Patch(':id/progress/toggle')
+  @RequireActiveSubscription()
   toggleWatched(
     @Req() request: TenantRequest,
     @CurrentUser() user: { sub: string },
@@ -37,6 +39,7 @@ export class LessonsController {
   }
 
   @Patch(':id/progress/complete')
+  @RequireActiveSubscription()
   completeLesson(
     @Req() request: TenantRequest,
     @CurrentUser() user: { sub: string },

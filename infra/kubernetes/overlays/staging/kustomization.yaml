@@ -1,0 +1,13 @@
+resources:
+  - ../../base
+
+nameSuffix: -staging
+
+patches:
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: meetpoint-api
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 4
