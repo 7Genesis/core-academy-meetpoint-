@@ -18,7 +18,8 @@
     "prisma:verify": "node -e \"const {UserRole, Prisma}=require('@prisma/client'); if (UserRole?.ADMIN !== 'ADMIN') throw new Error('Invalid Prisma Client: UserRole.ADMIN is missing'); console.log(JSON.stringify({prismaClient: Prisma.prismaVersion.client, userRoleAdmin: UserRole.ADMIN}))\"",
     "prisma:migrate": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; app_root=\"${MEETPOINT_APP_ROOT:-${COREACADEMY_APP_ROOT:-}}\"; if [ ! -f \"$schema\" ] && [ -n \"$app_root\" ]; then schema=\"$app_root/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate dev --schema=\"$schema\"",
     "prisma:migrate:deploy": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; app_root=\"${MEETPOINT_APP_ROOT:-${COREACADEMY_APP_ROOT:-}}\"; if [ ! -f \"$schema\" ] && [ -n \"$app_root\" ]; then schema=\"$app_root/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate deploy --schema=\"$schema\"",
-    "frontend:build:vercel": "vite build frontend --base=/"
+    "frontend:build:vercel": "vite build frontend --base=/",
+    "prisma:migrate:repair-known-failed": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; app_root=\"${MEETPOINT_APP_ROOT:-${COREACADEMY_APP_ROOT:-}}\"; if [ ! -f \"$schema\" ] && [ -n \"$app_root\" ]; then schema=\"$app_root/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate resolve --rolled-back 20260531150000_add_pii_encryption_fields --schema=\"$schema\" || true"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.24",
