@@ -1,3 +1,8 @@
+databases:
+  - name: meetpoint-db
+    databaseName: meetpoint
+    user: meetpoint
+
 services:
   - type: web
     name: meetpoint-api
@@ -17,7 +22,9 @@ services:
       - key: SKIP_DATABASE_CONNECT
         value: "false"
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: meetpoint-db
+          property: connectionString
       - key: JWT_ALGORITHM
         value: HS256
       - key: JWT_SECRET
