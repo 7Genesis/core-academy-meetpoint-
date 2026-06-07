@@ -345,7 +345,7 @@ const initialCourses = [
     modules: [
       {
         name: 'Módulo 1',
-        lessons: ['Upload de vídeo', 'E-book para download', 'Aula ao vivo'],
+        lessons: ['Link de videoaula no YouTube', 'E-book para download', 'Aula ao vivo'],
       },
     ],
   },
@@ -1290,6 +1290,7 @@ function supportRequest(path, options = {}) {
 }
 
 const LAST_SIGNUP_LOGIN_KEY = 'lastMeetPointLoginEmail';
+const LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY = 'lastMeetPointRequiresSubscription';
 const DOCUMENT_VALIDATION_ENDPOINT = import.meta.env?.VITE_DOCUMENT_VALIDATION_ENDPOINT || '';
 
 function mapBackendUserToAccount(user = {}, extra = {}) {
@@ -1318,7 +1319,8 @@ function mapBackendUserToAccount(user = {}, extra = {}) {
     lastLoginAt: user.lastLoginAt,
     platformRole: user.platformRole,
     accountStatus: user.status,
-    subscriptionActive: user.status === 'ACTIVE',
+    subscriptionActive: user.subscription?.status === 'ACTIVE',
+    subscription: user.subscription ?? null,
     backendUser: user,
     ...extra,
   };
@@ -1552,18 +1554,18 @@ function createDefaultResumeDetails() {
 }
 
 const ownSocialBaseStats = {
-  friends: 128,
-  followers: 2400,
-  following: 312,
+  friends: 0,
+  followers: 0,
+  following: 0,
 };
 
 function createDefaultSocialGraph() {
   return {
-    followingHandles: ['@meetpoint', '@marinacosta'],
+    followingHandles: [],
     sentFriendRequestHandles: [],
-    incomingFriendRequestHandles: ['@rafaelnunes'],
-    friendHandles: ['@marinacosta'],
-    followerHandles: ['@camilatorres', '@rafaelnunes', '@meetpoint'],
+    incomingFriendRequestHandles: [],
+    friendHandles: [],
+    followerHandles: [],
     blockedHandles: [],
     followerDeltas: {},
   };
@@ -1688,9 +1690,9 @@ function getCurrentUserSocialProfile(currentUser, profilePublicInfo, profilePhot
     handle: getUserHandle(currentUser),
     initials: currentUser?.initials ?? getInitials(displayName),
     city: profilePublicInfo?.city || 'Regional',
-    bio: profilePublicInfo?.bio || 'Perfil da conta ativa.',
+    bio: profilePublicInfo?.bio || '',
     photo: profilePhoto,
-    interests: currentUser?.interests ?? ['Comunidade', 'Cursos'],
+    interests: currentUser?.interests ?? [],
     followers: ownSocialBaseStats.followers,
     posts: 0,
   };
@@ -1852,20 +1854,13 @@ function getAccountSessionKey(account) {
 }
 
 function createDefaultProfileInfo(account) {
-  const segment = account?.segment ?? 'student';
-  const isCompany = segment === 'company';
-  const isTeacher = segment === 'teacher';
   return {
     displayName: account?.name ?? '',
-    city: isCompany ? 'Londrina, PR' : 'São Paulo, SP',
-    bio: isCompany
-      ? 'Empresa focada em cursos, comunidades, oportunidades e parcerias.'
-      : isTeacher
-        ? 'Produtor e profissional com foco em conteúdo, cursos e comunidades.'
-        : 'Empreendedor e produtor digital',
-    linkedin: isCompany ? 'linkedin.com/company/meetpoint' : 'linkedin.com/in/lucas',
-    instagram: isCompany ? '@meetpoint' : '@lucas',
-    github: isCompany ? '' : 'github.com/lucas',
+    city: account?.city && account?.state ? `${account.city}, ${account.state}` : account?.city ?? '',
+    bio: account?.bio ?? '',
+    linkedin: '',
+    instagram: '',
+    github: '',
     coverPhoto: '',
   };
 }
@@ -1910,7 +1905,7 @@ function createGuestWorkspace() {
     courseProgress: {},
     coursePaymentStatus: {},
     courseCompletionStep: {},
-    profilePhoto: account.profilePhoto ?? '',
+    profilePhoto: '',
     userPoints: 0,
     jobApplications: [],
     benefitRedemptions: [],
@@ -1927,56 +1922,29 @@ function createGuestWorkspace() {
 
 function createAccountWorkspace(account) {
   if (!account) return createGuestWorkspace();
-  const segment = account?.segment ?? 'student';
-  const isStudent = segment === 'student';
-  const isTeacher = segment === 'teacher';
-  const isCompany = segment === 'company';
-  const isInternal = ['platform', 'employee'].includes(segment);
 
   return {
     selectedCourseId: 'saas',
     createdCourses: [],
     editingCreatedCourseId: null,
     checkoutCourseId: null,
-    enrollments: isStudent ? ['saas'] : [],
-    courseProgress: isStudent ? { saas: 64 } : {},
-    coursePaymentStatus: isStudent ? { saas: 'paid' } : {},
+    enrollments: [],
+    courseProgress: {},
+    coursePaymentStatus: {},
     courseCompletionStep: {},
     profilePhoto: '',
-    userPoints: isStudent ? 420 : isTeacher ? 180 : isCompany ? 90 : 0,
+    userPoints: 0,
     jobApplications: [],
     benefitRedemptions: [],
-    notifications: [
-      {
-        id: `notice-session-${segment}`,
-        title: isInternal
-          ? 'Acesso interno carregado com permissões próprias.'
-          : isCompany
-            ? 'Perfil empresarial carregado com dados corporativos próprios.'
-            : isTeacher
-              ? 'Perfil de Pessoa Jurídica carregado com área de publicação.'
-              : 'Perfil de Pessoa Física carregado com cursos e pontos próprios.',
-        channel: 'computador',
-        read: false,
-      },
-      ...initialUserNotifications,
-    ],
+    notifications: [],
     notificationPrefs: { ...initialNotificationPrefs },
     socialGraph: createDefaultSocialGraph(),
     interestScores: {},
-    profileResumeName: isStudent
-      ? 'currículo-pessoa-fisica.pdf'
-      : isTeacher
-        ? 'currículo-pessoa-juridica.pdf'
-        : '',
+    profileResumeName: '',
     profileResumeDetails: {
       ...createDefaultResumeDetails(),
-      mode: isStudent || isTeacher ? 'file' : 'empty',
-      fileName: isStudent
-        ? 'currículo-pessoa-fisica.pdf'
-        : isTeacher
-          ? 'currículo-pessoa-juridica.pdf'
-          : '',
+      mode: 'empty',
+      fileName: '',
     },
     profilePublicInfo: createDefaultProfileInfo(account),
     visualPreferences: createDefaultVisualPreferences(),
@@ -2799,9 +2767,21 @@ function App() {
       localStorage.removeItem('authToken');
     }
     applyWorkspaceSnapshot(nextWorkspace, account);
-    setPreviousPage('profile');
-    setActivePage('feed');
-    syncBrowserHistory('feed');
+    const pendingSubscriptionEmail = localStorage.getItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY);
+    const shouldOpenSubscriptionCheckout =
+      pendingSubscriptionEmail === account.email?.toLowerCase() ||
+      !hasActivePlatformSubscription(account);
+    if (shouldOpenSubscriptionCheckout) {
+      localStorage.removeItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY);
+      setSelectedPartnerPlanId(account.segment === 'teacher' || account.segment === 'company' ? 'pj' : 'pf');
+      setPreviousPage('profile');
+      setActivePage('subscription-checkout');
+      syncBrowserHistory('subscription-checkout');
+    } else {
+      setPreviousPage('profile');
+      setActivePage('feed');
+      syncBrowserHistory('feed');
+    }
     setMotionKey((value) => value + 1);
   }
 
@@ -10411,21 +10391,6 @@ function CourseBuilderView({
                             Suba o vídeo no YouTube como público/não listado e cole o link para liberar a prévia.
                           </small>
                         )}
-                        <FileUpload
-                          label="Arquivo de vídeo opcional"
-                          action="Enviar arquivo"
-                          accept="video/*"
-                          onChange={(event) =>
-                            updateLesson(
-                              module.id,
-                              lesson.id,
-                              'videoUrl',
-                              event.target.files?.[0]?.name
-                                ? `Arquivo: ${event.target.files[0].name}`
-                                : lesson.videoUrl,
-                            )
-                          }
-                        />
                         <label>
                           Material de apoio
                           <input
@@ -13862,7 +13827,8 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
         privacyVersion: PRIVACY_VERSION,
       });
       localStorage.setItem(LAST_SIGNUP_LOGIN_KEY, contactEmail);
-      setSignupNotice('Cadastro criado no banco. Entre com email e senha para acessar.');
+      localStorage.setItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY, contactEmail);
+      setSignupNotice('Cadastro criado. Entre com email e senha para escolher o plano e iniciar a cobrança.');
       setAuthMode('login');
       openPage?.('profile');
     } catch (error) {
@@ -14262,7 +14228,7 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
                 Voltar aos dados
               </button>
               <button type="button" onClick={finishSignup} disabled={isCreatingAccount}>
-                {isCreatingAccount ? 'Criando cadastro...' : 'Finalizar cadastro e ir para login'}
+                {isCreatingAccount ? 'Criando cadastro...' : 'Finalizar cadastro e escolher plano'}
               </button>
             </div>
             {signupNotice && <p className="invalid-note signup-submit-notice">{signupNotice}</p>}
@@ -14271,12 +14237,12 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
           <section className="profile-card signup-profile-checklist">
             <span className="section-kicker">Checklist</span>
             <h3>Antes de liberar a conta</h3>
-            <p>O protótipo já organiza o que precisa ser validado pelo backend antes da conta operar dinheiro, vagas ou cursos.</p>
+            <p>Após criar a conta, o acesso completo só é liberado depois da escolha do plano e confirmação de pagamento.</p>
             <ul>
               <li>Email real confirmado e guardado para notificações.</li>
               <li>Documentos enviados para verificação.</li>
               <li>Perfil público com foto, capa e descrição.</li>
-              <li>{isPfSignup ? 'PF liberada para cursos, comunidades e oportunidades.' : 'PJ/Empresa liberada conforme validação jurídica.'}</li>
+              <li>{isPfSignup ? 'PF aguardando assinatura para cursos, comunidades e oportunidades.' : 'PJ/Empresa aguardando assinatura e validação jurídica.'}</li>
             </ul>
           </section>
         </div>
