@@ -4268,7 +4268,8 @@ function App() {
               variant="nav"
               onClick={() => openPage(item.id)}
             >
-              {item.label}
+              <MobileNavIcon name={mobileNavigationIconNames[item.id]} />
+              <small>{getMobileTabLabel(item)}</small>
             </MpButton>
           ))}
         </nav>
