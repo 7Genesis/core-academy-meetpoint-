@@ -22,6 +22,7 @@ type ConsentMetadata = {
 };
 
 const ACTIVE_ACCOUNT_STATUS = 'ACTIVE';
+const PENDING_PAYMENT_ACCOUNT_STATUS = 'PENDING_PAYMENT';
 const DUMMY_BCRYPT_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8rLOHWfQ2PqR4QEc9Rtv1P3J9G/6nW';
 const BCRYPT_ROUNDS = 12;
 
@@ -75,7 +76,7 @@ export class AuthService {
         password: passwordHash,
         passwordHash,
         role: 'USER',
-        status: ACTIVE_ACCOUNT_STATUS,
+        status: PENDING_PAYMENT_ACCOUNT_STATUS,
         name: normalizedName,
         city: normalizedCity,
         state: normalizedState,
@@ -137,7 +138,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    if (user.status !== ACTIVE_ACCOUNT_STATUS) {
+    if (!isLoginAllowedStatus(user.status)) {
       throw new ForbiddenException('Account is not active');
     }
 
@@ -180,7 +181,7 @@ export class AuthService {
       where: { id: payload.sub },
     });
 
-    if (!user || user.status !== ACTIVE_ACCOUNT_STATUS) {
+    if (!user || !isLoginAllowedStatus(user.status)) {
       throw new UnauthorizedException('Authenticated user is not active');
     }
 
@@ -340,4 +341,8 @@ export class AuthService {
   jwks() {
     return this.jwtKeyService.getJwks();
   }
+}
+
+function isLoginAllowedStatus(status: string) {
+  return status === ACTIVE_ACCOUNT_STATUS || status === PENDING_PAYMENT_ACCOUNT_STATUS;
 }

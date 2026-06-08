@@ -20,7 +20,9 @@ function isWeakSecret(value: string | undefined) {
 
 export function validateRuntimeConfig() {
   normalizeRuntimeEnv();
-  logRuntimeEnvDiagnostics();
+  if (process.env.DEBUG_RUNTIME_CONFIG?.trim().toLowerCase() === 'true') {
+    logRuntimeEnvDiagnostics();
+  }
 
   const strictValidation = isStrictRuntimeValidationEnabled();
   const shouldBlockStartup =
@@ -110,6 +112,7 @@ function normalizeRuntimeEnv() {
     'INFINITEPAY_SUCCESS_URL',
     'INFINITEPAY_WEBHOOK_URL',
     'INFINITEPAY_SUBSCRIPTION_WEBHOOK_URL',
+    'DEBUG_RUNTIME_CONFIG',
     'TESTE',
   ];
 

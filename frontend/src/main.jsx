@@ -1274,8 +1274,8 @@ function registerRequest(payload = {}) {
   });
 }
 
-function authenticatedUserRequest(token) {
-  return apiRequest('/auth/me', { token });
+function authenticatedUserRequest() {
+  return apiRequest('/auth/me');
 }
 
 function privacyConsentRequest(consent = {}) {
@@ -1295,8 +1295,8 @@ function subscriptionRequest(path, options = {}) {
   return apiRequest(`/subscriptions${path}`, options);
 }
 
-function platformAdminRequest(path, token, options = {}) {
-  return apiRequest(`/platform-admin${path}`, { ...options, token });
+function platformAdminRequest(path, _token, options = {}) {
+  return apiRequest(`/platform-admin${path}`, options);
 }
 
 function supportRequest(path, options = {}) {
@@ -1988,9 +1988,9 @@ function App() {
   const protectedRoutes = ['courses', 'communities', 'rewards', 'private-chat', 'course-create', 'course-builder', 'checkout', 'community-create', 'event-create'];
   const subscriptionRequiredRoutes = ['courses', 'communities', 'rewards', 'private-chat', 'course-create', 'course-builder', 'checkout', 'community-create', 'event-create'];
   
-  // Autenticação real: persiste apenas o token emitido pelo backend.
+  // Autenticação real: a sessão persistente fica no cookie HttpOnly do backend.
   const [currentUser, setCurrentUser] = useState(null);
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('authToken') ?? '');
+  const [authToken, setAuthToken] = useState('');
 
   function resolveAccessiblePage(pageId, user = currentUser) {
     if (user && pageId === 'home') return 'feed';
@@ -2014,20 +2014,14 @@ function App() {
     let cancelled = false;
 
     async function restoreAuthenticatedUser() {
-      if (!authToken) {
-        localStorage.removeItem('currentUser');
-        return;
-      }
-
       try {
-        const result = await authenticatedUserRequest(authToken);
+        const result = await authenticatedUserRequest();
         if (cancelled) return;
-        activateUserSession(mapBackendUserToAccount(result.user), authToken);
+        activateUserSession(mapBackendUserToAccount(result.user), 'cookie-session');
       } catch {
         if (cancelled) return;
         setAuthToken('');
         setCurrentUser(null);
-        localStorage.removeItem('authToken');
         localStorage.removeItem('currentUser');
       }
     }
@@ -2827,13 +2821,8 @@ function App() {
     }
 
     setCurrentUser(account);
-    setAuthToken(token);
+    setAuthToken(token || 'cookie-session');
     localStorage.removeItem('currentUser');
-    if (token) {
-      localStorage.setItem('authToken', token);
-    } else {
-      localStorage.removeItem('authToken');
-    }
     applyWorkspaceSnapshot(nextWorkspace, account);
     const pendingSubscriptionEmail = localStorage.getItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY);
     const shouldOpenSubscriptionCheckout =
@@ -2868,9 +2857,7 @@ function App() {
     }
     setCurrentUser(null);
     setAuthToken('');
-    // Limpar dados de autenticação do localStorage
     localStorage.removeItem('currentUser');
-    localStorage.removeItem('authToken');
     setLockedRoute('');
     applyWorkspaceSnapshot(createGuestWorkspace(), null);
     openPage('feed', { allowHome: true });

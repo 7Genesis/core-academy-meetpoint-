@@ -10,6 +10,7 @@ import { JwtPayload } from './jwt.strategy';
 
 const ACCESS_TOKEN_COOKIE = 'access_token';
 const ACCESS_TOKEN_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+type AuthSameSite = CookieOptions['sameSite'];
 
 @Controller('auth')
 export class AuthController {
@@ -41,7 +42,8 @@ export class AuthController {
       ...getAuthCookieOptions(),
       maxAge: ACCESS_TOKEN_MAX_AGE_MS,
     });
-    return login;
+    const { accessToken: _accessToken, ...safeLogin } = login;
+    return safeLogin;
   }
 
   @Get('me')
@@ -93,15 +95,26 @@ function getAuthCookieOptions(): CookieOptions {
   return {
     httpOnly: true,
     secure: shouldUseSecureCookie(),
-    sameSite: 'lax',
+    sameSite: resolveCookieSameSite(),
     path: '/',
   };
 }
 
 function shouldUseSecureCookie() {
+  if (process.env.NODE_ENV === 'production') return true;
+
   const configured = process.env.COOKIE_SECURE?.trim().toLowerCase();
   if (configured === 'true') return true;
   if (configured === 'false') return false;
 
-  return process.env.NODE_ENV === 'production';
+  return false;
+}
+
+function resolveCookieSameSite(): AuthSameSite {
+  const configured = process.env.COOKIE_SAMESITE?.trim().toLowerCase();
+  if (configured === 'strict') return 'strict';
+  if (configured === 'lax') return 'lax';
+  if (configured === 'none') return 'none';
+
+  return process.env.NODE_ENV === 'production' ? 'none' : 'lax';
 }

@@ -32,13 +32,11 @@ export class JwtKeyService {
     }
 
     const secret = this.configService.get<string>('JWT_SECRET');
-    if (!secret && this.isStrictRuntimeValidationEnabled()) {
-      throw new InternalServerErrorException('JWT_SECRET is required for HS256');
+    if (!secret && process.env.NODE_ENV === 'production') {
+      throw new InternalServerErrorException('JWT_SECRET is required in production');
     }
     if (!secret) {
-      console.warn(
-        'Runtime configuration warning: JWT_SECRET is missing; using shared-hosting compatibility secret. Configure a strong JWT_SECRET before real use.',
-      );
+      console.warn('Runtime configuration warning: JWT_SECRET is missing.');
     }
     this.privateKeyOrSecret = secret ?? this.getCompatibilitySecret();
     this.publicKeyOrSecret = this.privateKeyOrSecret;
@@ -120,24 +118,11 @@ export class JwtKeyService {
     if (hasAsymmetricKeys) return 'RS256';
     if (this.configService.get<string>('JWT_SECRET')) return 'HS256';
     if (process.env.NODE_ENV !== 'production') return 'HS256';
-    if (!this.isStrictRuntimeValidationEnabled()) {
-      console.warn(
-        'Runtime configuration warning: JWT keys are missing; falling back to HS256 compatibility secret.',
-      );
-      return 'HS256';
-    }
-
-    throw new InternalServerErrorException(
-      'JWT_PRIVATE_KEY and JWT_PUBLIC_KEY are required in production',
-    );
-  }
-
-  private isStrictRuntimeValidationEnabled() {
-    return process.env.STRICT_RUNTIME_VALIDATION?.trim().toLowerCase() === 'true';
+    throw new InternalServerErrorException('JWT_SECRET is required in production');
   }
 
   private getCompatibilitySecret() {
-    return 'meetpoint-shared-hosting-compatibility-jwt-secret-change-before-real-use';
+    return 'meetpoint-local-development-jwt-secret';
   }
 
   private normalizePem(value: string | undefined) {

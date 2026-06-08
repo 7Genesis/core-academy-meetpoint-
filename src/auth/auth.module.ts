@@ -42,19 +42,15 @@ import { PrismaModule } from '../prisma/prisma.module';
         }
 
         const secret = configService.get<string>('JWT_SECRET');
+        if (!secret && process.env.NODE_ENV === 'production') {
+          throw new Error('JWT_SECRET is required in production');
+        }
         if (!secret) {
-          if (process.env.STRICT_RUNTIME_VALIDATION?.trim().toLowerCase() === 'true') {
-            throw new Error('JWT_SECRET is required when STRICT_RUNTIME_VALIDATION=true');
-          }
-          console.warn(
-            'Runtime configuration warning: JWT_SECRET is missing; JwtModule is using compatibility secret.',
-          );
+          console.warn('Runtime configuration warning: JWT_SECRET is missing.');
         }
 
         return {
-          secret:
-            secret ??
-            'meetpoint-shared-hosting-compatibility-jwt-secret-change-before-real-use',
+          secret: secret ?? 'meetpoint-local-development-jwt-secret',
           signOptions: {
             algorithm: 'HS256' as const,
             issuer,
