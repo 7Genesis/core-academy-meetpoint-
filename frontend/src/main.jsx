@@ -1110,6 +1110,8 @@ const rewardActions = [
   { action: 'Resgatar benefício', points: 10 },
 ];
 
+const benefitRequestStorageKey = 'meetPointBenefitRequests';
+
 // Planos comerciais da área Parceiros. Alterar aqui muda cards e checkout de assinatura.
 const partnerPlans = [
   {
@@ -2056,6 +2058,14 @@ function App() {
   const [benefits, setBenefits] = useState(initialBenefits);
   const [benefitRedemptions, setBenefitRedemptions] = useState([]);
   const [benefitEmailDeliveries, setBenefitEmailDeliveries] = useState([]);
+  const [benefitRequests, setBenefitRequests] = useState(() => {
+    try {
+      const saved = localStorage.getItem(benefitRequestStorageKey);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [partnerLeads, setPartnerLeads] = useState([]);
   const [jobs, setJobs] = useState(initialJobs);
   const [notifications, setNotifications] = useState([]);
@@ -2643,6 +2653,14 @@ function App() {
       // Sem armazenamento local, a preferencia permanece apenas na sessao atual.
     }
   }, [currentUser?.email, currentUser?.segment, currentUser?.tenantId, visualPreferences]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(benefitRequestStorageKey, JSON.stringify(benefitRequests));
+    } catch {
+      // Sem armazenamento local, as solicitacoes ficam apenas na sessao atual.
+    }
+  }, [benefitRequests]);
 
   // Tema automatico: atualiza a interface quando o sistema alterna entre claro e escuro.
   useEffect(() => {
@@ -4046,6 +4064,98 @@ function App() {
     return createdBenefit;
   }
 
+  function requestBenefitPublication(draft) {
+    if (!requireAuthenticatedAction('divulgar benefício')) return null;
+    if (['platform', 'employee'].includes(currentUser?.segment)) return null;
+    const title = draft.title.trim();
+    const partner = draft.partner.trim();
+    const product = draft.product.trim();
+    const pointsCost = Number(draft.pointsCost || 0);
+    if (!title || !partner || !product || pointsCost <= 0) return null;
+
+    const request = {
+      id: `benefit-request-${Date.now()}`,
+      title,
+      partner,
+      product,
+      category: draft.category,
+      city: draft.city.trim() || currentUser?.city || 'Regional',
+      pointsCost,
+      rules: draft.rules.trim(),
+      requesterName: currentUser.name,
+      requesterEmail: getContactEmail(currentUser),
+      requesterSegment: currentUser.segment,
+      status: 'Pendente',
+      createdAt: new Date().toISOString(),
+    };
+
+    setBenefitRequests((current) => [request, ...current]);
+    setNotifications((current) => [
+      {
+        id: `notice-benefit-request-${Date.now()}`,
+        title: `Solicitação enviada para aprovação: ${title}.`,
+        channel: 'computador',
+        read: false,
+      },
+      ...current,
+    ]);
+    return request;
+  }
+
+  function approveBenefitRequest(requestId) {
+    if (currentUser?.segment !== 'platform') return null;
+    const request = benefitRequests.find((item) => item.id === requestId);
+    if (!request || request.status !== 'Pendente') return null;
+
+    const approvedBenefit = {
+      id: `benefit-${Date.now()}`,
+      title: request.title,
+      partner: request.partner,
+      category: request.category,
+      city: request.city || 'Regional',
+      pointsCost: Number(request.pointsCost || 0),
+      redemptions: 0,
+      emailSubject: `Seu benefício ${request.title}`,
+      emailBody: request.rules || `Você resgatou ${request.title}. Valide o benefício com ${request.partner}.`,
+      deliveryAssetName: 'beneficio-aprovado.pdf',
+      deliveryCode: `MP-${Date.now().toString(36).toUpperCase()}`,
+      createdBy: currentUser.name,
+      createdAt: new Date().toISOString(),
+      requestedBy: request.requesterName,
+      requestId,
+    };
+
+    setBenefits((current) => [approvedBenefit, ...current]);
+    setBenefitRequests((current) =>
+      current.map((item) =>
+        item.id === requestId
+          ? { ...item, status: 'Aprovado', approvedAt: new Date().toISOString() }
+          : item,
+      ),
+    );
+    setNotifications((current) => [
+      {
+        id: `notice-benefit-approved-${Date.now()}`,
+        title: `Benefício aprovado e publicado: ${request.title}.`,
+        channel: 'computador',
+        read: false,
+      },
+      ...current,
+    ]);
+    return approvedBenefit;
+  }
+
+  function rejectBenefitRequest(requestId) {
+    if (currentUser?.segment !== 'platform') return;
+    setBenefitRequests((current) =>
+      current.map((item) =>
+        item.id === requestId
+          ? { ...item, status: 'Reprovado', rejectedAt: new Date().toISOString() }
+          : item,
+      ),
+    );
+  }
+
   // Parceiros: registra interesse e direciona para checkout de assinatura.
   function registerPartnerLead(planId) {
     if (!requireAuthenticatedConsent('assinar plano')) return;
@@ -4431,6 +4541,9 @@ function App() {
               jobs={jobs}
               benefits={benefits}
               createBenefit={createBenefit}
+              benefitRequests={benefitRequests}
+              approveBenefitRequest={approveBenefitRequest}
+              rejectBenefitRequest={rejectBenefitRequest}
               benefitEmailDeliveries={benefitEmailDeliveries}
               visualPreferences={visualPreferences}
               setVisualPreferences={setVisualPreferences}
@@ -4483,7 +4596,10 @@ function App() {
               userPoints={userPoints}
               redemptions={benefitRedemptions}
               benefits={benefits}
+              currentUser={currentUser}
               openPage={openPage}
+              requestBenefitPublication={requestBenefitPublication}
+              benefitRequests={benefitRequests}
             />
           )}
           {activePage === 'partners' && (
@@ -8702,6 +8818,9 @@ function OpportunitiesView({
 function BenefitsView({ benefits, redemptions, userPoints, redeemBenefit, currentUser, openPage }) {
   const [category, setCategory] = useState('Todos');
   const hasSubscription = Boolean(currentUser?.subscriptionActive);
+  const canCreateBenefits = currentUser?.segment === 'platform';
+  const canRequestBenefitPublication = currentUser && !['platform', 'employee'].includes(currentUser.segment);
+  const benefitCategories = ['Todos', ...uniqueItems(benefits.map((benefit) => benefit.category))];
   const visibleBenefits = benefits.filter(
     (benefit) => category === 'Todos' || benefit.category === category,
   );
@@ -8716,11 +8835,23 @@ function BenefitsView({ benefits, redemptions, userPoints, redeemBenefit, curren
               : 'Assinatura obrigatória para resgatar cupons'
             : 'Entre para resgatar benefícios'}
         </strong>
+        <div className="benefit-toolbar-actions">
+          {canCreateBenefits && (
+            <button type="button" onClick={() => openPage('profile')}>
+              Criar benefício
+            </button>
+          )}
+          {canRequestBenefitPublication && (
+            <button className="light" type="button" onClick={() => openPage('rewards')}>
+              Quero divulgar benefício
+            </button>
+          )}
+        </div>
         <div className="compact-filter-control">
           <span>{category}</span>
           <OptionsMenu
             label="Filtrar benefícios"
-            items={['Todos', 'Alimentação', 'Serviços', 'Eventos'].map((item) => ({
+            items={benefitCategories.map((item) => ({
               label: item,
               description: category === item ? 'Filtro selecionado' : 'Aplicar filtro',
               onClick: () => setCategory(item),
@@ -8788,7 +8919,25 @@ function BenefitsView({ benefits, redemptions, userPoints, redeemBenefit, curren
 }
 
 // Página Pontos: concentra saldo, regras de pontuação, histórico e sugestões de evolução.
-function RewardsView({ userPoints, redemptions, benefits, openPage }) {
+function RewardsView({
+  userPoints,
+  redemptions,
+  benefits,
+  currentUser,
+  openPage,
+  requestBenefitPublication,
+  benefitRequests = [],
+}) {
+  const [benefitRequestDraft, setBenefitRequestDraft] = useState({
+    title: '',
+    partner: '',
+    product: '',
+    category: 'Serviços',
+    city: '',
+    pointsCost: '',
+    rules: '',
+  });
+  const [benefitRequestStatus, setBenefitRequestStatus] = useState('');
   const redemptionIds = redemptions ?? [];
   const orderedBenefits = [...benefits].sort((first, second) => first.pointsCost - second.pointsCost);
   const availableBenefits = orderedBenefits.filter((benefit) => !redemptionIds.includes(benefit.id));
@@ -8807,6 +8956,10 @@ function RewardsView({ userPoints, redemptions, benefits, openPage }) {
           ? 'Ativo'
           : 'Inicial';
   const redeemedBenefits = benefits.filter((benefit) => redemptionIds.includes(benefit.id));
+  const canRequestBenefitPublication = currentUser && !['platform', 'employee'].includes(currentUser.segment);
+  const userBenefitRequests = benefitRequests.filter(
+    (request) => request.requesterEmail === getContactEmail(currentUser),
+  );
   const recentPointEvents = [
     {
       title: 'Publicação no feed',
@@ -8829,6 +8982,29 @@ function RewardsView({ userPoints, redemptions, benefits, openPage }) {
       value: redeemedBenefits[0] ? `-${redeemedBenefits[0].pointsCost} pts` : 'pendente',
     },
   ];
+
+  function updateBenefitRequestDraft(field, value) {
+    setBenefitRequestDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function submitBenefitRequest(event) {
+    event.preventDefault();
+    const request = requestBenefitPublication?.(benefitRequestDraft);
+    if (!request) {
+      setBenefitRequestStatus('Informe nome, parceiro, produto e custo em pontos para enviar ao admin.');
+      return;
+    }
+    setBenefitRequestStatus(`Solicitação "${request.title}" enviada para aprovação do administrador.`);
+    setBenefitRequestDraft({
+      title: '',
+      partner: '',
+      product: '',
+      category: 'Serviços',
+      city: '',
+      pointsCost: '',
+      rules: '',
+    });
+  }
 
   return (
     <section className="rewards-page">
@@ -8906,6 +9082,115 @@ function RewardsView({ userPoints, redemptions, benefits, openPage }) {
           <strong>Medir</strong>
           <p>Ranking, nível e histórico ajudam a provar engajamento e a vender patrocínios com dados reais.</p>
         </article>
+      </section>
+
+      <section className="benefit-request-panel">
+        <div>
+          <span className="section-kicker">Divulgar benefício</span>
+          <h3>{currentUser?.segment === 'platform' ? 'Criar benefício como administrador' : 'Enviar benefício para aprovação'}</h3>
+          <p>
+            {currentUser?.segment === 'platform'
+              ? 'Administradores publicam benefícios diretamente pelo painel central.'
+              : 'PF, PJ e empresas enviam a proposta. O benefício só aparece para resgate depois da aprovação administrativa.'}
+          </p>
+        </div>
+
+        {currentUser?.segment === 'platform' ? (
+          <button type="button" onClick={() => openPage?.('profile')}>
+            Abrir criação de benefícios
+          </button>
+        ) : canRequestBenefitPublication ? (
+          <form className="benefit-request-form" onSubmit={submitBenefitRequest}>
+            <div className="benefit-admin-grid">
+              <label>
+                Nome do benefício
+                <input
+                  value={benefitRequestDraft.title}
+                  onChange={(event) => updateBenefitRequestDraft('title', event.target.value)}
+                  placeholder="Ex: 20% OFF no combo executivo"
+                />
+              </label>
+              <label>
+                Empresa/parceiro
+                <input
+                  value={benefitRequestDraft.partner}
+                  onChange={(event) => updateBenefitRequestDraft('partner', event.target.value)}
+                  placeholder="Nome da empresa ou profissional"
+                />
+              </label>
+              <label>
+                Produto ou serviço
+                <input
+                  value={benefitRequestDraft.product}
+                  onChange={(event) => updateBenefitRequestDraft('product', event.target.value)}
+                  placeholder="Ex: Combo executivo, mentoria, voucher"
+                />
+              </label>
+              <label>
+                Categoria
+                <select
+                  value={benefitRequestDraft.category}
+                  onChange={(event) => updateBenefitRequestDraft('category', event.target.value)}
+                >
+                  <option>Alimentação</option>
+                  <option>Serviços</option>
+                  <option>Eventos</option>
+                  <option>Educação</option>
+                  <option>Saúde</option>
+                  <option>Networking</option>
+                </select>
+              </label>
+              <label>
+                Cidade
+                <input
+                  value={benefitRequestDraft.city}
+                  onChange={(event) => updateBenefitRequestDraft('city', event.target.value)}
+                  placeholder="Regional, cidade ou online"
+                />
+              </label>
+              <label>
+                Custo sugerido em pontos
+                <input
+                  min="1"
+                  type="number"
+                  value={benefitRequestDraft.pointsCost}
+                  onChange={(event) => updateBenefitRequestDraft('pointsCost', event.target.value)}
+                  placeholder="Ex: 120"
+                />
+              </label>
+            </div>
+            <label>
+              Regras do benefício
+              <textarea
+                value={benefitRequestDraft.rules}
+                onChange={(event) => updateBenefitRequestDraft('rules', event.target.value)}
+                placeholder="Informe validade, regras de uso, restrições e como validar o cupom."
+              />
+            </label>
+            <button type="submit">Enviar para aprovação do admin</button>
+            {benefitRequestStatus && <p className="valid-note">{benefitRequestStatus}</p>}
+          </form>
+        ) : (
+          <button type="button" onClick={() => openPage?.('profile')}>
+            Entrar para divulgar benefício
+          </button>
+        )}
+
+        {userBenefitRequests.length > 0 && (
+          <div className="benefit-request-history">
+            <span className="section-kicker">Minhas solicitações</span>
+            {userBenefitRequests.map((request) => (
+              <article className="platform-record" key={request.id}>
+                <span>{request.pointsCost}</span>
+                <div>
+                  <strong>{request.title}</strong>
+                  <small>{request.partner} - {request.product}</small>
+                </div>
+                <button type="button" disabled>{request.status}</button>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <div className="reward-action-grid">
@@ -12459,6 +12744,9 @@ function ProfileView({
   jobs,
   benefits,
   createBenefit,
+  benefitRequests,
+  approveBenefitRequest,
+  rejectBenefitRequest,
   benefitEmailDeliveries,
   visualPreferences,
   setVisualPreferences,
@@ -12650,6 +12938,9 @@ function ProfileView({
             authToken={authToken}
             benefits={benefits}
             createBenefit={createBenefit}
+            benefitRequests={benefitRequests}
+            approveBenefitRequest={approveBenefitRequest}
+            rejectBenefitRequest={rejectBenefitRequest}
             benefitEmailDeliveries={benefitEmailDeliveries}
           />
         )}
@@ -14845,7 +15136,15 @@ function EmployeeProfile({ currentUser }) {
 }
 
 // Admin central: operacao da plataforma, suporte, funcionarios, beneficios e Pix das taxas.
-function PlatformProfile({ authToken, benefits, createBenefit, benefitEmailDeliveries }) {
+function PlatformProfile({
+  authToken,
+  benefits,
+  createBenefit,
+  benefitRequests = [],
+  approveBenefitRequest,
+  rejectBenefitRequest,
+  benefitEmailDeliveries,
+}) {
   const [employeeName, setEmployeeName] = useState('');
   const [employeeEmail, setEmployeeEmail] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
@@ -14966,6 +15265,7 @@ function PlatformProfile({ authToken, benefits, createBenefit, benefitEmailDeliv
     owner: ticket.user?.email ?? ticket.tenant?.name ?? 'Plataforma',
     priority: ticket.priority,
   })) : supportTickets;
+  const pendingBenefitRequests = benefitRequests.filter((request) => request.status === 'Pendente');
 
   useEffect(() => {
     if (!authToken) return;
@@ -15547,6 +15847,55 @@ function PlatformProfile({ authToken, benefits, createBenefit, benefitEmailDeliv
 
         {platformView === 'benefits' && (
           <div className="benefit-admin-panel">
+            <section className="benefit-request-admin-list">
+              <span className="section-kicker">Solicitações para aprovação</span>
+              <h3>Benefícios enviados por PF, PJ e empresas</h3>
+              <p>
+                Solicitações entram em análise e só aparecem em Benefícios depois que um administrador aprovar.
+              </p>
+              {pendingBenefitRequests.length === 0 ? (
+                <p className="empty-state">Nenhuma solicitação pendente.</p>
+              ) : (
+                pendingBenefitRequests.map((request) => (
+                  <article className="platform-record benefit-request-record" key={request.id}>
+                    <span>{request.pointsCost}</span>
+                    <div>
+                      <strong>{request.title}</strong>
+                      <small>{request.partner} - {request.product} - {request.category}</small>
+                      <small>
+                        Solicitante: {request.requesterName} ({getAccountTypeLabel(request.requesterSegment)}) - {maskEmail(request.requesterEmail)}
+                      </small>
+                      {request.rules && <small>Regras: {request.rules}</small>}
+                    </div>
+                    <div className="record-action-stack">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const approved = approveBenefitRequest?.(request.id);
+                          setNotice(
+                            approved
+                              ? `Solicitação aprovada: ${approved.title} agora aparece em Benefícios.`
+                              : 'Não foi possível aprovar essa solicitação.',
+                          );
+                        }}
+                      >
+                        Aprovar
+                      </button>
+                      <button
+                        className="light"
+                        type="button"
+                        onClick={() => {
+                          rejectBenefitRequest?.(request.id);
+                          setNotice(`Solicitação "${request.title}" reprovada.`);
+                        }}
+                      >
+                        Reprovar
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </section>
             <section className="benefit-admin-form">
               <span className="section-kicker">Novo benefício</span>
               <h3>Cadastrar benefício para resgate</h3>

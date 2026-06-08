@@ -5544,9 +5544,38 @@ label + .file-upload {
   gap: 16px;
 }
 
+.benefit-toolbar-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.benefit-toolbar-actions button,
+.benefit-request-panel > button,
+.benefit-request-form > button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--charcoal);
+  color: var(--light-text);
+  font-weight: 950;
+}
+
+.benefit-toolbar-actions button.light {
+  border: 1px solid rgba(13, 15, 20, 0.14);
+  background: #fffdf7;
+  color: var(--ink);
+}
+
 .benefit-admin-form,
 .benefit-admin-list,
-.benefit-email-log {
+.benefit-email-log,
+.benefit-request-admin-list,
+.benefit-request-panel,
+.benefit-request-history {
   display: grid;
   gap: 12px;
   padding: 16px;
@@ -5566,6 +5595,68 @@ label + .file-upload {
   margin: 0;
   color: var(--soft-text);
   line-height: 1.5;
+}
+
+.benefit-request-panel {
+  margin: 18px 0;
+}
+
+.benefit-request-form {
+  display: grid;
+  gap: 12px;
+}
+
+.benefit-request-form textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.benefit-request-record {
+  align-items: start;
+}
+
+.record-action-stack {
+  display: grid;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.record-action-stack button {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--charcoal);
+  color: var(--light-text);
+  font-weight: 950;
+}
+
+.record-action-stack button.light {
+  border: 1px solid rgba(13, 15, 20, 0.12);
+  background: #fffdf7;
+  color: var(--ink);
+}
+
+@media (max-width: 760px) {
+  .benefit-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .benefit-toolbar-actions,
+  .compact-filter-control {
+    justify-content: stretch;
+  }
+
+  .benefit-toolbar-actions button,
+  .compact-filter-control > span {
+    width: 100%;
+  }
+
+  .record-action-stack {
+    width: 100%;
+  }
 }
 
 .benefit-admin-grid {
@@ -9681,6 +9772,20 @@ select,
   box-shadow: 0 18px 42px rgba(13, 15, 20, 0.18);
 }
 
+body .options-menu-panel.options-menu-panel {
+  width: min(280px, calc(100vw - 24px)) !important;
+  min-width: 0 !important;
+  max-width: calc(100vw - 24px) !important;
+  display: grid !important;
+  gap: 6px !important;
+  padding: 8px !important;
+  border-radius: 14px !important;
+  background: #fffdf7 !important;
+  clip-path: none !important;
+  overflow: auto !important;
+  transform: none !important;
+}
+
 .options-menu-panel button {
   width: 100%;
   min-height: 44px;
@@ -9695,6 +9800,25 @@ select,
   color: var(--ink);
   box-shadow: none !important;
   text-align: left;
+}
+
+body .options-menu-panel.options-menu-panel button {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 46px !important;
+  display: grid !important;
+  justify-content: stretch !important;
+  justify-items: start !important;
+  align-items: center !important;
+  padding: 9px 11px !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
+  text-align: left !important;
+  white-space: normal !important;
+  transform: none !important;
 }
 
 .options-menu-panel button:hover {
@@ -23527,6 +23651,36 @@ html[data-theme] body .profile-page .file-upload.file-upload,
 html[data-theme] body .profile-page .file-upload.file-upload:not([class]) {
   background: var(--surface-dark) !important;
   color: var(--surface-dark-foreground) !important;
+}
+
+/* Guarda final: menus de tres pontos nunca devem virar cards circulares sobrepostos. */
+html[data-theme] body .options-menu-panel.options-menu-panel,
+body .options-menu-panel.options-menu-panel {
+  width: min(280px, calc(100vw - 24px)) !important;
+  min-width: 0 !important;
+  max-width: calc(100vw - 24px) !important;
+  border-radius: 14px !important;
+  background: var(--surface-strong, #fffdf7) !important;
+  clip-path: none !important;
+  transform: none !important;
+  overflow: auto !important;
+}
+
+html[data-theme] body .options-menu-panel.options-menu-panel button,
+body .options-menu-panel.options-menu-panel button {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 46px !important;
+  display: grid !important;
+  justify-content: stretch !important;
+  justify-items: start !important;
+  padding: 9px 11px !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  color: var(--card-foreground, var(--ink)) !important;
+  text-align: left !important;
+  white-space: normal !important;
+  box-shadow: none !important;
 }
 
 /* Correcoes finais de contraste responsivo:
