@@ -284,8 +284,10 @@ function createYouTubeMedia(url) {
   };
 }
 
-// Dados temporários dos cursos enquanto o banco PostgreSQL definitivo não foi conectado.
-const initialCourses = [
+const enableDemoContent = false;
+
+// Dados temporários mantidos desligados para a primeira operação real.
+const initialCourses = enableDemoContent ? [
   {
     id: 'saas',
     title: 'Arquitetura SaaS Multi-Tenant',
@@ -350,7 +352,7 @@ const initialCourses = [
       },
     ],
   },
-];
+  ] : [];
 
 function normalizeCourseModules(course) {
   return (course?.modules ?? []).map((module, moduleIndex) => ({
@@ -584,7 +586,7 @@ function CommunityAvatar({ community, className = '' }) {
   );
 }
 
-const initialCommunities = [
+const initialCommunities = enableDemoContent ? [
   {
     id: 'growth',
     name: 'Growth para EAD',
@@ -627,9 +629,9 @@ const initialCommunities = [
     favorite: false,
     color: 'blue',
   },
-];
+  ] : [];
 
-const messages = [
+const messages = enableDemoContent ? [
   {
     id: 'community-message-1',
     author: 'Marina Costa',
@@ -664,9 +666,9 @@ createdAt: Date.now() - 1000 * 60 * 8,
     deleted: false,
     deletedByAdmin: false,
   },
-];
+  ] : [];
 
-const scheduledEvents = [
+const scheduledEvents = enableDemoContent ? [
   {
     title: 'Aula ao vivo: RLS e Prisma',
     type: 'Aula ao vivo',
@@ -712,10 +714,10 @@ const scheduledEvents = [
     yes: 18,
     no: 2,
   },
-];
+  ] : [];
 
-// Posts iniciais do feed. Depois, estes dados devem vir da API/banco.
-const initialFeedPosts = [
+// Posts iniciais desligados: producao deve vir da API/banco.
+const initialFeedPosts = enableDemoContent ? [
   {
     id: 'post-1',
     author: 'MeetPoint Oficial',
@@ -777,11 +779,10 @@ const initialFeedPosts = [
     comments: [],
     mediaType: '',
   },
-];
+  ] : [];
 
-// Estrutura social mockada para feed/perfil. Quando houver backend, estes dados
-// devem vir de tabelas de seguidores, amizades e interesses do usuário.
-const socialProfiles = [
+// Estrutura social demo desligada: conexoes reais devem vir do backend.
+const socialProfiles = enableDemoContent ? [
   {
     id: 'person-marina',
     name: 'Marina Costa',
@@ -837,7 +838,7 @@ const socialProfiles = [
     followers: 1490,
     posts: 55,
   },
-];
+  ] : [];
 
 const initialPrivateConversations = socialProfiles.slice(0, 4).map((profile, index) => ({
   id: `conversation-${profile.id}`,
@@ -964,8 +965,8 @@ function buildOpportunityEmailAction(job = {}, currentUser, resumeName = '') {
   };
 }
 
-// Vagas iniciais exibidas em Oportunidades. Empresas também podem criar vagas pelo formulário visual.
-const initialJobs = [
+// Vagas iniciais desligadas: oportunidades reais devem ser criadas pelos usuários.
+const initialJobs = enableDemoContent ? [
   {
     id: 'job-1',
     title: 'Analista de Marketing Digital',
@@ -1051,9 +1052,9 @@ const initialJobs = [
     contactMethods: ['whatsapp', 'email', 'platform'],
     applicants: 11,
   },
-];
+  ] : [];
 
-const initialBenefits = [
+const initialBenefits = enableDemoContent ? [
   {
     id: 'benefit-1',
     title: '20% OFF no combo executivo',
@@ -1099,7 +1100,7 @@ const initialBenefits = [
     createdBy: 'Admin MeetPoint',
     createdAt: '2026-05-22T14:00:00',
   },
-];
+  ] : [];
 
 const rewardActions = [
   { action: 'Entrar diariamente', points: 5 },
@@ -1430,7 +1431,7 @@ function getContactEmail(account) {
   return account?.contactEmail || account?.signupRecord?.contactEmail || account?.email || '';
 }
 
-const initialUserNotifications = [
+const initialUserNotifications = enableDemoContent ? [
   { id: 'notice-1', title: 'Novo comentário no seu post', channel: 'computador', read: false },
   { id: 'notice-2', title: 'Sua candidatura foi visualizada', channel: 'celular', read: false },
   {
@@ -1449,7 +1450,7 @@ const initialUserNotifications = [
     type: 'friend-request',
     actorHandle: '@rafaelnunes',
   },
-];
+  ] : [];
 
 const initialNotificationPrefs = { celular: true, computador: true, email: true };
 const feedInteractionWeights = {
@@ -4460,6 +4461,7 @@ function App() {
               communityBubbleOpen={communityBubbleOpen}
               closeCommunityBubble={() => setCommunityBubbleOpen(false)}
               openPrivateChat={() => setPrivateChatOpen(true)}
+              openCommunityCreate={openCommunityCreate}
               showMemberSuggestion={showMemberSuggestion}
               dismissMemberSuggestion={dismissMemberSuggestion}
               addCommunityEvent={addCommunityEvent}
@@ -5143,7 +5145,12 @@ function CommunitySidePanel({
 
       <span className="section-kicker">Comunidades</span>
       <div className="community-list">
-        {filteredCommunities.map((community) => (
+        {filteredCommunities.length === 0 ? (
+          <article className="empty-state inline-empty-state">
+            <strong>Nenhuma comunidade criada ainda.</strong>
+            <span>Crie a primeira comunidade para começar conversas, membros e eventos.</span>
+          </article>
+        ) : filteredCommunities.map((community) => (
           <button
             className={
               activeCommunityId === community.id
@@ -6143,7 +6150,12 @@ function HomeView({ openPage, openCourse }) {
         </div>
 
         <div className="hero-stack" aria-label="Atalhos principais">
-          {initialCourses.map((course) => (
+          {initialCourses.length === 0 ? (
+            <article className="stack-card yellow empty-stack-card">
+              <span>Primeiro uso</span>
+              <strong>Sem cursos publicados</strong>
+            </article>
+          ) : initialCourses.map((course) => (
             <button
               className={`stack-card ${course.color}`}
               key={course.id}
@@ -6900,7 +6912,11 @@ function FeedView({
           <section className="feed-widget dark">
             <span className="section-kicker">Ao vivo na rede</span>
             <strong>{posts.length} publicações</strong>
-            <p>{totalReactions} reações e {totalComments} comentários movimentando a comunidade.</p>
+            <p>
+              {posts.length
+                ? `${totalReactions} reações e ${totalComments} comentários movimentando a comunidade.`
+                : 'A rede ainda está limpa. As primeiras publicações aparecerão aqui.'}
+            </p>
           </section>
           <section className="feed-widget interest-widget">
             <strong>Para você</strong>
@@ -6928,7 +6944,9 @@ function FeedView({
           <section className="feed-widget">
             <strong>Assuntos em alta</strong>
             <div className="trend-tag-list">
-              {trendingTags.map((tag) => (
+              {trendingTags.length === 0 ? (
+                <p className="empty-state">Sem assuntos em alta por enquanto.</p>
+              ) : trendingTags.map((tag) => (
                 <button
                   className={selectedTrendTag === tag ? 'feed-side-card-button active' : 'feed-side-card-button'}
                   key={tag}
@@ -6947,7 +6965,9 @@ function FeedView({
           <section className="feed-widget hashtag-widget">
             <strong>Hashtags em alta</strong>
             <div className="hashtag-list">
-              {hashtagStats.map((item) => (
+              {hashtagStats.length === 0 ? (
+                <p className="empty-state">Nenhuma hashtag usada ainda.</p>
+              ) : hashtagStats.map((item) => (
                 <button
                   className={selectedHashtag === item.tag ? 'feed-side-card-button active' : 'feed-side-card-button'}
                   key={item.tag}
@@ -6967,7 +6987,9 @@ function FeedView({
           <section className="feed-widget">
             <strong>Comunidades recomendadas</strong>
             <div className="feed-mini-list">
-              {recommendedCommunities.map((community) => (
+              {recommendedCommunities.length === 0 ? (
+                <p className="empty-state">Nenhuma comunidade criada ainda.</p>
+              ) : recommendedCommunities.map((community) => (
                 <button className="feed-mini-row" key={community.id} type="button" onClick={() => openPage('communities')}>
                   <span aria-hidden="true">{getInitials(community.name)}</span>
                   <div>
@@ -7039,7 +7061,7 @@ function PeopleDiscovery({
   setSelectedProfile,
 }) {
   const discoveryRef = useRef(null);
-  const [recentSearches, setRecentSearches] = useState(['Marina Costa', 'Rafael Nunes']);
+  const [recentSearches, setRecentSearches] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const suggestedPeople = peopleResults.slice(0, 3);
 
@@ -7092,7 +7114,7 @@ function PeopleDiscovery({
           />
           <div className="people-search-context">
             <strong>{peopleQuery.trim() ? 'Resultados' : 'Pesquisas recentes'}</strong>
-            {!peopleQuery.trim() && (
+            {!peopleQuery.trim() && recentSearches.length > 0 && (
               <div>
                 {recentSearches.map((term) => (
                   <button className="people-chip-button" key={term} type="button" onClick={() => setPeopleQuery(term)}>
@@ -7103,7 +7125,9 @@ function PeopleDiscovery({
             )}
           </div>
           <div className="people-result-list">
-            {peopleResults.slice(0, 4).map((profile) => {
+            {peopleResults.length === 0 ? (
+              <p className="empty-state">Nenhuma pessoa encontrada ainda.</p>
+            ) : peopleResults.slice(0, 4).map((profile) => {
               const isFollowing = followingHandles.includes(profile.handle);
               const requestSent = friendRequests.includes(profile.handle);
               return (
@@ -7139,7 +7163,9 @@ function PeopleDiscovery({
           <div className="people-search-context">
             <strong>Sugestões</strong>
             <div>
-              {suggestedPeople.map((profile) => (
+              {suggestedPeople.length === 0 ? (
+                <span className="empty-inline-note">Sem sugestões por enquanto.</span>
+              ) : suggestedPeople.map((profile) => (
                 <button className="people-chip-button" key={profile.id} type="button" onClick={() => setSelectedProfile(profile)}>
                   {profile.name}
                 </button>
@@ -8389,7 +8415,16 @@ function OpportunitiesView({
       )}
 
       <div className="job-grid">
-        {visibleJobs.map((job) => {
+        {visibleJobs.length === 0 ? (
+          <section className="empty-state page-empty-state">
+            <span className="section-kicker">Oportunidades</span>
+            <h3>Nenhuma oportunidade publicada ainda</h3>
+            <p>Vagas, serviços, parcerias e espaços aparecerão aqui quando forem cadastrados.</p>
+            <button type="button" onClick={() => (currentUser ? setShowJobCreate(true) : openPage('profile'))}>
+              {currentUser ? 'Publicar primeira oportunidade' : 'Entrar para publicar'}
+            </button>
+          </section>
+        ) : visibleJobs.map((job) => {
           const contactMethods = normalizeOpportunityContactMethods(job);
           const showApplicationContact = contactMethods.includes('application');
           const showWhatsappContact = contactMethods.includes('whatsapp');
@@ -8860,7 +8895,18 @@ function BenefitsView({ benefits, redemptions, userPoints, redeemBenefit, curren
         </div>
       </div>
       <div className="benefit-grid">
-        {visibleBenefits.map((benefit) => {
+        {visibleBenefits.length === 0 ? (
+          <section className="empty-state page-empty-state">
+            <span className="section-kicker">Benefícios</span>
+            <h3>Nenhum benefício aprovado ainda</h3>
+            <p>Benefícios enviados por PF, PJ ou empresas aparecerão aqui após aprovação administrativa.</p>
+            {canRequestBenefitPublication && (
+              <button type="button" onClick={() => openPage('rewards')}>
+                Quero divulgar benefício
+              </button>
+            )}
+          </section>
+        ) : visibleBenefits.map((benefit) => {
           const redeemed = redemptions.includes(benefit.id);
           const blocked = !hasSubscription || (userPoints < benefit.pointsCost && !redeemed);
           return (
@@ -9753,48 +9799,59 @@ function CoursesView({
         })}
       </div>
 
-      <aside className={`detail-panel ${selectedCourse.color}`}>
-        <div>
-          <span className="section-kicker">Curso selecionado</span>
-          <h2>{selectedCourse.title}</h2>
-          <p>
-            Produtor: {selectedCourse.instructor}. Publicação: {selectedCourse.company}.
-            Aula ao vivo: {formatDateTime(selectedCourse.liveDate)}.
-          </p>
-          {selectedCourse.deliveryMode === 'external' ? (
-            <ExternalCourseLinkCard course={selectedCourse} />
-          ) : (
-            <div className="course-detail-curriculum">
-              {normalizeCourseModules(selectedCourse).slice(0, 4).map((module, index) => (
-                <article key={module.id}>
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                  <strong>{module.title}</strong>
-                  <small>{module.lessons.length} aula(s) • {module.release}</small>
-                </article>
-              ))}
-            </div>
-          )}
-          {!selectedCourse.isFree && (
-            <p className="policy-note">
-              A plataforma retém {selectedCourse.platformFeePercent}% de cada venda
-              como taxa operacional. O restante fica disponível ao produtor.
+      {selectedCourse ? (
+        <aside className={`detail-panel ${selectedCourse.color}`}>
+          <div>
+            <span className="section-kicker">Curso selecionado</span>
+            <h2>{selectedCourse.title}</h2>
+            <p>
+              Produtor: {selectedCourse.instructor}. Publicação: {selectedCourse.company}.
+              Aula ao vivo: {formatDateTime(selectedCourse.liveDate)}.
             </p>
+            {selectedCourse.deliveryMode === 'external' ? (
+              <ExternalCourseLinkCard course={selectedCourse} />
+            ) : (
+              <div className="course-detail-curriculum">
+                {normalizeCourseModules(selectedCourse).slice(0, 4).map((module, index) => (
+                  <article key={module.id}>
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <strong>{module.title}</strong>
+                    <small>{module.lessons.length} aula(s) • {module.release}</small>
+                  </article>
+                ))}
+              </div>
+            )}
+            {!selectedCourse.isFree && (
+              <p className="policy-note">
+                A plataforma retém {selectedCourse.platformFeePercent}% de cada venda
+                como taxa operacional. O restante fica disponível ao produtor.
+              </p>
+            )}
+          </div>
+          {selectedCourse.deliveryMode === 'external' && selectedCourse.externalCourseUrl ? (
+            <button onClick={() => window.open(normalizeExternalUrl(selectedCourse.externalCourseUrl), '_blank', 'noopener,noreferrer')}>
+              Acessar plataforma externa
+            </button>
+          ) : (
+            <button onClick={() => startCheckout(selectedCourse.id)}>
+              {enrollments.includes(selectedCourse.id)
+                ? 'Ver no perfil'
+                : selectedCourse.isFree
+                  ? 'Inscrever grátis'
+                  : `Comprar por R$ ${selectedCourse.price}`}
+            </button>
           )}
-        </div>
-        {selectedCourse.deliveryMode === 'external' && selectedCourse.externalCourseUrl ? (
-          <button onClick={() => window.open(normalizeExternalUrl(selectedCourse.externalCourseUrl), '_blank', 'noopener,noreferrer')}>
-            Acessar plataforma externa
+        </aside>
+      ) : (
+        <aside className="detail-panel empty-detail-panel">
+          <span className="section-kicker">Cursos</span>
+          <h2>Nenhum curso publicado ainda</h2>
+          <p>Quando uma Pessoa Jurídica ou empresa publicar o primeiro curso, ele aparecerá aqui.</p>
+          <button type="button" onClick={() => openPage(canPublishCourses ? 'course-create' : 'profile')}>
+            {canPublishCourses ? 'Criar primeiro curso' : 'Entrar para publicar'}
           </button>
-        ) : (
-          <button onClick={() => startCheckout(selectedCourse.id)}>
-            {enrollments.includes(selectedCourse.id)
-              ? 'Ver no perfil'
-              : selectedCourse.isFree
-                ? 'Inscrever grátis'
-                : `Comprar por R$ ${selectedCourse.price}`}
-          </button>
-        )}
-      </aside>
+        </aside>
+      )}
 
       <section className="created-courses-section">
         <span className="section-kicker">Meus cursos criados</span>
@@ -11054,6 +11111,7 @@ function CommunitiesView({
   communityBubbleOpen,
   closeCommunityBubble,
   openPrivateChat,
+  openCommunityCreate,
   showMemberSuggestion,
   dismissMemberSuggestion,
   addCommunityEvent,
@@ -11581,6 +11639,15 @@ function CommunitiesView({
   return (
     <div className="community-layout community-chat-workspace">
       <section className="community-main-area">
+        {!activeCommunity && (
+          <section className="empty-state page-empty-state">
+            <span className="section-kicker">Comunidades</span>
+            <h3>Nenhuma comunidade disponível</h3>
+            <p>Quando a primeira comunidade for criada, o chat, membros e eventos aparecerão aqui.</p>
+            <button type="button" onClick={openCommunityCreate}>Criar primeira comunidade</button>
+          </section>
+        )}
+
         {showMemberSuggestion && (
           <aside className="member-suggestion">
             <div>
@@ -13619,10 +13686,7 @@ function OperationalSupportConsole({ mode = 'employee', employees = [], tickets 
         meta: employee.email,
         unread: 0,
       }))
-    : [
-        { id: 'ops-suporte', name: 'Equipe de suporte', meta: 'Canal interno', unread: 1 },
-        { id: 'ops-financeiro', name: 'Financeiro', meta: 'Pagamentos e repasses', unread: 0 },
-      ];
+    : [];
   const defaultQueue = tickets.length
     ? tickets.map((ticket) => ({
         id: ticket.id,
@@ -13630,10 +13694,7 @@ function OperationalSupportConsole({ mode = 'employee', employees = [], tickets 
         meta: ticket.title,
         unread: ticket.priority === 'Alta' ? 2 : 1,
       }))
-    : [
-        { id: 'support-pf', name: 'Pessoa Física aguardando suporte', meta: 'Dúvida de acesso ou pagamento', unread: 2 },
-        { id: 'support-pj', name: 'Pessoa Jurídica aguardando suporte', meta: 'Curso, venda ou publicação', unread: 1 },
-      ];
+    : [];
   const channels = [
     ...defaultInternal.map((item) => ({ ...item, type: 'Interno' })),
     ...defaultQueue.map((item) => ({ ...item, type: 'Suporte' })),
@@ -13688,6 +13749,9 @@ function OperationalSupportConsole({ mode = 'employee', employees = [], tickets 
           <p>Converse com funcionários e pessoas aguardando atendimento humano.</p>
         </div>
       </div>
+      {channels.length === 0 ? (
+        <p className="empty-state">Nenhum funcionário ou ticket de suporte aberto ainda.</p>
+      ) : (
       <div className="private-chat-grid operational-chat-grid">
         <div className="private-conversation-list">
           {channels.map((channel) => (
@@ -13733,6 +13797,7 @@ function OperationalSupportConsole({ mode = 'employee', employees = [], tickets 
           </form>
         </section>
       </div>
+      )}
     </section>
   );
 }
@@ -15181,24 +15246,15 @@ function PlatformProfile({
   const [payoutRequests, setPayoutRequests] = useState([]);
   const [apiStatus, setApiStatus] = useState(authToken ? 'Conectando API...' : 'Modo visual sem token de API.');
   const [dashboard, setDashboard] = useState({
-    students: 128,
-    companies: 12,
-    teachers: 34,
-    openTickets: 18,
+    students: 0,
+    companies: 0,
+    teachers: 0,
+    openTickets: 0,
     platformRevenueCents: 0,
     platformPayoutsCents: 0,
     platformAvailableBalanceCents: 0,
   });
-  const [employees, setEmployees] = useState([
-    {
-      id: 'demo-julia',
-      name: 'Julia Martins',
-      email: 'julia@meetpoint.com',
-      notificationEmail: 'julia@meetpoint.com',
-      department: 'Suporte técnico',
-      permissions: ['Suporte humano', 'Tickets'],
-    },
-  ]);
+  const [employees, setEmployees] = useState([]);
   const [permissions, setPermissions] = useState({
     users: true,
     companies: false,
@@ -15219,27 +15275,11 @@ function PlatformProfile({
     permissionOptions.map(([, label, backend]) => [backend, label]),
   );
   const directoryData = {
-    companies: [
-      { name: 'MeetPoint LTDA', meta: '12 cursos publicados', status: 'Ativa' },
-      { name: 'Studio Growth Educação', meta: '4 professores vinculados', status: 'Em análise' },
-      { name: 'Mentoria Labs', meta: 'R$ 18.420 em vendas', status: 'Ativa' },
-    ],
-    students: [
-      { name: 'Lucas Carvalho', meta: '64% em SaaS White-Label EAD', status: 'Pessoa Física ativa' },
-      { name: 'Marina Lopes', meta: '2 cursos inscritos', status: 'Pagamento ok' },
-      { name: 'Rafael Dias', meta: 'Aguardando validação documental', status: 'Pendente' },
-    ],
-    teachers: [
-      { name: 'Ana Ribeiro', meta: 'Vinculada a MeetPoint', status: 'Aprovada' },
-      { name: 'Bruno Costa', meta: 'PJ autônoma', status: 'Ativo' },
-      { name: 'Camila Torres', meta: 'Convite pendente', status: 'Pendente' },
-    ],
+    companies: [],
+    students: [],
+    teachers: [],
   };
-  const supportTickets = [
-    { id: 'demo-ticket-1', title: 'Pessoa Física não recebeu email de compra', owner: 'Lucas Carvalho', priority: 'Alta' },
-    { id: 'demo-ticket-2', title: 'Empresa quer trocar chave PIX', owner: 'MeetPoint LTDA', priority: 'Média' },
-    { id: 'demo-ticket-3', title: 'Pessoa Jurídica solicitou análise de material', owner: 'Ana Ribeiro', priority: 'Baixa' },
-  ];
+  const supportTickets = [];
   const [remoteDirectory, setRemoteDirectory] = useState([]);
   const [remoteTickets, setRemoteTickets] = useState([]);
   const selectedEmployee = employees.find((employee) => employee.email === selectedEmployeeEmail) || employees[0];
@@ -15489,7 +15529,10 @@ function PlatformProfile({
   }
 
   function updateEmployeePermissions() {
-    if (!selectedEmployee) return;
+    if (!selectedEmployee) {
+      setNotice('Crie ou selecione um funcionário antes de salvar permissões.');
+      return;
+    }
     const selectedPermissions = permissionOptions
       .filter(([permission]) => permissions[permission])
       .map(([, label]) => label);
@@ -15634,7 +15677,7 @@ function PlatformProfile({
           onClick={() => {
             setHumanQueueOpen(true);
             setPlatformView('support');
-            setNotice(`Ticket assumido: ${supportTickets[0].title}.`);
+            setNotice(ticketSource[0] ? `Ticket assumido: ${ticketSource[0].title}.` : 'Nenhum ticket pendente para assumir.');
           }}
         >
           Assumir ticket de suporte
@@ -15686,7 +15729,9 @@ function PlatformProfile({
               <button className={directoryType === 'teachers' ? 'active' : ''} onClick={() => openDirectory('teachers')}>Pessoas Jurídicas</button>
             </div>
             <div className="platform-directory">
-              {filteredDirectory.map((item) => (
+              {filteredDirectory.length === 0 ? (
+                <p className="empty-state">Nenhum registro encontrado neste diretório.</p>
+              ) : filteredDirectory.map((item) => (
                 <article className="platform-record" key={`${directoryType}-${item.name}`}>
                   <span>{getInitials(item.name)}</span>
                   <div>
@@ -15702,7 +15747,9 @@ function PlatformProfile({
 
         {platformView === 'support' && (
           <div className="support-ticket-list">
-            {ticketSource.map((ticket) => (
+            {ticketSource.length === 0 ? (
+              <p className="empty-state">Nenhum ticket de suporte aberto.</p>
+            ) : ticketSource.map((ticket) => (
               <article className="platform-record" key={ticket.id ?? ticket.title}>
                 <span>{ticket.priority.slice(0, 1)}</span>
                 <div>
@@ -16053,22 +16100,26 @@ function PlatformProfile({
           </div>
         )}
 
-        {platformView === 'employees' && selectedEmployee && (
-          <div className="employee-permission-panel">
-            <article className="platform-record">
-              <span>{getInitials(selectedEmployee.name)}</span>
-              <div>
-                <strong>{selectedEmployee.name}</strong>
-                <small>{selectedEmployee.email}</small>
-                <small>{selectedEmployee.permissions.join(', ')}</small>
-              </div>
-              <button onClick={updateEmployeePermissions}>Salvar acesso</button>
-            </article>
-            <p>
-              Selecione as permissões no card abaixo e salve. A lista do funcionário
-              atualiza imediatamente para simular o controle real de acesso interno.
-            </p>
-          </div>
+        {platformView === 'employees' && (
+          selectedEmployee ? (
+            <div className="employee-permission-panel">
+              <article className="platform-record">
+                <span>{getInitials(selectedEmployee.name)}</span>
+                <div>
+                  <strong>{selectedEmployee.name}</strong>
+                  <small>{selectedEmployee.email}</small>
+                  <small>{selectedEmployee.permissions.join(', ')}</small>
+                </div>
+                <button onClick={updateEmployeePermissions}>Salvar acesso</button>
+              </article>
+              <p>
+                Selecione as permissões no card abaixo e salve. A lista do funcionário
+                atualiza imediatamente para simular o controle real de acesso interno.
+              </p>
+            </div>
+          ) : (
+            <p className="empty-state">Nenhum funcionário selecionado.</p>
+          )
         )}
       </section>
 
@@ -16165,7 +16216,9 @@ function PlatformProfile({
 
       <section className="employee-list">
         <span className="section-kicker">Funcionários internos</span>
-        {employees.map((employee) => (
+        {employees.length === 0 ? (
+          <p className="empty-state">Nenhum funcionário interno criado ainda.</p>
+        ) : employees.map((employee) => (
           <article className="collaborator-row" key={employee.email}>
             <span>{getInitials(employee.name)}</span>
             <div>
