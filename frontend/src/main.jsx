@@ -2132,7 +2132,6 @@ function App() {
   const [securityWarning, setSecurityWarning] = useState('');
   const [headerCompact, setHeaderCompact] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
-  const [desktopMoreOpen, setDesktopMoreOpen] = useState(false);
   const [privateChatOpen, setPrivateChatOpen] = useState(false);
   const [privateConversations, setPrivateConversations] = useState(initialPrivateConversations);
   const [requestedPrivateConversation, setRequestedPrivateConversation] = useState(null);
@@ -4250,16 +4249,7 @@ function App() {
     openPage('subscription-checkout');
   }
 
-  const activeNavigationItem =
-    visibleNavigation.find((item) => item.id === activePage) ??
-    navigation.find((item) => item.id === activePage) ??
-    visibleNavigation[0];
-  const remainingDesktopNavigation = visibleNavigation.filter(
-    (item) => item.id !== activeNavigationItem?.id,
-  );
-
   function openDesktopNavigationPage(pageId) {
-    setDesktopMoreOpen(false);
     openPage(pageId);
   }
 
@@ -4271,49 +4261,34 @@ function App() {
           MeetPoint
         </button>
 
-        <nav className={desktopMoreOpen ? 'main-window-nav open' : 'main-window-nav'} aria-label="Areas principais">
-          {activeNavigationItem && (
+        <nav className="main-window-nav" aria-label="Areas principais">
+          {visibleNavigation.map((item) => (
             <MpButton
-              active
-              aria-label={activeNavigationItem.label}
+              active={item.id === activePage}
+              aria-current={item.id === activePage ? 'page' : undefined}
+              aria-label={item.label}
               className="main-window-tab"
-              data-page={activeNavigationItem.id}
+              data-page={item.id}
+              key={item.id}
               size="nav"
+              style={{
+                '--mp-button-active-bg': '#f4ce55',
+                '--mp-button-active-fg': '#111318',
+                '--mp-button-bg': item.id === activePage ? '#f4ce55' : '#fff8e4',
+                '--mp-button-fg': '#20242c',
+                background: item.id === activePage ? '#f4ce55' : '#fff8e4',
+                backgroundColor: item.id === activePage ? '#f4ce55' : '#fff8e4',
+                color: item.id === activePage ? '#111318' : '#20242c',
+                WebkitTextFillColor: item.id === activePage ? '#111318' : '#20242c',
+              }}
               variant="nav"
-              title={activeNavigationItem.label}
-              onClick={() => openDesktopNavigationPage(activeNavigationItem.id)}
+              title={item.label}
+              onClick={() => openDesktopNavigationPage(item.id)}
             >
-              <MobileNavIcon name={mobileNavigationIconNames[activeNavigationItem.id]} />
-              <small>{getMobileTabLabel(activeNavigationItem)}</small>
+              <MobileNavIcon name={mobileNavigationIconNames[item.id]} />
+              <small>{getMobileTabLabel(item)}</small>
             </MpButton>
-          )}
-          <button
-            className={desktopMoreOpen ? 'main-window-more-button active' : 'main-window-more-button'}
-            type="button"
-            aria-label="Mostrar outras abas"
-            aria-expanded={desktopMoreOpen}
-            onClick={() => setDesktopMoreOpen((current) => !current)}
-          >
-            +
-          </button>
-          {desktopMoreOpen && (
-            <div className="main-window-more-panel" role="menu">
-              {remainingDesktopNavigation.map((item) => (
-                <button
-                  className="main-window-more-item"
-                  key={item.id}
-                  type="button"
-                  role="menuitem"
-                  aria-label={item.label}
-                  title={item.label}
-                  onClick={() => openDesktopNavigationPage(item.id)}
-                >
-                  <MobileNavIcon name={mobileNavigationIconNames[item.id]} />
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          ))}
         </nav>
 
         <div className={currentUser ? 'account-actions signed-in-actions' : 'account-actions guest-actions'}>
