@@ -27506,6 +27506,7 @@ html body header.topbar.topbar nav.main-window-nav {
 }
 
 html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab {
+  position: relative !important;
   width: 56px !important;
   min-width: 56px !important;
   max-width: 56px !important;
@@ -27552,6 +27553,7 @@ html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab.
 }
 
 html body header.topbar.topbar nav.main-window-nav > .main-window-more-button {
+  position: relative !important;
   width: 56px !important;
   min-width: 56px !important;
   max-width: 56px !important;
@@ -27584,6 +27586,7 @@ html body header.topbar.topbar nav.main-window-nav > .main-window-more-panel {
 }
 
 html body header.topbar.topbar nav.main-window-nav .main-window-more-item {
+  position: relative !important;
   width: 56px !important;
   min-width: 56px !important;
   max-width: 56px !important;
@@ -27629,11 +27632,46 @@ html body header.topbar.topbar nav.main-window-nav .main-window-more-item:active
   transform: scale(0.97) !important;
 }
 
-html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab.active::before {
-  content: none !important;
+html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab::after,
+html body header.topbar.topbar nav.main-window-nav > .main-window-more-button::after,
+html body header.topbar.topbar nav.main-window-nav .main-window-more-item::after {
+  position: absolute !important;
+  top: 50% !important;
+  right: calc(100% + 10px) !important;
+  z-index: 2 !important;
+  display: block !important;
+  max-width: 150px !important;
+  padding: 7px 10px !important;
+  border: 1px solid rgba(17, 19, 24, 0.12) !important;
+  border-radius: 999px !important;
+  background: rgba(255, 248, 220, 0.96) !important;
+  color: #101216 !important;
+  -webkit-text-fill-color: #101216 !important;
+  box-shadow: 0 12px 26px rgba(17, 19, 24, 0.16) !important;
+  content: attr(aria-label) !important;
+  font-size: 0.78rem !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  text-align: center !important;
+  text-transform: none !important;
+  transform: translate(6px, -50%) scale(0.96) !important;
+  transition: opacity 140ms ease, transform 140ms ease !important;
+  white-space: nowrap !important;
 }
 
-html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab.active::after {
+html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab:hover::after,
+html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab:focus-visible::after,
+html body header.topbar.topbar nav.main-window-nav > .main-window-more-button:hover::after,
+html body header.topbar.topbar nav.main-window-nav > .main-window-more-button:focus-visible::after,
+html body header.topbar.topbar nav.main-window-nav .main-window-more-item:hover::after,
+html body header.topbar.topbar nav.main-window-nav .main-window-more-item:focus-visible::after {
+  opacity: 1 !important;
+  transform: translate(0, -50%) scale(1) !important;
+}
+
+html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab.active::before {
   content: none !important;
 }
 
