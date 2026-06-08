@@ -23,11 +23,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20.20.2
           cache: npm
 
       - run: npm ci
       - run: npm run lint
       - run: npm run build
       - run: npm run frontend:build
-      - run: npx prisma validate
+      - run: npx prisma validate --schema=prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/meetpoint_ci?schema=public
