@@ -1306,7 +1306,7 @@ function mapBackendUserToAccount(user = {}, extra = {}) {
   const segment = user.platformRole
     ? 'platform'
     : user.role === 'ADMIN'
-      ? 'teacher'
+      ? 'platform'
       : pendingSignupEmail === email.toLowerCase() && pendingSignupSegment
         ? pendingSignupSegment
       : 'student';

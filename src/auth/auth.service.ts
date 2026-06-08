@@ -240,9 +240,13 @@ export class AuthService {
   }
 
   private findActivePlatformStaff(email: string) {
+    const normalizedEmail = email.toLowerCase();
     return this.prisma.withPlatformAdmin((tx) =>
-      tx.platformStaff.findUnique({
-        where: { email: email.toLowerCase() },
+      tx.platformStaff.findFirst({
+        where: {
+          isActive: true,
+          email: { equals: normalizedEmail, mode: 'insensitive' },
+        },
         select: { id: true, role: true, isActive: true },
       }),
     ).then((staff) => (staff?.isActive ? staff : null));
