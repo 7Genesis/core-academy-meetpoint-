@@ -1293,6 +1293,7 @@ function supportRequest(path, options = {}) {
 const LAST_SIGNUP_LOGIN_KEY = 'lastMeetPointLoginEmail';
 const LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY = 'lastMeetPointRequiresSubscription';
 const LAST_SIGNUP_SEGMENT_KEY = 'lastMeetPointSignupSegment';
+const ROUTE_LOCK_KEY = 'meetPointRouteLock';
 const DOCUMENT_VALIDATION_ENDPOINT = import.meta.env?.VITE_DOCUMENT_VALIDATION_ENDPOINT || '';
 
 function mapBackendUserToAccount(user = {}, extra = {}) {
@@ -1986,7 +1987,7 @@ function App() {
   function resolveAccessiblePage(pageId, user = currentUser) {
     if (user && pageId === 'home') return 'feed';
     if (!user && protectedRoutes.includes(pageId)) return 'profile';
-    if (user && !hasActivePlatformSubscription(user) && !subscriptionPendingPageIds.includes(pageId)) {
+    if (user && !hasActivePlatformSubscription(user)) {
       return 'subscription-checkout';
     }
     return pageId;
@@ -2267,9 +2268,12 @@ function App() {
   // Rota inicial e botao voltar do navegador: mantem query string e tela ativa sincronizadas.
   useEffect(() => {
     const rawInitialRoute = getCurrentRouteState();
+    const lockedRoute = getLockedRoute();
     const initialRoute = !currentUser && isPublicDomainEntry()
       ? buildRouteState('feed')
-      : rawInitialRoute;
+      : lockedRoute
+        ? buildRouteState(lockedRoute)
+        : rawInitialRoute;
     const initialPage = resolveAccessiblePage(initialRoute.page, currentUser);
     const initialHistoryRoute =
       initialPage === initialRoute.page
@@ -2797,11 +2801,13 @@ function App() {
       !hasActivePlatformSubscription(account);
     if (shouldOpenSubscriptionCheckout) {
       localStorage.removeItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY);
+      setLockedRoute('subscription-checkout');
       setSelectedPartnerPlanId(account.segment === 'teacher' || account.segment === 'company' ? 'pj' : 'pf');
       setPreviousPage('profile');
       setActivePage('subscription-checkout');
       syncBrowserHistory('subscription-checkout');
     } else {
+      setLockedRoute('');
       setPreviousPage('profile');
       setActivePage('feed');
       syncBrowserHistory('feed');
@@ -2825,6 +2831,7 @@ function App() {
     // Limpar dados de autenticação do localStorage
     localStorage.removeItem('currentUser');
     localStorage.removeItem('authToken');
+    setLockedRoute('');
     applyWorkspaceSnapshot(createGuestWorkspace(), null);
     openPage('feed', { allowHome: true });
   }
@@ -2857,6 +2864,7 @@ function App() {
 
     if (currentUser && !hasActivePlatformSubscription(currentUser) && !subscriptionPendingPageIds.includes(targetPageId)) {
       requestSubscriptionActivation(`acessar ${getPageLabel(targetPageId)}`);
+      setLockedRoute('subscription-checkout');
       setPreviousPage(activePage);
       setSelectedPartnerPlanId(currentUser.segment === 'teacher' || currentUser.segment === 'company' ? 'pj' : 'pf');
       setActivePage('subscription-checkout');
@@ -5961,6 +5969,21 @@ function getSignupSegmentFromUrl(url = new URL(window.location.href)) {
 function getSignupRouteValue(segment) {
   if (segment === 'company') return 'empresa';
   return segment;
+}
+
+function getLockedRoute() {
+  if (typeof localStorage === 'undefined') return '';
+  const value = localStorage.getItem(ROUTE_LOCK_KEY) ?? '';
+  return value === 'subscription-checkout' ? value : '';
+}
+
+function setLockedRoute(pageId) {
+  if (typeof localStorage === 'undefined') return;
+  if (pageId === 'subscription-checkout') {
+    localStorage.setItem(ROUTE_LOCK_KEY, pageId);
+    return;
+  }
+  localStorage.removeItem(ROUTE_LOCK_KEY);
 }
 
 function HomeView({ openPage, openCourse }) {
