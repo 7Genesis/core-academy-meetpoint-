@@ -11042,15 +11042,13 @@ function CourseBuilderView({
               <span>Disponível ao produtor</span>
             </article>
             <article>
-              <strong>Pix</strong>
-              <span>Saque para sua conta</span>
+              <strong>InfinitePay</strong>
+              <span>Crédito direto na conta do gateway</span>
             </article>
           </div>
-          <label>
-            Chave Pix para retirada
-            <input placeholder="email, CPF/CNPJ ou chave aleatória" />
-          </label>
-          <button>Solicitar saque via Pix</button>
+          <p className="policy-note">
+            Não há saque manual pela plataforma. A conciliação financeira é feita pelo checkout InfinitePay.
+          </p>
         </section>
       )}
     </section>
@@ -15345,7 +15343,7 @@ function EmployeeProfile({ currentUser }) {
   );
 }
 
-// Admin central: operacao da plataforma, suporte, funcionarios, beneficios e Pix das taxas.
+// Admin central: operacao da plataforma, suporte, funcionarios, beneficios e conciliacao financeira.
 function PlatformProfile({
   authToken,
   benefits,
@@ -15382,13 +15380,6 @@ function PlatformProfile({
   const [humanQueueOpen, setHumanQueueOpen] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState('Monitoramento ativo');
   const [selectedEmployeeEmail, setSelectedEmployeeEmail] = useState('julia@meetpoint.com');
-  const [payoutForm, setPayoutForm] = useState({
-    amount: '',
-    pixKeyType: 'EMAIL',
-    pixKey: '',
-    accountHolderName: '',
-    accountDocument: '',
-  });
   const [benefitDraft, setBenefitDraft] = useState({
     title: '',
     partner: '',
@@ -15400,7 +15391,6 @@ function PlatformProfile({
     deliveryAssetName: '',
     deliveryCode: '',
   });
-  const [payoutRequests, setPayoutRequests] = useState([]);
   const [apiStatus, setApiStatus] = useState(authToken ? 'Conectando API...' : 'Modo visual sem token de API.');
   const [dashboard, setDashboard] = useState({
     students: 0,
@@ -15470,11 +15460,10 @@ function PlatformProfile({
 
     async function loadAdminData() {
       try {
-        const [dashboardData, staffData, ticketsData, payoutData] = await Promise.all([
+        const [dashboardData, staffData, ticketsData] = await Promise.all([
           platformAdminRequest('/dashboard', authToken),
           platformAdminRequest('/staff', authToken),
           platformAdminRequest('/tickets', authToken),
-          platformAdminRequest('/platform-fee-payouts', authToken),
         ]);
         if (ignore) return;
         setDashboard(dashboardData);
@@ -15491,7 +15480,6 @@ function PlatformProfile({
             : employees,
         );
         setRemoteTickets(ticketsData);
-        setPayoutRequests(payoutData);
         setApiStatus('API administrativa conectada.');
       } catch {
         if (!ignore) setApiStatus('API indisponível: usando dados visuais locais.');
@@ -15509,10 +15497,6 @@ function PlatformProfile({
       ...current,
       [permission]: !current[permission],
     }));
-  }
-
-  function updatePayoutForm(field, value) {
-    setPayoutForm((current) => ({ ...current, [field]: value }));
   }
 
   function updateBenefitDraft(field, value) {
@@ -15694,62 +15678,6 @@ function PlatformProfile({
     });
   }
 
-  function requestPlatformFeePayout() {
-    const amountCents = Math.round(Number(payoutForm.amount || 0) * 100);
-    if (amountCents <= 0 || !payoutForm.pixKey.trim() || !payoutForm.accountHolderName.trim()) {
-      setNotice('Informe valor, chave Pix e titular para solicitar o envio.');
-      return;
-    }
-
-    const localRequest = {
-      id: `local-payout-${Date.now()}`,
-      amountCents,
-      pixKeyType: payoutForm.pixKeyType,
-      pixKey: payoutForm.pixKey,
-      accountHolderName: payoutForm.accountHolderName,
-      status: 'REQUESTED',
-      requestedAt: new Date().toISOString(),
-    };
-
-    setPayoutRequests((current) => [localRequest, ...current]);
-    setDashboard((current) => ({
-      ...current,
-      platformPayoutsCents: (current.platformPayoutsCents ?? 0) + amountCents,
-      platformAvailableBalanceCents: Math.max(
-        (current.platformAvailableBalanceCents ?? 0) - amountCents,
-        0,
-      ),
-    }));
-    setNotice(`Solicitação Pix de ${formatCurrency(amountCents / 100)} registrada.`);
-    setPayoutForm({
-      amount: '',
-      pixKeyType: 'EMAIL',
-      pixKey: '',
-      accountHolderName: '',
-      accountDocument: '',
-    });
-
-    if (authToken) {
-      platformAdminRequest('/platform-fee-payouts', authToken, {
-        method: 'POST',
-        body: JSON.stringify({
-          amountCents,
-          pixKeyType: payoutForm.pixKeyType,
-          pixKey: payoutForm.pixKey,
-          accountHolderName: payoutForm.accountHolderName,
-          accountDocument: payoutForm.accountDocument || undefined,
-        }),
-      })
-        .then((payout) => {
-          setPayoutRequests((current) =>
-            current.map((item) => (item.id === localRequest.id ? payout : item)),
-          );
-          setApiStatus('Solicitação Pix salva na API.');
-        })
-        .catch(() => setApiStatus('API não aceitou o Pix; solicitação mantida localmente.'));
-    }
-  }
-
   function createEmployee() {
     if (!employeeName.trim() || !employeeEmail.trim() || !employeePassword.trim()) return;
     const selectedPermissions = permissionOptions
@@ -15904,7 +15832,7 @@ function PlatformProfile({
         </article>
         <article>
           <strong>{formatCurrency((dashboard.platformAvailableBalanceCents ?? 0) / 100)}</strong>
-          <span>Disponível Pix</span>
+          <span>Conciliação pendente</span>
         </article>
       </div>
 
@@ -15947,15 +15875,15 @@ function PlatformProfile({
           </button>
         </section>
         <section className="module-card">
-          <strong>Pix das taxas</strong>
-          <p>Envia o saldo das taxas da plataforma para uma chave Pix cadastrada.</p>
+          <strong>Conciliação InfinitePay</strong>
+          <p>Acompanha cobranças, taxas e confirmação dos pagamentos recebidos pelo gateway.</p>
           <button
             onClick={() => {
               setPlatformView('finance');
-              setNotice('Financeiro aberto para envio Pix das taxas da plataforma.');
+              setNotice('Financeiro aberto para conciliação InfinitePay.');
             }}
           >
-            Enviar por Pix
+            Ver financeiro
           </button>
         </section>
         <section className="module-card">
@@ -16122,83 +16050,20 @@ function PlatformProfile({
               </article>
               <article>
                 <strong>{formatCurrency((dashboard.platformPayoutsCents ?? 0) / 100)}</strong>
-                <span>Pix solicitados/pagos</span>
+                <span>Repasses registrados</span>
               </article>
               <article>
                 <strong>{formatCurrency((dashboard.platformAvailableBalanceCents ?? 0) / 100)}</strong>
-                <span>Saldo disponível</span>
+                <span>Conciliação pendente</span>
               </article>
             </div>
 
-            <section className="payout-form">
-              <label>
-                Valor para enviar
-                <input
-                  type="number"
-                  min="1"
-                  value={payoutForm.amount}
-                  onChange={(event) => updatePayoutForm('amount', event.target.value)}
-                  placeholder="Ex: 500"
-                />
-              </label>
-              <label>
-                Tipo de chave Pix
-                <select
-                  value={payoutForm.pixKeyType}
-                  onChange={(event) => updatePayoutForm('pixKeyType', event.target.value)}
-                >
-                  <option value="EMAIL">Email</option>
-                  <option value="CPF">CPF</option>
-                  <option value="CNPJ">CNPJ</option>
-                  <option value="PHONE">Telefone</option>
-                  <option value="RANDOM">Chave aleatória</option>
-                </select>
-              </label>
-              <label>
-                Chave Pix
-                <input
-                  value={payoutForm.pixKey}
-                  onChange={(event) => updatePayoutForm('pixKey', event.target.value)}
-                  placeholder="pix@empresa.com"
-                />
-              </label>
-              <label>
-                Titular da conta
-                <input
-                  value={payoutForm.accountHolderName}
-                  onChange={(event) => updatePayoutForm('accountHolderName', event.target.value)}
-                  placeholder="Nome ou razão social"
-                />
-              </label>
-              <label>
-                CPF/CNPJ do titular
-                <input
-                  value={payoutForm.accountDocument}
-                  onChange={(event) => updatePayoutForm('accountDocument', event.target.value)}
-                  placeholder="Opcional"
-                />
-              </label>
-              <button onClick={requestPlatformFeePayout}>Solicitar envio Pix</button>
-            </section>
-
             <section className="payout-list">
-              <span className="section-kicker">Solicitações recentes</span>
-              {payoutRequests.length === 0 ? (
-                <p className="empty-state">Nenhum envio Pix solicitado ainda.</p>
-              ) : (
-                payoutRequests.map((payout) => (
-                  <article className="platform-record" key={payout.id}>
-                    <span>PX</span>
-                    <div>
-                      <strong>{formatCurrency((payout.amountCents ?? 0) / 100)}</strong>
-                      <small>{payout.accountHolderName} - {payout.pixKeyType}: {payout.pixKey}</small>
-                    </div>
-                    <button onClick={() => setNotice(`Pix ${payout.status}: ${formatCurrency((payout.amountCents ?? 0) / 100)}.`)}>
-                      {payout.status}
-                    </button>
-                  </article>
-                ))
-              )}
+              <span className="section-kicker">Operação financeira</span>
+              <p className="empty-state">
+                Os pagamentos são liquidados diretamente na conta InfinitePay configurada no checkout.
+                A plataforma não solicita chave Pix nem executa repasse manual.
+              </p>
             </section>
           </div>
         )}
