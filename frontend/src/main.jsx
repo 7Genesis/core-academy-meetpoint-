@@ -4211,10 +4211,10 @@ function App() {
           MeetPoint
         </button>
 
-        <nav aria-label="Areas principais">
+        <nav className="main-window-nav" aria-label="Areas principais">
           {visibleNavigation.map((item) => (
             <button
-              className={activePage === item.id ? 'active' : ''}
+              className={activePage === item.id ? 'main-window-tab active' : 'main-window-tab'}
               data-page={item.id}
               key={item.id}
               type="button"

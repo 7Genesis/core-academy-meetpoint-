@@ -38,11 +38,11 @@ services:
       - key: PII_ENCRYPTION_KEY
         generateValue: true
       - key: CORS_ORIGIN
-        sync: false
+        value: https://novalab.me
       - key: CSP_CONNECT_SRC
-        sync: false
+        value: https://novalab.me,https://meetpoint-api-y46s.onrender.com
       - key: CHECKOUT_ALLOWED_ORIGINS
-        sync: false
+        value: https://novalab.me
       - key: COOKIE_SECURE
         value: "true"
       - key: ENABLE_SWAGGER
@@ -50,13 +50,15 @@ services:
       - key: WEBHOOK_SECRET
         generateValue: true
       - key: INFINITEPAY_HANDLE
-        sync: false
+        value: meetpoint
       - key: INFINITEPAY_SUCCESS_URL
-        sync: false
+        value: https://novalab.me/meetpoint/?page=profile&payment=success
       - key: INFINITEPAY_WEBHOOK_URL
-        sync: false
+        value: https://meetpoint-api-y46s.onrender.com/webhooks/infinitepay
       - key: INFINITEPAY_SUBSCRIPTION_WEBHOOK_URL
-        sync: false
+        value: https://meetpoint-api-y46s.onrender.com/subscriptions/infinitepay-webhook
+      - key: API_PUBLIC_URL
+        value: https://meetpoint-api-y46s.onrender.com
       - key: SUBSCRIPTION_WEBHOOK_SECRET
         generateValue: true
       - key: SUBSCRIPTION_WEBHOOK_TOLERANCE_SECONDS
