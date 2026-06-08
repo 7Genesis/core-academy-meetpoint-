@@ -55,6 +55,36 @@ function getMobileTabLabel(item) {
   return mobileTabLabels[item.id] ?? item.label;
 }
 
+function cx(...classes) {
+  return classes.filter(Boolean).join(' ');
+}
+
+function MpButton({
+  children,
+  className = '',
+  variant = 'primary',
+  size = 'md',
+  active = false,
+  type = 'button',
+  ...props
+}) {
+  return (
+    <button
+      className={cx(
+        'mp-button',
+        `mp-button-${variant}`,
+        `mp-button-${size}`,
+        active && 'active',
+        className,
+      )}
+      type={type}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
 function MobileNavIcon({ name }) {
   const paths = {
     building: (
@@ -4213,15 +4243,17 @@ function App() {
 
         <nav className="main-window-nav" aria-label="Areas principais">
           {visibleNavigation.map((item) => (
-            <button
-              className={activePage === item.id ? 'main-window-tab active' : 'main-window-tab'}
+            <MpButton
+              active={activePage === item.id}
+              className="main-window-tab"
               data-page={item.id}
               key={item.id}
-              type="button"
+              size="nav"
+              variant="nav"
               onClick={() => openPage(item.id)}
             >
               {item.label}
-            </button>
+            </MpButton>
           ))}
         </nav>
 
@@ -4237,27 +4269,27 @@ function App() {
               setEventCreatorAlerts={setEventCreatorAlerts}
             />
           )}
-          <button className="account-button" type="button" onClick={() => openPage('profile')}>
+          <MpButton className="account-button" size="top" variant="soft" onClick={() => openPage('profile')}>
             <Avatar initials={currentUser ? getInitials(accountDisplayName) : 'MP'} photo={profilePhoto} />
             <strong className="account-name">{accountDisplayName}</strong>
             {currentUser && <em className="points-inline-badge">{userPoints} pts</em>}
-          </button>
+          </MpButton>
           {currentUser ? (
-            <button
+            <MpButton
               className="logout-button"
-              type="button"
+              size="top"
               onClick={logoutCurrentUser}
             >
               Sair
-            </button>
+            </MpButton>
           ) : (
-            <button
+            <MpButton
               className="signup-top-button"
-              type="button"
+              size="top"
               onClick={() => openPage('profile', { signupChoice: true })}
             >
               Cadastrar
-            </button>
+            </MpButton>
           )}
         </div>
       </header>
@@ -6178,13 +6210,13 @@ function HomeView({ openPage, openCourse }) {
             pontos e parceiros com uma navegação simples.
           </p>
           <div className="home-hero-actions">
-            <button onClick={() => openPage('profile')}>Entrar</button>
-            <button className="light" onClick={() => openPage('profile', { signupChoice: true })}>
+            <MpButton size="lg" onClick={() => openPage('profile')}>Entrar</MpButton>
+            <MpButton size="lg" variant="soft" onClick={() => openPage('profile', { signupChoice: true })}>
               Cadastrar
-            </button>
-            <button className="ghost" onClick={() => openPage('feed')}>
+            </MpButton>
+            <MpButton className="ghost" size="lg" variant="ghost" onClick={() => openPage('feed')}>
               Explorar feed
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -6239,25 +6271,25 @@ function HomeView({ openPage, openCourse }) {
           <span className="section-kicker">Agora</span>
           <strong>Eventos próximos</strong>
           <p>Aulas, lives e networking com confirmação.</p>
-          <button onClick={() => openPage('events')}>Abrir agenda</button>
+          <MpButton size="md" onClick={() => openPage('events')}>Abrir agenda</MpButton>
         </article>
         <article>
           <span className="section-kicker">Valor</span>
           <strong>Benefícios</strong>
           <p>Cupons liberados por assinatura ou pontos.</p>
-          <button onClick={() => openPage('benefits')}>Ver benefícios</button>
+          <MpButton size="md" onClick={() => openPage('benefits')}>Ver benefícios</MpButton>
         </article>
         <article>
           <span className="section-kicker">Carreira</span>
           <strong>Oportunidades</strong>
           <p>Vagas, serviços, espaços e parcerias.</p>
-          <button onClick={() => openPage('opportunities')}>Buscar vagas</button>
+          <MpButton size="md" onClick={() => openPage('opportunities')}>Buscar vagas</MpButton>
         </article>
         <article>
           <span className="section-kicker">Suporte</span>
           <strong>IA + pessoa</strong>
           <p>Triagem automática e atendimento humano.</p>
-          <button onClick={() => openPage('profile')}>Ver conta</button>
+          <MpButton size="md" onClick={() => openPage('profile')}>Ver conta</MpButton>
         </article>
       </section>
 
