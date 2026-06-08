@@ -134,6 +134,8 @@ function MobileNavIcon({ name }) {
 }
 
 // Configurações globais usadas pelo frontend para falar com a API e calcular taxas.
+const PRODUCTION_API_BASE_URL = 'https://meetpoint-api-y46s.onrender.com';
+
 function resolveApiBaseUrls() {
   const configuredUrl = import.meta.env.VITE_API_URL?.trim();
   if (configuredUrl) return [configuredUrl.replace(/\/+$/, '')];
@@ -146,8 +148,8 @@ function resolveApiBaseUrls() {
   }
 
   const candidates = pathname.startsWith('/meetpoint')
-    ? [`${origin}/api-meetpoint`, `${origin}/meetpoint`, origin]
-    : [origin, `${origin}/api-meetpoint`, `${origin}/meetpoint`];
+    ? [PRODUCTION_API_BASE_URL, `${origin}/api-meetpoint`, `${origin}/meetpoint`, origin]
+    : [origin, `${origin}/api-meetpoint`, `${origin}/meetpoint`, PRODUCTION_API_BASE_URL];
 
   return [...new Set(candidates.map((url) => url.replace(/\/+$/, '')))];
 }
