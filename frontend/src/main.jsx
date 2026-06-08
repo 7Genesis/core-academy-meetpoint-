@@ -2847,10 +2847,10 @@ function App() {
     
     // Verifica se a rota é protegida e o usuário não está autenticado
     if (protectedRoutes.includes(targetPageId) && !currentUser) {
-      setAuthMode('login');
+      setAuthMode('signup');
       setPreviousPage(activePage);
       setActivePage('profile');
-      syncBrowserHistory('profile');
+      syncBrowserHistory('profile', { signupChoice: true });
       setMotionKey((value) => value + 1);
       return;
     }
@@ -4567,15 +4567,15 @@ function AuthRequiredModal({ actionLabel, onClose, onLogin, onSignup }) {
           Fechar
         </button>
         <span className="section-kicker">Acesso restrito</span>
-        <h3>Entre para {actionLabel}</h3>
+        <h3>Crie uma conta para {actionLabel}</h3>
         <p>
           Visitantes podem visualizar Feed, Oportunidades, Eventos e Benefícios. Para interagir,
           enviar dados, salvar, se inscrever, se candidatar ou resgatar benefícios, é necessário
-          login e aceite dos Termos de Uso e da Política de Privacidade.
+          criar conta, aceitar os termos e concluir o pagamento do plano.
         </p>
         <div className="button-row">
-          <button type="button" onClick={onLogin}>Entrar</button>
-          <button className="light" type="button" onClick={onSignup}>Criar conta</button>
+          <button type="button" onClick={onSignup}>Criar conta</button>
+          <button className="light" type="button" onClick={onLogin}>Já tenho conta</button>
         </div>
       </section>
     </div>
