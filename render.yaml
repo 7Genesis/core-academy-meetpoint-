@@ -55,6 +55,8 @@ services:
         sync: false
       - key: INFINITEPAY_WEBHOOK_URL
         sync: false
+      - key: INFINITEPAY_SUBSCRIPTION_WEBHOOK_URL
+        sync: false
       - key: SUBSCRIPTION_WEBHOOK_SECRET
         generateValue: true
       - key: SUBSCRIPTION_WEBHOOK_TOLERANCE_SECONDS

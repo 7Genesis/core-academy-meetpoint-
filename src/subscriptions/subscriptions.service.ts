@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 type PlanRecord = {
@@ -28,6 +29,33 @@ type SubscriptionWebhookDto = {
   externalSubscriptionId: string;
   eventType: string;
   status: 'PENDING_PAYMENT' | 'PAYMENT_PROCESSING' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'CANCELLED';
+};
+
+type InfinitePaySubscriptionWebhookDto = {
+  amount?: number | string;
+  invoice_slug?: string;
+  order_nsu?: string;
+  paid_amount?: number | string;
+  receipt_url?: string;
+  transaction_nsu?: string;
+};
+
+export type InfinitePayLinkResponse = {
+  id?: string;
+  invoice_slug?: string;
+  slug?: string;
+  url?: string;
+  checkout_url?: string;
+  checkoutUrl?: string;
+  payment_url?: string;
+  link?: string;
+  data?: InfinitePayLinkResponse;
+};
+
+type InfinitePayPaymentCheckResponse = {
+  success?: boolean;
+  paid?: boolean;
+  amount?: number | string;
 };
 
 const fallbackPlans: PlanRecord[] = [
@@ -89,8 +117,14 @@ export class SubscriptionsService {
       throw new BadRequestException('planId is required');
     }
 
-    const externalSubscriptionId =
-      `mp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const plan = await this.findPlanById(dto.planId);
+    if (!plan) {
+      throw new BadRequestException('Subscription plan not found');
+    }
+
+    const billingCycle = normalizeBillingCycle(dto.billingCycle);
+    const amountCents = calculatePlanAmountCents(plan, billingCycle);
+    const externalSubscriptionId = `meetpoint-subscription-${randomUUID()}`;
 
     try {
       const subscription = await (this.prisma as unknown as {
@@ -102,8 +136,10 @@ export class SubscriptionsService {
           userId,
           planId: dto.planId,
           status: 'PENDING_PAYMENT',
-          paymentProvider: dto.paymentProvider ?? 'mock',
+          paymentProvider: amountCents > 0 ? 'infinitepay' : dto.paymentProvider ?? 'internal',
           externalSubscriptionId,
+          checkoutAmountCents: amountCents,
+          checkoutBillingCycle: billingCycle,
         },
       });
 
@@ -118,10 +154,22 @@ export class SubscriptionsService {
         });
       }
 
+      const checkoutSession =
+        amountCents > 0
+          ? await this.createInfinitePayCheckoutLink({
+              amountCents,
+              customerEmail: await this.findUserEmail(userId),
+              customerName: await this.findUserName(userId),
+              description: `Assinatura ${plan.name} - ${billingCycle}`,
+              orderNsu: externalSubscriptionId,
+            })
+          : null;
+
       return {
         status: 'PENDING_PAYMENT',
         externalSubscriptionId,
         subscription,
+        checkoutSession,
         webhookRequiredToActivateAccount: true,
       };
     } catch {
@@ -131,6 +179,65 @@ export class SubscriptionsService {
         webhookRequiredToActivateAccount: true,
       };
     }
+  }
+
+  async processInfinitePayWebhook(
+    rawBody: Buffer | undefined,
+    parsedBody: unknown,
+  ) {
+    const event = parseInfinitePaySubscriptionEvent(rawBody, parsedBody);
+    const orderNsu = event.order_nsu?.trim();
+    const transactionNsu = event.transaction_nsu?.trim();
+    const invoiceSlug = event.invoice_slug?.trim();
+
+    if (!orderNsu || !transactionNsu || !invoiceSlug) {
+      throw new BadRequestException(
+        'InfinitePay order_nsu, transaction_nsu and invoice_slug are required',
+      );
+    }
+
+    const subscription = await (this.prisma as unknown as {
+      subscription?: {
+        findFirst: (args: unknown) => Promise<Record<string, unknown> | null>;
+      };
+    }).subscription?.findFirst({
+      where: { externalSubscriptionId: orderNsu },
+      include: { plan: true },
+    });
+    if (!subscription) {
+      throw new BadRequestException('Unknown subscription order_nsu');
+    }
+
+    const expectedAmount = Number(subscription.checkoutAmountCents);
+    const receivedAmount = normalizeAmountCents(event.amount);
+    if (!Number.isInteger(expectedAmount) || receivedAmount !== expectedAmount) {
+      throw new BadRequestException('InfinitePay subscription amount does not match');
+    }
+
+    await this.verifyInfinitePayPayment({
+      amountCents: expectedAmount,
+      invoiceSlug,
+      orderNsu,
+      transactionNsu,
+    });
+
+    const result = await this.upsertSubscriptionFromWebhook(
+      {
+        userId: String(subscription.userId),
+        planId: String(subscription.planId),
+        externalSubscriptionId: orderNsu,
+        eventType: 'INFINITEPAY_SUBSCRIPTION_PAID',
+        status: 'ACTIVE',
+      },
+      transactionNsu,
+      {
+        paidAt: new Date(),
+        receiptUrl: event.receipt_url,
+        transactionNsu,
+      },
+    );
+
+    return { ok: true, orderNsu, transactionNsu, ...result };
   }
 
   async processProviderWebhook(
@@ -155,6 +262,21 @@ export class SubscriptionsService {
     return { ok: true, eventId, ...result };
   }
 
+  private async findPlanById(planId: string) {
+    try {
+      const plan = await (this.prisma as unknown as {
+        subscriptionPlan?: {
+          findFirst: (args: unknown) => Promise<PlanRecord | null>;
+        };
+      }).subscriptionPlan?.findFirst({
+        where: { id: planId, isActive: true },
+      });
+      return plan ?? fallbackPlans.find((candidate) => candidate.id === planId) ?? null;
+    } catch {
+      return fallbackPlans.find((candidate) => candidate.id === planId) ?? null;
+    }
+  }
+
   private async findLatestSubscription(userId: string) {
     try {
       return await (this.prisma as unknown as {
@@ -174,6 +296,11 @@ export class SubscriptionsService {
   private async upsertSubscriptionFromWebhook(
     dto: SubscriptionWebhookDto,
     eventId: string,
+    paymentData?: {
+      paidAt?: Date;
+      receiptUrl?: string;
+      transactionNsu?: string;
+    },
   ) {
     const now = new Date();
     const activationData =
@@ -186,7 +313,15 @@ export class SubscriptionsService {
           }
         : dto.status === 'CANCELLED'
           ? { cancelledAt: now }
-          : {};
+        : {};
+    const paymentUpdate = {
+      ...(paymentData?.paidAt ? { paidAt: paymentData.paidAt } : {}),
+      ...(paymentData?.receiptUrl ? { receiptUrl: paymentData.receiptUrl } : {}),
+      ...(paymentData?.transactionNsu
+        ? { transactionNsu: paymentData.transactionNsu }
+        : {}),
+      paymentProvider: 'infinitepay',
+    };
 
     try {
       const stored = await (this.prisma as unknown as {
@@ -206,14 +341,19 @@ export class SubscriptionsService {
       const subscription = existing
         ? await stored?.update({
             where: { id: existing.id },
-            data: { status: dto.status, planId: dto.planId, ...activationData },
+            data: {
+              status: dto.status,
+              planId: dto.planId,
+              ...activationData,
+              ...paymentUpdate,
+            },
           })
         : await stored?.create({
             data: {
               userId: dto.userId,
               planId: dto.planId,
               status: dto.status,
-              paymentProvider: 'provider',
+              ...paymentUpdate,
               externalSubscriptionId: dto.externalSubscriptionId,
               ...activationData,
             },
@@ -282,6 +422,130 @@ export class SubscriptionsService {
     }
   }
 
+  private async createInfinitePayCheckoutLink(params: {
+    amountCents: number;
+    customerEmail: string;
+    customerName: string;
+    description: string;
+    orderNsu: string;
+  }) {
+    const handle = getInfinitePayHandle();
+    const redirectUrl = requireUrl(
+      process.env.INFINITEPAY_SUCCESS_URL,
+      'INFINITEPAY_SUCCESS_URL',
+    );
+    const webhookUrl = requireUrl(
+      process.env.INFINITEPAY_SUBSCRIPTION_WEBHOOK_URL ??
+        process.env.INFINITEPAY_WEBHOOK_URL?.replace(
+          '/webhooks/infinitepay',
+          '/subscriptions/infinitepay-webhook',
+        ),
+      'INFINITEPAY_SUBSCRIPTION_WEBHOOK_URL',
+    );
+    const payload = {
+      handle,
+      items: [
+        {
+          quantity: 1,
+          price: params.amountCents,
+          description: params.description,
+        },
+      ],
+      order_nsu: params.orderNsu,
+      redirect_url: redirectUrl,
+      webhook_url: webhookUrl,
+      customer: {
+        name: params.customerName,
+        email: params.customerEmail,
+      },
+    };
+    const endpoint =
+      process.env.INFINITEPAY_LINKS_ENDPOINT ??
+      'https://api.checkout.infinitepay.io/links';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const raw = await parseJsonResponse<InfinitePayLinkResponse>(response);
+    if (!response.ok) {
+      throw new BadRequestException({
+        message: 'InfinitePay subscription checkout link creation failed',
+        status: response.status,
+        response: raw,
+      });
+    }
+
+    const linkData = raw.data ?? raw;
+    const url =
+      linkData.url ??
+      linkData.checkout_url ??
+      linkData.checkoutUrl ??
+      linkData.payment_url ??
+      linkData.link ??
+      buildDirectInfinitePayCheckoutUrl({
+        handle,
+        items: payload.items,
+        orderNsu: params.orderNsu,
+        redirectUrl,
+        webhookUrl,
+      });
+
+    return {
+      id: linkData.id ?? linkData.invoice_slug ?? linkData.slug ?? params.orderNsu,
+      url,
+      successUrl: redirectUrl,
+      webhookUrl,
+      live: true,
+      raw,
+    };
+  }
+
+  private async verifyInfinitePayPayment(params: {
+    amountCents: number;
+    invoiceSlug: string;
+    orderNsu: string;
+    transactionNsu: string;
+  }) {
+    const endpoint =
+      process.env.INFINITEPAY_PAYMENT_CHECK_ENDPOINT ??
+      'https://api.checkout.infinitepay.io/payment_check';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        handle: getInfinitePayHandle(),
+        order_nsu: params.orderNsu,
+        transaction_nsu: params.transactionNsu,
+        slug: params.invoiceSlug,
+      }),
+    });
+    const paymentCheck =
+      await parseJsonResponse<InfinitePayPaymentCheckResponse>(response);
+
+    if (!response.ok || !paymentCheck.success || !paymentCheck.paid) {
+      throw new BadRequestException('InfinitePay payment_check did not confirm subscription');
+    }
+
+    if (normalizeAmountCents(paymentCheck.amount) !== params.amountCents) {
+      throw new BadRequestException('InfinitePay confirmed subscription amount does not match');
+    }
+  }
+
+  private async findUserEmail(userId: string) {
+    const user = await (this.prisma as unknown as {
+      user?: { findUnique: (args: unknown) => Promise<Record<string, unknown> | null> };
+    }).user?.findUnique({ where: { id: userId }, select: { email: true } });
+    return String(user?.email ?? '');
+  }
+
+  private async findUserName(userId: string) {
+    const user = await (this.prisma as unknown as {
+      user?: { findUnique: (args: unknown) => Promise<Record<string, unknown> | null> };
+    }).user?.findUnique({ where: { id: userId }, select: { name: true } });
+    return String(user?.name ?? 'MeetPoint');
+  }
+
   private assertWebhookSignature(
     headers: { signature?: string; timestamp?: string },
     rawPayload: string,
@@ -330,4 +594,91 @@ function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
+}
+
+function normalizeBillingCycle(candidate: string | undefined) {
+  if (candidate === 'semiannual' || candidate === 'annual') return candidate;
+  return 'monthly';
+}
+
+function calculatePlanAmountCents(plan: PlanRecord, billingCycle: string) {
+  const price = Number(plan.price);
+  const multiplier =
+    billingCycle === 'annual' ? 10 : billingCycle === 'semiannual' ? 5.5 : 1;
+  return Math.round(price * multiplier * 100);
+}
+
+function parseInfinitePaySubscriptionEvent(
+  rawBody: Buffer | undefined,
+  parsedBody: unknown,
+) {
+  if (parsedBody && typeof parsedBody === 'object') {
+    return parsedBody as InfinitePaySubscriptionWebhookDto;
+  }
+  if (!rawBody) {
+    throw new BadRequestException('Raw InfinitePay subscription webhook body is required');
+  }
+  try {
+    return JSON.parse(rawBody.toString('utf8')) as InfinitePaySubscriptionWebhookDto;
+  } catch {
+    throw new BadRequestException('Invalid InfinitePay subscription webhook JSON');
+  }
+}
+
+function normalizeAmountCents(value: number | string | undefined) {
+  const amount = Number(value);
+  if (!Number.isInteger(amount) || amount < 0) {
+    throw new BadRequestException('InfinitePay amount must be an integer in cents');
+  }
+  return amount;
+}
+
+function getInfinitePayHandle() {
+  const handle = process.env.INFINITEPAY_HANDLE?.trim().replace(/^\$/, '');
+  if (!handle) {
+    throw new BadRequestException('INFINITEPAY_HANDLE is required');
+  }
+  return handle;
+}
+
+function requireUrl(candidate: string | undefined, label: string) {
+  if (!candidate) {
+    throw new BadRequestException(`${label} is required`);
+  }
+  try {
+    const parsed = new URL(candidate);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new BadRequestException(`${label} must use http or https`);
+    }
+    return parsed.toString();
+  } catch {
+    throw new BadRequestException(`${label} must be a valid URL`);
+  }
+}
+
+function buildDirectInfinitePayCheckoutUrl(params: {
+  handle: string;
+  items: Array<{ quantity: number; price: number; description: string }>;
+  orderNsu: string;
+  redirectUrl: string;
+  webhookUrl: string;
+}) {
+  const checkoutUrl = new URL(
+    `https://checkout.infinitepay.io/${encodeURIComponent(params.handle)}`,
+  );
+  checkoutUrl.searchParams.set('items', JSON.stringify(params.items));
+  checkoutUrl.searchParams.set('order_nsu', params.orderNsu);
+  checkoutUrl.searchParams.set('redirect_url', params.redirectUrl);
+  checkoutUrl.searchParams.set('webhook_url', params.webhookUrl);
+  return checkoutUrl.toString();
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!text) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return { raw: text } as T;
+  }
 }

@@ -36,6 +36,15 @@ export class SubscriptionsController {
   }
 
   @Public()
+  @Post('infinitepay-webhook')
+  infinitePayWebhook(@Req() request: RawBodyRequest<Request>) {
+    return this.subscriptionsService.processInfinitePayWebhook(
+      request.rawBody,
+      request.body,
+    );
+  }
+
+  @Public()
   @Post('provider-webhook')
   providerWebhook(
     @Headers('x-subscription-signature') signature: string | undefined,

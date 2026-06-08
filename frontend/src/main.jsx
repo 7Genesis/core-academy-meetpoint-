@@ -9616,7 +9616,7 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
 
     let intent = {
       status: plan.price > 0 ? 'PENDING_PAYMENT' : 'PAYMENT_PROCESSING',
-      paymentProvider: paymentMethod,
+      paymentProvider: plan.price > 0 ? 'infinitepay' : paymentMethod,
       externalSubscriptionId: `local-${Date.now()}`,
     };
     try {
@@ -9634,8 +9634,12 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
 
     onSubscriptionPending?.(plan, {
       ...intent,
-      paymentProvider: paymentMethod,
+      paymentProvider: plan.price > 0 ? 'infinitepay' : paymentMethod,
     });
+    if (plan.price > 0 && intent.checkoutSession?.url) {
+      window.location.assign(intent.checkoutSession.url);
+      return;
+    }
     setPaymentNotice(
       plan.price > 0
         ? `Pagamento iniciado. A assinatura ${plan.name} só será ativada após confirmação do webhook do gateway.`

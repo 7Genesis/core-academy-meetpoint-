@@ -242,10 +242,15 @@ model Subscription {
   status                 SubscriptionStatus @default(PENDING_PAYMENT)
   paymentProvider        String?
   externalSubscriptionId String?
+  checkoutAmountCents    Int?
+  checkoutBillingCycle   String?
+  transactionNsu         String?
+  receiptUrl             String?
   startedAt              DateTime?
   expiresAt              DateTime?
   renewalDate            DateTime?
   cancelledAt            DateTime?
+  paidAt                 DateTime?
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
 
