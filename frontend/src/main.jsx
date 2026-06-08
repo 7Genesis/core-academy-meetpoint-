@@ -1642,15 +1642,6 @@ function getTopInterestSignals(interestScores = {}, limit = 4) {
     .map(([signal, score]) => ({ signal, score }));
 }
 
-const hashtagSeedCounts = {
-  '#casa': 100_000,
-  '#networking': 275_000,
-  '#eventos': 81_000,
-  '#vagas': 58_000,
-  '#beneficios': 43_000,
-  '#curso': 36_000,
-};
-
 function extractHashtags(text = '') {
   const matches = text.match(/#[\p{L}\p{N}_-]+/gu) ?? [];
   return uniqueItems(matches.map((tag) => tag.toLowerCase()));
@@ -1668,7 +1659,7 @@ function formatHashtagUsage(count = 0) {
 }
 
 function buildHashtagStats(posts = []) {
-  const counts = { ...hashtagSeedCounts };
+  const counts = {};
   posts.forEach((post) => {
     extractHashtags(`${post.body ?? ''} ${post.tag ?? ''}`).forEach((tag) => {
       counts[tag] = (counts[tag] ?? 0) + 1;
@@ -6857,7 +6848,9 @@ function FeedView({
           <div className="mobile-hashtag-strip">
             <strong>Hashtags</strong>
             <div>
-              {hashtagStats.slice(0, 5).map((item) => (
+              {hashtagStats.length === 0 ? (
+                <span className="empty-inline-note">Nenhuma hashtag usada ainda.</span>
+              ) : hashtagStats.slice(0, 5).map((item) => (
                 <button
                   className={selectedHashtag === item.tag ? 'feed-side-card-button active' : 'feed-side-card-button'}
                   key={item.tag}
