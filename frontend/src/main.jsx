@@ -535,7 +535,15 @@ function getCoursePublicationIssues(course, modules) {
         issues.push({
           id: `${lesson.id}-video`,
           label: `${lessonLabel}: vídeo`,
-          detail: 'Informe o arquivo ou link do vídeo desta aula.',
+          detail: 'Cole um link válido do YouTube para reproduzir a aula dentro da plataforma.',
+          targetId: lessonTarget,
+        });
+      }
+      if (lessonType === 'Vídeo' && lesson.videoUrl?.trim() && !getYouTubeVideo(lesson.videoUrl)) {
+        issues.push({
+          id: `${lesson.id}-video-invalid`,
+          label: `${lessonLabel}: link do vídeo`,
+          detail: 'Use um link válido do YouTube, youtu.be ou Shorts.',
           targetId: lessonTarget,
         });
       }
@@ -4083,8 +4091,27 @@ function App() {
     const title = draft.title.trim();
     const partner = draft.partner.trim();
     const product = draft.product.trim();
+    const city = draft.city.trim();
+    const rules = draft.rules.trim();
+    const contactName = draft.contactName.trim();
+    const contactEmail = draft.contactEmail.trim().toLowerCase();
+    const contactPhone = draft.contactPhone.trim();
+    const validity = draft.validity.trim();
+    const deliveryInstructions = draft.deliveryInstructions.trim();
     const pointsCost = Number(draft.pointsCost || 0);
-    if (!title || !partner || !product || pointsCost <= 0) return null;
+    if (
+      !title
+      || !partner
+      || !product
+      || !city
+      || !rules
+      || !contactName
+      || !contactEmail
+      || !contactPhone
+      || !validity
+      || !deliveryInstructions
+      || pointsCost <= 0
+    ) return null;
 
     const request = {
       id: `benefit-request-${Date.now()}`,
@@ -4092,9 +4119,14 @@ function App() {
       partner,
       product,
       category: draft.category,
-      city: draft.city.trim() || currentUser?.city || 'Regional',
+      city,
       pointsCost,
-      rules: draft.rules.trim(),
+      rules,
+      contactName,
+      contactEmail,
+      contactPhone,
+      validity,
+      deliveryInstructions,
       requesterName: currentUser.name,
       requesterEmail: getContactEmail(currentUser),
       requesterSegment: currentUser.segment,
@@ -4129,7 +4161,12 @@ function App() {
       pointsCost: Number(request.pointsCost || 0),
       redemptions: 0,
       emailSubject: `Seu benefício ${request.title}`,
-      emailBody: request.rules || `Você resgatou ${request.title}. Valide o benefício com ${request.partner}.`,
+      emailBody: [
+        request.rules,
+        request.validity ? `Validade: ${request.validity}` : '',
+        request.deliveryInstructions ? `Como usar: ${request.deliveryInstructions}` : '',
+        request.contactName ? `Contato do parceiro: ${request.contactName} - ${request.contactEmail} - ${request.contactPhone}` : '',
+      ].filter(Boolean).join('\n'),
       deliveryAssetName: 'beneficio-aprovado.pdf',
       deliveryCode: `MP-${Date.now().toString(36).toUpperCase()}`,
       createdBy: currentUser.name,
@@ -4435,6 +4472,7 @@ function App() {
                 createCourse={createCourse}
                 currentUser={currentUser}
                 goBack={goBack}
+                openMediaViewer={openMediaViewer}
               />
             ) : (
               <AccessGate
@@ -8998,6 +9036,11 @@ function RewardsView({
     city: '',
     pointsCost: '',
     rules: '',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+    validity: '',
+    deliveryInstructions: '',
   });
   const [benefitRequestStatus, setBenefitRequestStatus] = useState('');
   const redemptionIds = redemptions ?? [];
@@ -9053,7 +9096,7 @@ function RewardsView({
     event.preventDefault();
     const request = requestBenefitPublication?.(benefitRequestDraft);
     if (!request) {
-      setBenefitRequestStatus('Informe nome, parceiro, produto e custo em pontos para enviar ao admin.');
+      setBenefitRequestStatus('Preencha todos os dados do benefício, contato, validade, regras e custo em pontos.');
       return;
     }
     setBenefitRequestStatus(`Solicitação "${request.title}" enviada para aprovação do administrador.`);
@@ -9065,6 +9108,11 @@ function RewardsView({
       city: '',
       pointsCost: '',
       rules: '',
+      contactName: '',
+      contactEmail: '',
+      contactPhone: '',
+      validity: '',
+      deliveryInstructions: '',
     });
   }
 
@@ -9207,7 +9255,40 @@ function RewardsView({
                 <input
                   value={benefitRequestDraft.city}
                   onChange={(event) => updateBenefitRequestDraft('city', event.target.value)}
-                  placeholder="Regional, cidade ou online"
+                  placeholder="Cidade, região ou online"
+                />
+              </label>
+              <label>
+                Responsável pelo benefício
+                <input
+                  value={benefitRequestDraft.contactName}
+                  onChange={(event) => updateBenefitRequestDraft('contactName', event.target.value)}
+                  placeholder="Nome de quem valida o cupom"
+                />
+              </label>
+              <label>
+                Email do responsável
+                <input
+                  type="email"
+                  value={benefitRequestDraft.contactEmail}
+                  onChange={(event) => updateBenefitRequestDraft('contactEmail', event.target.value)}
+                  placeholder="contato@empresa.com"
+                />
+              </label>
+              <label>
+                WhatsApp do responsável
+                <input
+                  value={benefitRequestDraft.contactPhone}
+                  onChange={(event) => updateBenefitRequestDraft('contactPhone', event.target.value)}
+                  placeholder="+55 11 99999-0000"
+                />
+              </label>
+              <label>
+                Validade
+                <input
+                  value={benefitRequestDraft.validity}
+                  onChange={(event) => updateBenefitRequestDraft('validity', event.target.value)}
+                  placeholder="Ex: válido até 30/09/2026"
                 />
               </label>
               <label>
@@ -9227,6 +9308,14 @@ function RewardsView({
                 value={benefitRequestDraft.rules}
                 onChange={(event) => updateBenefitRequestDraft('rules', event.target.value)}
                 placeholder="Informe validade, regras de uso, restrições e como validar o cupom."
+              />
+            </label>
+            <label>
+              Como o usuário vai usar
+              <textarea
+                value={benefitRequestDraft.deliveryInstructions}
+                onChange={(event) => updateBenefitRequestDraft('deliveryInstructions', event.target.value)}
+                placeholder="Explique o que será enviado, onde apresentar o código e como o parceiro confirma o resgate."
               />
             </label>
             <button type="submit">Enviar para aprovação do admin</button>
@@ -9917,7 +10006,7 @@ function CoursesView({
 }
 
 // Criacao de curso: coleta dados comerciais, tema, preco e grade inicial.
-function CreateCourseView({ createCourse, currentUser, goBack }) {
+function CreateCourseView({ createCourse, currentUser, goBack, openMediaViewer }) {
   const [pricingMode, setPricingMode] = useState('free');
   const isStudent = currentUser?.segment === 'student';
   const isTeacher = currentUser?.segment === 'teacher';
@@ -10332,7 +10421,7 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
         <div className="module-planner-header">
           <div>
             <span className="section-kicker">Grade do curso</span>
-            <h3>Módulos, aulas, materiais e regras de avanço</h3>
+            <h3>Módulos, aulas por link e regras de avanço</h3>
           </div>
           <button onClick={addModule}>Adicionar módulo</button>
         </div>
@@ -10408,8 +10497,31 @@ function CreateCourseView({ createCourse, currentUser, goBack }) {
                     <input
                       value={lesson.material}
                       onChange={(event) => updateLesson(module.id, lesson.id, 'material', event.target.value)}
-                      placeholder="Material"
+                      placeholder="Nome do material"
                     />
+                    {lesson.type === 'Vídeo' && (
+                      <label className="lesson-inline-link-field">
+                        Link do YouTube
+                        <input
+                          value={lesson.videoUrl ?? ''}
+                          onChange={(event) => updateLesson(module.id, lesson.id, 'videoUrl', event.target.value)}
+                          placeholder="https://www.youtube.com/watch?v=..."
+                        />
+                      </label>
+                    )}
+                    {lesson.type === 'Vídeo' && getYouTubeVideo(lesson.videoUrl) && (
+                      <YouTubePreviewLink
+                        url={lesson.videoUrl}
+                        title={lesson.title || 'Aula do curso'}
+                        caption={`${form.title || 'Curso'} - ${module.title}`}
+                        openMediaViewer={openMediaViewer}
+                      />
+                    )}
+                    {lesson.type === 'Vídeo' && !getYouTubeVideo(lesson.videoUrl) && (
+                      <small className="youtube-helper-text">
+                        Cole um link do YouTube, youtu.be ou Shorts. A aula será exibida dentro da plataforma.
+                      </small>
+                    )}
                     <button onClick={() => removeLesson(module.id, lesson.id)}>Remover</button>
                   </section>
                 ))}
@@ -10785,25 +10897,29 @@ function CourseBuilderView({
                       </div>
 
                       <div className="lesson-builder-details">
-                        <label>
-                          Vídeo da aula
-                          <input
-                            value={lesson.videoUrl ?? ''}
-                            onChange={(event) => updateLesson(module.id, lesson.id, 'videoUrl', event.target.value)}
-                            placeholder="Cole o link do YouTube da aula"
-                          />
-                        </label>
-                        {getYouTubeVideo(lesson.videoUrl) ? (
-                          <YouTubePreviewLink
-                            url={lesson.videoUrl}
-                            title={lesson.title || 'Aula do curso'}
-                            caption={`${course.title} - ${module.title}`}
-                            openMediaViewer={openMediaViewer}
-                          />
-                        ) : (
-                          <small className="youtube-helper-text">
-                            Suba o vídeo no YouTube como público/não listado e cole o link para liberar a prévia.
-                          </small>
+                        {lesson.type === 'Vídeo' && (
+                          <>
+                            <label>
+                              Link do vídeo da aula
+                              <input
+                                value={lesson.videoUrl ?? ''}
+                                onChange={(event) => updateLesson(module.id, lesson.id, 'videoUrl', event.target.value)}
+                                placeholder="Cole o link do YouTube da aula"
+                              />
+                            </label>
+                            {getYouTubeVideo(lesson.videoUrl) ? (
+                              <YouTubePreviewLink
+                                url={lesson.videoUrl}
+                                title={lesson.title || 'Aula do curso'}
+                                caption={`${course.title} - ${module.title}`}
+                                openMediaViewer={openMediaViewer}
+                              />
+                            ) : (
+                              <small className="youtube-helper-text">
+                                Suba o vídeo no YouTube como público/não listado e cole o link. A aula reproduz dentro da MeetPoint.
+                              </small>
+                            )}
+                          </>
                         )}
                         <label>
                           Material de apoio
@@ -16110,7 +16226,10 @@ function PlatformProfile({
                       <small>
                         Solicitante: {request.requesterName} ({getAccountTypeLabel(request.requesterSegment)}) - {maskEmail(request.requesterEmail)}
                       </small>
+                      <small>Local: {request.city} | Validade: {request.validity}</small>
+                      <small>Contato: {request.contactName} - {maskEmail(request.contactEmail)} - {maskPhone(request.contactPhone)}</small>
                       {request.rules && <small>Regras: {request.rules}</small>}
+                      {request.deliveryInstructions && <small>Uso: {request.deliveryInstructions}</small>}
                     </div>
                     <div className="record-action-stack">
                       <button
