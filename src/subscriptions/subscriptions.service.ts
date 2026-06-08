@@ -126,59 +126,51 @@ export class SubscriptionsService {
     const amountCents = calculatePlanAmountCents(plan, billingCycle);
     const externalSubscriptionId = `meetpoint-subscription-${randomUUID()}`;
 
-    try {
-      const subscription = await (this.prisma as unknown as {
-        subscription?: {
-          create: (args: unknown) => Promise<Record<string, unknown>>;
-        };
-      }).subscription?.create({
-        data: {
-          userId,
-          planId: dto.planId,
-          status: 'PENDING_PAYMENT',
-          paymentProvider: amountCents > 0 ? 'infinitepay' : dto.paymentProvider ?? 'internal',
-          externalSubscriptionId,
-          checkoutAmountCents: amountCents,
-          checkoutBillingCycle: billingCycle,
-        },
+    const subscription = await (this.prisma as unknown as {
+      subscription?: {
+        create: (args: unknown) => Promise<Record<string, unknown>>;
+      };
+    }).subscription?.create({
+      data: {
+        userId,
+        planId: dto.planId,
+        status: 'PENDING_PAYMENT',
+        paymentProvider: amountCents > 0 ? 'infinitepay' : dto.paymentProvider ?? 'internal',
+        externalSubscriptionId,
+        checkoutAmountCents: amountCents,
+        checkoutBillingCycle: billingCycle,
+      },
+    });
+
+    if (subscription) {
+      await this.writeAuditLog({
+        userId,
+        subscriptionId: String(subscription.id),
+        eventType: 'CHECKOUT_CREATED',
+        oldStatus: null,
+        newStatus: 'PENDING_PAYMENT',
+        paymentReference: externalSubscriptionId,
       });
-
-      if (subscription) {
-        await this.writeAuditLog({
-          userId,
-          subscriptionId: String(subscription.id),
-          eventType: 'CHECKOUT_CREATED',
-          oldStatus: null,
-          newStatus: 'PENDING_PAYMENT',
-          paymentReference: externalSubscriptionId,
-        });
-      }
-
-      const checkoutSession =
-        amountCents > 0
-          ? await this.createInfinitePayCheckoutLink({
-              amountCents,
-              customerEmail: await this.findUserEmail(userId),
-              customerName: await this.findUserName(userId),
-              description: `Assinatura ${plan.name} - ${billingCycle}`,
-              orderNsu: externalSubscriptionId,
-            })
-          : null;
-
-      return {
-        status: 'PENDING_PAYMENT',
-        externalSubscriptionId,
-        subscription,
-        checkoutSession,
-        webhookRequiredToActivateAccount: true,
-      };
-    } catch {
-      return {
-        status: 'PENDING_PAYMENT',
-        externalSubscriptionId,
-        webhookRequiredToActivateAccount: true,
-      };
     }
+
+    const checkoutSession =
+      amountCents > 0
+        ? await this.createInfinitePayCheckoutLink({
+            amountCents,
+            customerEmail: await this.findUserEmail(userId),
+            customerName: await this.findUserName(userId),
+            description: `Assinatura ${plan.name} - ${billingCycle}`,
+            orderNsu: externalSubscriptionId,
+          })
+        : null;
+
+    return {
+      status: 'PENDING_PAYMENT',
+      externalSubscriptionId,
+      subscription,
+      checkoutSession,
+      webhookRequiredToActivateAccount: true,
+    };
   }
 
   async processInfinitePayWebhook(

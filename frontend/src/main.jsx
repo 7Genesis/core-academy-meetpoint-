@@ -1251,7 +1251,7 @@ async function apiRequest(path, options = {}) {
       const response = await fetch(targetUrl, requestConfig);
       if (!response.ok) {
         const errorText = await response.text();
-        const error = new Error(errorText || `Erro HTTP ${response.status}`);
+        const error = new Error(parseApiErrorMessage(errorText) || `Erro HTTP ${response.status}`);
         error.status = response.status;
         error.url = targetUrl;
         if ([404, 405].includes(response.status) && API_BASE_URLS.length > 1) {
@@ -1281,6 +1281,22 @@ async function apiRequest(path, options = {}) {
   }
 
   throw lastError ?? new Error('Nao foi possivel conectar a API.');
+}
+
+function parseApiErrorMessage(errorText = '') {
+  if (!errorText) return '';
+  try {
+    const parsed = JSON.parse(errorText);
+    if (typeof parsed.message === 'string') return parsed.message;
+    if (Array.isArray(parsed.message)) return parsed.message.join(', ');
+    if (parsed.error && typeof parsed.error === 'string') return parsed.error;
+    if (parsed.response?.message && typeof parsed.response.message === 'string') {
+      return parsed.response.message;
+    }
+    return errorText;
+  } catch {
+    return errorText;
+  }
 }
 
 function loginRequest(email, password, consent = {}) {
@@ -9600,9 +9616,9 @@ function PartnersView({ leads, registerPartnerLead, openPage, openSupport }) {
 }
 
 function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubscriptionPending }) {
-  const [paymentMethod, setPaymentMethod] = useState('pix');
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [paymentNotice, setPaymentNotice] = useState('');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   if (!plan) return null;
 
   const cycleMultiplier = billingCycle === 'annual' ? 10 : billingCycle === 'semiannual' ? 5.5 : 1;
@@ -9613,12 +9629,6 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
     semiannual: 'Semestral com desconto',
     annual: 'Anual com maior desconto',
   }[billingCycle];
-  const paymentLabels = {
-    card: 'Cartão',
-    pix: 'Pix',
-    boleto: 'Boleto',
-  };
-
   async function confirmSubscription() {
     if (!currentUser) {
       setPaymentNotice('Entre na conta antes de iniciar o checkout de assinatura.');
@@ -9626,37 +9636,39 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
       return;
     }
 
-    let intent = {
-      status: plan.price > 0 ? 'PENDING_PAYMENT' : 'PAYMENT_PROCESSING',
-      paymentProvider: plan.price > 0 ? 'infinitepay' : paymentMethod,
-      externalSubscriptionId: `local-${Date.now()}`,
-    };
+    setCheckoutLoading(true);
+    setPaymentNotice('');
     try {
-      intent = await subscriptionRequest('/checkout-intent', {
+      const intent = await subscriptionRequest('/checkout-intent', {
         method: 'POST',
         body: JSON.stringify({
           planId: plan.subscriptionPlanId,
-          paymentProvider: paymentMethod,
+          paymentProvider: plan.price > 0 ? 'infinitepay' : 'internal',
           billingCycle,
         }),
       });
-    } catch {
-      // Mantem o fluxo local pendente quando a API nao esta disponivel.
-    }
 
-    onSubscriptionPending?.(plan, {
-      ...intent,
-      paymentProvider: plan.price > 0 ? 'infinitepay' : paymentMethod,
-    });
-    if (plan.price > 0 && intent.checkoutSession?.url) {
-      window.location.assign(intent.checkoutSession.url);
-      return;
+      onSubscriptionPending?.(plan, {
+        ...intent,
+        paymentProvider: plan.price > 0 ? 'infinitepay' : 'internal',
+      });
+
+      if (plan.price > 0) {
+        if (!intent.checkoutSession?.url) {
+          throw new Error('A InfinitePay não retornou o link de checkout.');
+        }
+        window.location.href = intent.checkoutSession.url;
+        return;
+      }
+
+      setPaymentNotice('Cadastro de embaixador enviado para validação comercial. A liberação depende de aprovação.');
+    } catch (error) {
+      setPaymentNotice(
+        `Não foi possível abrir o checkout InfinitePay: ${error.message}`,
+      );
+    } finally {
+      setCheckoutLoading(false);
     }
-    setPaymentNotice(
-      plan.price > 0
-        ? `Pagamento iniciado. A assinatura ${plan.name} só será ativada após confirmação do webhook do gateway.`
-        : 'Cadastro de embaixador enviado para validação comercial. A liberação depende de aprovação.',
-    );
   }
 
   return (
@@ -9700,21 +9712,17 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
           )}
 
           {plan.price > 0 ? (
-            <div className="payment-methods">
-              {[
-                ['pix', 'Pix', 'Liberação rápida'],
-                ['card', 'Cartão', 'Crédito recorrente'],
-                ['boleto', 'Boleto', 'Compensação bancária'],
-              ].map(([method, label, description]) => (
-                <button
-                  className={paymentMethod === method ? 'active' : ''}
-                  key={method}
-                  onClick={() => setPaymentMethod(method)}
-                >
-                  <strong>{label}</strong>
-                  <small>{description}</small>
-                </button>
-              ))}
+            <div className="payment-state infinitepay-state">
+              <strong>Checkout InfinitePay</strong>
+              <p>
+                Ao continuar, você será redirecionado para a página segura da InfinitePay.
+                A assinatura só libera depois da confirmação automática do pagamento.
+              </p>
+              <ul>
+                <li>Conta recebedora: $meetpoint</li>
+                <li>Valor: {formatCurrency(total)}</li>
+                <li>Ciclo: {cycleLabel}</li>
+              </ul>
             </div>
           ) : (
             <div className="payment-state">
@@ -9723,34 +9731,13 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
             </div>
           )}
 
-          {plan.price > 0 && paymentMethod === 'pix' && (
-            <div className="payment-state pix-state">
-              <strong>Pix da assinatura</strong>
-              <div className="qr-box">PIX</div>
-              <code>000201meetpoint-assinatura-{plan.id}-{billingCycle}</code>
-            </div>
-          )}
-          {plan.price > 0 && paymentMethod === 'card' && (
-            <div className="payment-state">
-              <strong>Cartão recorrente</strong>
-              <label>Numero do cartão<input placeholder="0000 0000 0000 0000" /></label>
-              <div className="payment-inline">
-                <label>Validade<input placeholder="MM/AA" /></label>
-                <label>CVV<input placeholder="123" /></label>
-                <label>Nome<input placeholder="Nome no cartão" /></label>
-              </div>
-            </div>
-          )}
-          {plan.price > 0 && paymentMethod === 'boleto' && (
-            <div className="payment-state">
-              <strong>Boleto da assinatura</strong>
-              <label>Vencimento<input type="date" defaultValue="2026-06-20" /></label>
-              <p>A assinatura libera após compensação ou webhook do gateway.</p>
-            </div>
-          )}
           {paymentNotice && <p className="valid-note">{paymentNotice}</p>}
-          <button onClick={confirmSubscription}>
-            {plan.price > 0 ? `Confirmar ${paymentLabels[paymentMethod]}` : 'Enviar cadastro'}
+          <button disabled={checkoutLoading} onClick={confirmSubscription}>
+            {checkoutLoading
+              ? 'Abrindo checkout...'
+              : plan.price > 0
+                ? 'Pagar com InfinitePay'
+                : 'Enviar cadastro'}
           </button>
         </section>
 
