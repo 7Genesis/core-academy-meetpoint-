@@ -1986,6 +1986,7 @@ function App() {
 
   function resolveAccessiblePage(pageId, user = currentUser) {
     if (user && pageId === 'home') return 'feed';
+    if (user && ['platform', 'employee'].includes(user.segment) && pageId === 'private-chat') return 'profile';
     if (!user && protectedRoutes.includes(pageId)) return 'profile';
     if (user && !hasActivePlatformSubscription(user)) {
       return 'subscription-checkout';
@@ -2850,6 +2851,14 @@ function App() {
     const signupChoice = Boolean(options.signupChoice);
     if (targetPageId === 'communities' && !options.preserveCommunityOpen) {
       setCommunityBubbleOpen(false);
+    }
+
+    if (currentUser && ['platform', 'employee'].includes(currentUser.segment) && targetPageId === 'private-chat') {
+      setPreviousPage(activePage);
+      setActivePage('profile');
+      syncBrowserHistory('profile');
+      setMotionKey((value) => value + 1);
+      return;
     }
     
     // Verifica se a rota é protegida e o usuário não está autenticado
@@ -4443,7 +4452,7 @@ function App() {
               requestAuthentication={requestAuthentication}
             />
           )}
-          {activePage === 'private-chat' && (
+          {activePage === 'private-chat' && !['platform', 'employee'].includes(currentUser?.segment) && (
             <PrivateChatWidget
               conversations={privateConversations}
               currentUser={currentUser}
@@ -4542,7 +4551,7 @@ function App() {
           }}
         />
       )}
-      {currentUser && activePage !== 'private-chat' && (
+      {currentUser && activePage !== 'private-chat' && !['platform', 'employee'].includes(currentUser?.segment) && (
         <PrivateChatWidget
           conversations={privateConversations}
           currentUser={currentUser}
@@ -12466,6 +12475,7 @@ function ProfileView({
     ? getOwnProfileStats(socialGraph, ownProfilePosts, ownProfileEvents, ownProfileOpportunities)
     : { friends: 0, followers: 0, following: 0, posts: 0, events: 0, opportunities: 0 };
   const ownSocialProfile = getCurrentUserSocialProfile(currentUser, profilePublicInfo, profilePhoto);
+  const isOperationalProfile = ['platform', 'employee'].includes(currentUser?.segment);
 
   useEffect(() => {
     if (currentUser) return;
@@ -12524,18 +12534,22 @@ function ProfileView({
 
   return (
     <section className="profile-authenticated-page">
-      <ProfileHero
-        currentUser={currentUser}
-        profilePhoto={profilePhoto}
-        setProfilePhoto={setProfilePhoto}
-        profilePublicInfo={profilePublicInfo}
-        setProfilePublicInfo={setProfilePublicInfo}
-        userPoints={userPoints}
-        socialStats={ownSocialStats}
-        onOpenSocialPanel={setActiveProfilePanel}
-        benefits={benefits}
-        openPage={openPage}
-      />
+      {isOperationalProfile ? (
+        <OperationalProfileHeader currentUser={currentUser} authToken={authToken} />
+      ) : (
+        <ProfileHero
+          currentUser={currentUser}
+          profilePhoto={profilePhoto}
+          setProfilePhoto={setProfilePhoto}
+          profilePublicInfo={profilePublicInfo}
+          setProfilePublicInfo={setProfilePublicInfo}
+          userPoints={userPoints}
+          socialStats={ownSocialStats}
+          onOpenSocialPanel={setActiveProfilePanel}
+          benefits={benefits}
+          openPage={openPage}
+        />
+      )}
 
       <section className="profile-card privacy-settings-card">
         <div>
@@ -12549,7 +12563,7 @@ function ProfileView({
         <button type="button" onClick={openPrivacyCenter}>Privacidade e Uso de Dados</button>
       </section>
 
-      {activeProfilePanel && (
+      {!isOperationalProfile && activeProfilePanel && (
         <ProfileSocialPanel
           activePanel={activeProfilePanel}
           setActivePanel={setActiveProfilePanel}
@@ -12565,22 +12579,26 @@ function ProfileView({
         />
       )}
 
-      <SystemCustomizationPanel
-        preferences={visualPreferences}
-        setPreferences={setVisualPreferences}
-      />
+      {!isOperationalProfile && (
+        <SystemCustomizationPanel
+          preferences={visualPreferences}
+          setPreferences={setVisualPreferences}
+        />
+      )}
 
       <div className="profile-grid">
-        <ProfileNotificationsCard
-          userPoints={userPoints}
-          notifications={notifications}
-          notificationPrefs={notificationPrefs}
-          setNotificationPrefs={setNotificationPrefs}
-          socialGraph={socialGraph}
-          onOpenSocialPanel={setActiveProfilePanel}
-          acceptIncomingFriendRequest={acceptIncomingFriendRequest}
-          rejectIncomingFriendRequest={rejectIncomingFriendRequest}
-        />
+        {!isOperationalProfile && (
+          <ProfileNotificationsCard
+            userPoints={userPoints}
+            notifications={notifications}
+            notificationPrefs={notificationPrefs}
+            setNotificationPrefs={setNotificationPrefs}
+            socialGraph={socialGraph}
+            onOpenSocialPanel={setActiveProfilePanel}
+            acceptIncomingFriendRequest={acceptIncomingFriendRequest}
+            rejectIncomingFriendRequest={rejectIncomingFriendRequest}
+          />
+        )}
 
         <section className="profile-card session-safety-card">
           <span className="section-kicker">Sessão isolada</span>
@@ -12602,7 +12620,7 @@ function ProfileView({
           </div>
         </section>
 
-        <SensitiveDataVerificationCard currentUser={currentUser} />
+        {!isOperationalProfile && <SensitiveDataVerificationCard currentUser={currentUser} />}
 
         {['student', 'teacher'].includes(currentUser?.segment) && (
           <PublicProfileEditor
@@ -13269,6 +13287,162 @@ function ProfilePointsModal({ benefits, onClose, openPage, userPoints }) {
         </div>
       </section>
     </div>
+  );
+}
+
+function OperationalProfileHeader({ currentUser, authToken }) {
+  const roleLabel = currentUser?.segment === 'platform'
+    ? 'Administrador central'
+    : 'Funcionário operacional';
+
+  return (
+    <section className="profile-card yellow operational-profile-header">
+      <div className="profile-card-heading">
+        <div>
+          <span className="section-kicker">Acesso operacional</span>
+          <h2>{roleLabel}</h2>
+          <p>{currentUser?.name} • {maskEmail(currentUser?.email)}</p>
+        </div>
+        <div className="session-identity-grid operational-identity-grid">
+          <span>Permissão</span>
+          <strong>{currentUser?.platformRole ?? currentUser?.role ?? 'Operação'}</strong>
+          <span>API admin</span>
+          <strong>{authToken ? 'Token ativo' : 'Sem token'}</strong>
+          <span>Escopo</span>
+          <strong>{currentUser?.segment === 'platform' ? 'Toda plataforma' : 'Suporte designado'}</strong>
+        </div>
+      </div>
+      <p>
+        Esta área é focada em gestão, suporte e manutenção. Recursos sociais como capa,
+        seguidores, amigos e pontos não fazem parte do perfil operacional.
+      </p>
+    </section>
+  );
+}
+
+function OperationalSupportConsole({ mode = 'employee', employees = [], tickets = [] }) {
+  const defaultInternal = employees.length
+    ? employees.map((employee) => ({
+        id: employee.id ?? employee.email,
+        name: employee.name,
+        meta: employee.email,
+        unread: 0,
+      }))
+    : [
+        { id: 'ops-suporte', name: 'Equipe de suporte', meta: 'Canal interno', unread: 1 },
+        { id: 'ops-financeiro', name: 'Financeiro', meta: 'Pagamentos e repasses', unread: 0 },
+      ];
+  const defaultQueue = tickets.length
+    ? tickets.map((ticket) => ({
+        id: ticket.id,
+        name: ticket.owner,
+        meta: ticket.title,
+        unread: ticket.priority === 'Alta' ? 2 : 1,
+      }))
+    : [
+        { id: 'support-pf', name: 'Pessoa Física aguardando suporte', meta: 'Dúvida de acesso ou pagamento', unread: 2 },
+        { id: 'support-pj', name: 'Pessoa Jurídica aguardando suporte', meta: 'Curso, venda ou publicação', unread: 1 },
+      ];
+  const channels = [
+    ...defaultInternal.map((item) => ({ ...item, type: 'Interno' })),
+    ...defaultQueue.map((item) => ({ ...item, type: 'Suporte' })),
+  ];
+  const [activeChannelId, setActiveChannelId] = useState(channels[0]?.id ?? '');
+  const [draft, setDraft] = useState('');
+  const [messages, setMessages] = useState(() =>
+    Object.fromEntries(
+      channels.map((channel) => [
+        channel.id,
+        [
+          {
+            id: `${channel.id}-initial`,
+            author: channel.type === 'Interno' ? channel.name : 'Solicitante',
+            body: channel.type === 'Interno'
+              ? 'Canal operacional aberto para alinhamento de atendimento.'
+              : channel.meta,
+            time: 'Agora',
+          },
+        ],
+      ]),
+    ),
+  );
+  const activeChannel = channels.find((channel) => channel.id === activeChannelId) ?? channels[0];
+  const activeMessages = messages[activeChannel?.id] ?? [];
+
+  function sendOperationalMessage(event) {
+    event.preventDefault();
+    const body = draft.trim();
+    if (!body || !activeChannel) return;
+    setMessages((current) => ({
+      ...current,
+      [activeChannel.id]: [
+        ...(current[activeChannel.id] ?? []),
+        {
+          id: `ops-message-${Date.now()}`,
+          author: mode === 'platform' ? 'Admin' : 'Funcionário',
+          body,
+          time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        },
+      ],
+    }));
+    setDraft('');
+  }
+
+  return (
+    <section className="module-card operational-support-console">
+      <div className="profile-card-heading">
+        <div>
+          <span className="section-kicker">Atendimento</span>
+          <h3>{mode === 'platform' ? 'Equipe e fila de suporte' : 'Fila de suporte e equipe interna'}</h3>
+          <p>Converse com funcionários e pessoas aguardando atendimento humano.</p>
+        </div>
+      </div>
+      <div className="private-chat-grid operational-chat-grid">
+        <div className="private-conversation-list">
+          {channels.map((channel) => (
+            <button
+              className={activeChannel?.id === channel.id ? 'private-conversation-button active' : 'private-conversation-button'}
+              key={channel.id}
+              type="button"
+              onClick={() => setActiveChannelId(channel.id)}
+            >
+              <Avatar initials={getInitials(channel.name)} />
+              <span className="private-conversation-summary">
+                <strong className="private-conversation-name">{channel.name}</strong>
+                <bdi className="private-conversation-preview">{channel.type} • {channel.meta}</bdi>
+              </span>
+              {channel.unread > 0 && <em>{channel.unread}</em>}
+            </button>
+          ))}
+        </div>
+        <section className="private-thread">
+          <div className="private-thread-head">
+            <Avatar initials={getInitials(activeChannel?.name ?? 'MP')} />
+            <div>
+              <strong>{activeChannel?.name ?? 'Atendimento'}</strong>
+              <small>{activeChannel?.type ?? 'Operação'} • {activeChannel?.meta ?? 'Sem contexto'}</small>
+            </div>
+          </div>
+          <div className="private-thread-messages">
+            {activeMessages.map((message) => (
+              <article className={message.author === 'Admin' || message.author === 'Funcionário' ? 'mine' : ''} key={message.id}>
+                <strong>{message.author}</strong>
+                <p>{message.body}</p>
+                <small>{message.time}</small>
+              </article>
+            ))}
+          </div>
+          <form className="private-thread-composer" onSubmit={sendOperationalMessage}>
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Responder no atendimento"
+            />
+            <button type="submit">Enviar</button>
+          </form>
+        </section>
+      </div>
+    </section>
   );
 }
 
@@ -14636,34 +14810,37 @@ function EmployeeProfile({ currentUser }) {
   }
 
   return (
-    <section className="profile-card yellow employee-profile-card">
-      <span className="section-kicker">Perfil do funcionário</span>
-      <h3>{currentUser.name}</h3>
-      <p>Setor: {currentUser.department}. Acesso interno limitado às permissões designadas pelo admin central.</p>
-      <div className="permission-chip-grid">
-        {(currentUser.permissions ?? []).map((permission) => (
-          <span className="permission-chip active" key={permission}>{permission}</span>
-        ))}
-      </div>
+    <>
+      <section className="profile-card yellow employee-profile-card">
+        <span className="section-kicker">Área do funcionário</span>
+        <h3>{currentUser.name}</h3>
+        <p>Setor: {currentUser.department}. Acesso interno limitado às permissões designadas pelo admin central.</p>
+        <div className="permission-chip-grid">
+          {(currentUser.permissions ?? []).map((permission) => (
+            <span className="permission-chip active" key={permission}>{permission}</span>
+          ))}
+        </div>
 
-      {(currentUser.permissions ?? []).some((permission) => permission.toLowerCase().includes('suporte')) && (
-        <section className="employee-support-panel">
-          <span className="section-kicker">Fila de suporte</span>
-          <label>
-            Atendimento atual
-            <select value={activeTicket} onChange={(event) => setActiveTicket(event.target.value)}>
-              {tickets.map(([ticket]) => <option key={ticket}>{ticket}</option>)}
-            </select>
-          </label>
-          <div className="admin-actions">
-            <button onClick={() => transferTicket('Suporte técnico')}>Transferir para técnico</button>
-            <button onClick={() => transferTicket('Financeiro')}>Transferir para financeiro</button>
-            <button onClick={() => transferTicket('Comercial')}>Transferir para comercial</button>
-          </div>
-          {transferStatus && <p className="valid-note">{transferStatus}</p>}
-        </section>
-      )}
-    </section>
+        {(currentUser.permissions ?? []).some((permission) => permission.toLowerCase().includes('suporte')) && (
+          <section className="employee-support-panel">
+            <span className="section-kicker">Fila de suporte</span>
+            <label>
+              Atendimento atual
+              <select value={activeTicket} onChange={(event) => setActiveTicket(event.target.value)}>
+                {tickets.map(([ticket]) => <option key={ticket}>{ticket}</option>)}
+              </select>
+            </label>
+            <div className="admin-actions">
+              <button onClick={() => transferTicket('Suporte técnico')}>Transferir para técnico</button>
+              <button onClick={() => transferTicket('Financeiro')}>Transferir para financeiro</button>
+              <button onClick={() => transferTicket('Comercial')}>Transferir para comercial</button>
+            </div>
+            {transferStatus && <p className="valid-note">{transferStatus}</p>}
+          </section>
+        )}
+      </section>
+      <OperationalSupportConsole mode="employee" />
+    </>
   );
 }
 
@@ -15059,6 +15236,8 @@ function PlatformProfile({ authToken, benefits, createBenefit, benefitEmailDeliv
         Pessoas Físicas, Pessoas Jurídicas, suporte, manutenção e incidentes.
       </p>
       <p className="policy-note">{apiStatus}</p>
+
+      <OperationalSupportConsole mode="platform" employees={employees} tickets={ticketSource} />
 
       <div className="platform-metrics">
         <article><strong>{dashboard.students}</strong><span>Pessoas Físicas</span></article>
