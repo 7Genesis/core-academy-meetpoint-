@@ -2323,13 +2323,20 @@ function App() {
 
     function blockProtectedAction(event) {
       const target = event.target;
+      const editableField = target?.closest?.('input, textarea, [contenteditable="true"]');
       const protectedPasswordField = target?.closest?.('[data-protected-password="true"]');
       if (protectedPasswordField && ['contextmenu', 'copy', 'cut', 'dragstart'].includes(event.type)) {
         event.preventDefault();
         warnSecurity('Esta ação está bloqueada no campo de senha.');
         return;
       }
-      if (target?.closest?.('input, textarea, [contenteditable="true"]')) return;
+      if (editableField) {
+        if (event.type === 'contextmenu' || event.type === 'dragstart') {
+          event.preventDefault();
+          warnSecurity('O botão direito está bloqueado nos campos da plataforma.');
+        }
+        return;
+      }
       const protectedArea = target?.closest?.('.protected-content, .course-module-planner, .course-detail-curriculum, .post-media');
       if (event.type === 'contextmenu') {
         event.preventDefault();
