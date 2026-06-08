@@ -20,6 +20,7 @@ const navigation = [
 const primaryMobilePageIds = ['feed', 'opportunities', 'benefits', 'events'];
 const loggedInPrimaryMobilePageIds = ['feed', 'opportunities', 'benefits', 'events'];
 const publicReadPageIds = ['home', 'feed', 'opportunities', 'events', 'benefits', 'profile'];
+const subscriptionPendingPageIds = ['profile', 'partners', 'subscription-checkout'];
 const guestPrimaryMobilePageIds = ['feed', 'opportunities', 'events', 'benefits'];
 const TERMS_VERSION = 'meetpoint-lgpd-2026-06-03';
 const PRIVACY_VERSION = 'meetpoint-privacy-lgpd-2026-06-03';
@@ -1291,15 +1292,22 @@ function supportRequest(path, options = {}) {
 
 const LAST_SIGNUP_LOGIN_KEY = 'lastMeetPointLoginEmail';
 const LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY = 'lastMeetPointRequiresSubscription';
+const LAST_SIGNUP_SEGMENT_KEY = 'lastMeetPointSignupSegment';
 const DOCUMENT_VALIDATION_ENDPOINT = import.meta.env?.VITE_DOCUMENT_VALIDATION_ENDPOINT || '';
 
 function mapBackendUserToAccount(user = {}, extra = {}) {
   const email = user.email ?? '';
   const name = user.name ?? email.split('@')[0] ?? 'Conta MeetPoint';
+  const pendingSignupEmail =
+    typeof localStorage === 'undefined' ? '' : localStorage.getItem(LAST_SIGNUP_LOGIN_KEY);
+  const pendingSignupSegment =
+    typeof localStorage === 'undefined' ? '' : localStorage.getItem(LAST_SIGNUP_SEGMENT_KEY);
   const segment = user.platformRole
     ? 'platform'
     : user.role === 'ADMIN'
       ? 'teacher'
+      : pendingSignupEmail === email.toLowerCase() && pendingSignupSegment
+        ? pendingSignupSegment
       : 'student';
 
   return {
@@ -1517,9 +1525,21 @@ function normalizeProfilePublicInfo(account, profileInfo = {}) {
 function normalizeWorkspaceSnapshot(snapshot, account) {
   const defaults = account ? createAccountWorkspace(account) : createGuestWorkspace();
   const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const socialGraph = {
+    ...defaults.socialGraph,
+    ...(source.socialGraph ?? {}),
+  };
+  const hasLegacyDemoStats =
+    source.userPoints === 420 ||
+    socialGraph.friendHandles.length === 1 ||
+    socialGraph.followerHandles.length === 3 ||
+    socialGraph.followingHandles.length === 2;
   return {
     ...defaults,
     ...source,
+    userPoints: hasLegacyDemoStats ? defaults.userPoints : source.userPoints ?? defaults.userPoints,
+    notifications: hasLegacyDemoStats ? defaults.notifications : source.notifications ?? defaults.notifications,
+    socialGraph: hasLegacyDemoStats ? defaults.socialGraph : socialGraph,
     profilePublicInfo: normalizeProfilePublicInfo(
       account,
       source.profilePublicInfo ?? defaults.profilePublicInfo,
@@ -1787,9 +1807,9 @@ function getOwnProfileOpportunities(currentUser, jobs = []) {
 function getViewedProfileStats(profile, socialGraph, profilePosts = [], profileEvents = [], profileOpportunities = []) {
   const followerDelta = socialGraph?.followerDeltas?.[profile?.handle] ?? 0;
   return {
-    friends: getProfileSampleHandles(profile, 1, 3).length,
+    friends: 0,
     followers: Math.max((profile?.followers ?? 0) + followerDelta, 0),
-    following: getProfileSampleHandles(profile, 0, 3).length,
+    following: 0,
     posts: profilePosts.length,
     events: profileEvents.length,
     opportunities: profileOpportunities.length,
@@ -1966,8 +1986,8 @@ function App() {
   function resolveAccessiblePage(pageId, user = currentUser) {
     if (user && pageId === 'home') return 'feed';
     if (!user && protectedRoutes.includes(pageId)) return 'profile';
-    if (user && subscriptionRequiredRoutes.includes(pageId) && !hasActivePlatformSubscription(user)) {
-      return 'partners';
+    if (user && !hasActivePlatformSubscription(user) && !subscriptionPendingPageIds.includes(pageId)) {
+      return 'subscription-checkout';
     }
     return pageId;
   }
@@ -2106,7 +2126,11 @@ function App() {
   const visibleNavigation = useMemo(
     () =>
       currentUser
-        ? navigation.filter((item) => item.id !== 'home')
+        ? navigation.filter((item) =>
+            hasActivePlatformSubscription(currentUser)
+              ? item.id !== 'home'
+              : subscriptionPendingPageIds.includes(item.id),
+          )
         : navigation.filter((item) => publicReadPageIds.includes(item.id)),
     [currentUser],
   );
@@ -2831,15 +2855,12 @@ function App() {
       return;
     }
 
-    if (
-      subscriptionRequiredRoutes.includes(targetPageId) &&
-      currentUser &&
-      !hasActivePlatformSubscription(currentUser)
-    ) {
+    if (currentUser && !hasActivePlatformSubscription(currentUser) && !subscriptionPendingPageIds.includes(targetPageId)) {
       requestSubscriptionActivation(`acessar ${getPageLabel(targetPageId)}`);
       setPreviousPage(activePage);
-      setActivePage('partners');
-      syncBrowserHistory('partners');
+      setSelectedPartnerPlanId(currentUser.segment === 'teacher' || currentUser.segment === 'company' ? 'pj' : 'pf');
+      setActivePage('subscription-checkout');
+      syncBrowserHistory('subscription-checkout');
       setMotionKey((value) => value + 1);
       setTimeout(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3232,6 +3253,8 @@ function App() {
   // Progresso do aluno: aplica pesos por regra cumprida ate fechar 100%.
   function completeLesson(courseId) {
     if (!['paid', 'free'].includes(coursePaymentStatus[courseId])) return;
+    const currentProgress = courseProgress[courseId] ?? 0;
+    if (currentProgress >= 100) return;
     const plan = [
       { label: 'Assistir vídeo até o mínimo definido', weight: 10 },
       { label: 'Enviar tarefa solicitada', weight: 20 },
@@ -3247,6 +3270,7 @@ function App() {
       ...current,
       [courseId]: Math.min(step + 1, plan.length - 1),
     }));
+    awardPoints(nextAction.weight, nextAction.label);
   }
 
   function getPostTimestamp() {
@@ -12461,7 +12485,12 @@ function ProfileView({
           </>
         )}
         {authMode === 'signup' && (
-          <SignupView setAuthMode={setAuthMode} openPrivacyCenter={openPrivacyCenter} openPage={openPage} />
+          <SignupView
+            setAuthMode={setAuthMode}
+            loginWithEmail={loginWithEmail}
+            openPrivacyCenter={openPrivacyCenter}
+            openPage={openPage}
+          />
         )}
         {authMode === 'forgot' && (
           <ForgotPasswordView setAuthMode={setAuthMode} />
@@ -13572,7 +13601,7 @@ function LoginPanel({ loginWithEmail, setAuthMode, openPrivacyCenter }) {
 }
 
 // Cadastro: escolha PF/PJ/Empresa, dados obrigatorios e configuracao do perfil publico.
-function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
+function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }) {
   const [segment, setSegment] = useState(() => getSignupSegmentFromUrl());
   const [signupStep, setSignupStep] = useState('basic');
   const [form, setForm] = useState({
@@ -13764,6 +13793,8 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
     if (!form.legalName.trim()) return 'Preencha o nome principal do cadastro.';
     if (!isValidRealContactEmail(contactEmail)) return 'Email inválido.';
     if (!platformAccessEmail) return 'Email inválido.';
+    if (!form.city.trim()) return 'Informe a cidade.';
+    if (!form.state.trim()) return 'Informe o estado.';
     if (form.password.length < 8) return 'A senha precisa ter pelo menos 8 caracteres.';
     if (!/[A-Z]/.test(form.password) || !/[a-z]/.test(form.password) || !/\d/.test(form.password)) {
       return 'A senha precisa conter letra maiúscula, letra minúscula e número.';
@@ -13780,31 +13811,12 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
     return '';
   }
 
-  function continueToProfileSetup(event) {
+  async function continueToPayment(event) {
     event.preventDefault();
+    if (isCreatingAccount) return;
     const validationError = validateBasicSignup();
     if (validationError) {
       setSignupNotice(validationError);
-      return;
-    }
-    setSignupNotice('');
-    setSignupStep('profile');
-    setTimeout(() => {
-      document.querySelector('.signup-profile-setup')?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    }, 80);
-  }
-
-  async function finishSignup() {
-    if (isCreatingAccount) return;
-    if (!form.city.trim()) {
-      setSignupNotice('Informe a cidade.');
-      return;
-    }
-    if (!form.state.trim()) {
-      setSignupNotice('Informe o estado.');
       return;
     }
 
@@ -13828,9 +13840,17 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
       });
       localStorage.setItem(LAST_SIGNUP_LOGIN_KEY, contactEmail);
       localStorage.setItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY, contactEmail);
-      setSignupNotice('Cadastro criado. Entre com email e senha para escolher o plano e iniciar a cobrança.');
-      setAuthMode('login');
-      openPage?.('profile');
+      localStorage.setItem(
+        LAST_SIGNUP_SEGMENT_KEY,
+        segment === 'pj' ? 'teacher' : segment === 'company' ? 'company' : 'student',
+      );
+      await loginWithEmail(contactEmail, form.password, {
+        termsAccepted: true,
+        termsVersion: TERMS_VERSION,
+        privacyVersion: PRIVACY_VERSION,
+        consentType: REQUIRED_CONSENT_TYPE,
+      });
+      openPage?.('subscription-checkout');
     } catch (error) {
       const message = String(error?.message ?? '');
       setSignupNotice(getSignupFailureMessage(message, error));
@@ -13920,7 +13940,7 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
         </div>
       )}
       {segment && signupStep === 'basic' && (
-        <form className="signup-layout signup-basic-layout zoom-in" onSubmit={continueToProfileSetup}>
+        <form className="signup-layout signup-basic-layout zoom-in" onSubmit={continueToPayment}>
           <section className="profile-card">
             <span className="section-kicker">{segmentTitle}</span>
             <button className="link-button" type="button" onClick={clearSignupSegment}>
@@ -13962,6 +13982,23 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
                 value={form.phone}
                 onChange={(event) => update('phone', event.target.value)}
                 placeholder="+55 11 99999-0000"
+              />
+            </label>
+            <label>
+              Cidade
+              <input
+                value={form.city}
+                onChange={(event) => update('city', event.target.value)}
+                placeholder="Ex: Juazeiro"
+              />
+            </label>
+            <label>
+              Estado
+              <input
+                value={form.state}
+                onChange={(event) => update('state', event.target.value.toUpperCase())}
+                placeholder="Ex: BA"
+                maxLength="2"
               />
             </label>
             {isPjSignup && (
@@ -14144,7 +14181,9 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
                 {signupNotice}
               </p>
             )}
-            <button type="submit">Continuar para configurar perfil</button>
+            <button type="submit" disabled={isCreatingAccount}>
+              {isCreatingAccount ? 'Criando conta...' : 'Continuar para pagamento'}
+            </button>
           </section>
         </form>
       )}
@@ -14227,8 +14266,8 @@ function SignupView({ setAuthMode, openPrivacyCenter, openPage }) {
               <button className="light" type="button" onClick={() => setSignupStep('basic')}>
                 Voltar aos dados
               </button>
-              <button type="button" onClick={finishSignup} disabled={isCreatingAccount}>
-                {isCreatingAccount ? 'Criando cadastro...' : 'Finalizar cadastro e escolher plano'}
+              <button type="button" onClick={() => openPage?.('subscription-checkout')}>
+                Ir para pagamento
               </button>
             </div>
             {signupNotice && <p className="invalid-note signup-submit-notice">{signupNotice}</p>}

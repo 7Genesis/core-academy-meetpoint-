@@ -141,7 +141,11 @@ export class AuthService {
       throw new ForbiddenException('Account is not active');
     }
 
-    const profile = this.toPublicUser(user);
+    const platformStaff = await this.findActivePlatformStaff(normalizedEmail);
+    const profile = {
+      ...this.toPublicUser(user),
+      ...(platformStaff ? { platformRole: platformStaff.role } : {}),
+    };
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -158,6 +162,7 @@ export class AuthService {
           email: profile.email,
           role: profile.role,
           tenantId: profile.tenantId,
+          ...(profile.platformRole ? { platformRole: profile.platformRole } : {}),
         },
         {
           ...this.jwtKeyService.getSignOptions(),
@@ -180,7 +185,10 @@ export class AuthService {
     }
 
     return {
-      user: this.toPublicUser(user),
+      user: {
+        ...this.toPublicUser(user),
+        ...(payload.platformRole ? { platformRole: payload.platformRole } : {}),
+      },
     };
   }
 
@@ -229,6 +237,15 @@ export class AuthService {
       update: {},
       create: { subdomain, name },
     });
+  }
+
+  private findActivePlatformStaff(email: string) {
+    return this.prisma.withPlatformAdmin((tx) =>
+      tx.platformStaff.findUnique({
+        where: { email: email.toLowerCase() },
+        select: { id: true, role: true, isActive: true },
+      }),
+    ).then((staff) => (staff?.isActive ? staff : null));
   }
 
   private async verifyPassword(plainPassword: string, storedHash: string) {
