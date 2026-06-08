@@ -20,7 +20,8 @@
     "prisma:migrate:deploy": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; app_root=\"${MEETPOINT_APP_ROOT:-${COREACADEMY_APP_ROOT:-}}\"; if [ ! -f \"$schema\" ] && [ -n \"$app_root\" ]; then schema=\"$app_root/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate deploy --schema=\"$schema\"",
     "frontend:build:vercel": "vite build frontend --base=/",
     "prisma:migrate:repair-known-failed": "schema=\"${PRISMA_SCHEMA_PATH:-./prisma/schema.prisma}\"; app_root=\"${MEETPOINT_APP_ROOT:-${COREACADEMY_APP_ROOT:-}}\"; if [ ! -f \"$schema\" ] && [ -n \"$app_root\" ]; then schema=\"$app_root/prisma/schema.prisma\"; fi; if [ ! -f \"$schema\" ] && [ -f /home/nova3034/api-meetpoint/prisma/schema.prisma ]; then schema=/home/nova3034/api-meetpoint/prisma/schema.prisma; fi; prisma migrate resolve --rolled-back 20260531150000_add_pii_encryption_fields --schema=\"$schema\" || true",
-    "seed:admin": "node scripts/seed-platform-admin.js"
+    "seed:admin": "node scripts/seed-platform-admin.js",
+    "promote:admin": "node scripts/promote-platform-admin.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.24",
