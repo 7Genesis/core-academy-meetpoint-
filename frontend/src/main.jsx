@@ -2323,6 +2323,12 @@ function App() {
 
     function blockProtectedAction(event) {
       const target = event.target;
+      const protectedPasswordField = target?.closest?.('[data-protected-password="true"]');
+      if (protectedPasswordField && ['contextmenu', 'copy', 'cut', 'dragstart'].includes(event.type)) {
+        event.preventDefault();
+        warnSecurity('Esta ação está bloqueada no campo de senha.');
+        return;
+      }
       if (target?.closest?.('input, textarea, [contenteditable="true"]')) return;
       const protectedArea = target?.closest?.('.protected-content, .course-module-planner, .course-detail-curriculum, .post-media');
       if (event.type === 'contextmenu') {
@@ -2355,12 +2361,14 @@ function App() {
 
     window.addEventListener('contextmenu', blockProtectedAction);
     window.addEventListener('copy', blockProtectedAction);
+    window.addEventListener('cut', blockProtectedAction);
     window.addEventListener('dragstart', blockProtectedAction);
     window.addEventListener('selectstart', blockProtectedAction);
     window.addEventListener('keydown', blockShortcut);
     return () => {
       window.removeEventListener('contextmenu', blockProtectedAction);
       window.removeEventListener('copy', blockProtectedAction);
+      window.removeEventListener('cut', blockProtectedAction);
       window.removeEventListener('dragstart', blockProtectedAction);
       window.removeEventListener('selectstart', blockProtectedAction);
       window.removeEventListener('keydown', blockShortcut);
@@ -4857,6 +4865,8 @@ function CommunityAccessModal({ community, notice, onClose, onConfirm }) {
               <input
                 autoFocus
                 type="password"
+                data-protected-password="true"
+                autoComplete="off"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Digite a senha enviada pelo administrador"
@@ -12089,6 +12099,8 @@ function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
               Senha da comunidade
               <input
                 type="password"
+                data-protected-password="true"
+                autoComplete="new-password"
                 value={form.password}
                 onChange={(event) => updateForm('password', event.target.value)}
                 placeholder="Defina uma senha de entrada"
@@ -14099,6 +14111,8 @@ function LoginPanel({ loginWithEmail, setAuthMode, openPrivacyCenter }) {
         Senha
         <input
           type="password"
+          data-protected-password="true"
+          autoComplete="current-password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           onKeyDown={handleLoginKeyDown}
@@ -14571,6 +14585,8 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
               Senha
               <input
                 type="password"
+                data-protected-password="true"
+                autoComplete="new-password"
                 value={form.password}
                 onChange={(event) => update('password', event.target.value)}
                 placeholder="Criar senha"
@@ -14580,6 +14596,8 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
               Confirmar senha
               <input
                 type="password"
+                data-protected-password="true"
+                autoComplete="new-password"
                 value={form.passwordConfirm}
                 onChange={(event) => update('passwordConfirm', event.target.value)}
                 placeholder="Repetir senha"
@@ -14871,7 +14889,15 @@ function ForgotPasswordView({ setAuthMode }) {
             <input placeholder={method === 'email' ? 'email@dominio.com' : '+55 11 99999-0000'} />
           </label>
           <label>Código<input placeholder="000000" /></label>
-          <label>Nova senha<input type="password" placeholder="Nova senha" /></label>
+          <label>
+            Nova senha
+            <input
+              type="password"
+              data-protected-password="true"
+              autoComplete="new-password"
+              placeholder="Nova senha"
+            />
+          </label>
           <button onClick={() => setAuthMode('login')}>Trocar senha</button>
         </section>
       </div>
@@ -16159,6 +16185,8 @@ function PlatformProfile({
             Senha temporária
             <input
               type="password"
+              data-protected-password="true"
+              autoComplete="new-password"
               value={employeePassword}
               onChange={(event) => setEmployeePassword(event.target.value)}
               placeholder="Senha inicial do funcionário"
