@@ -4275,10 +4275,12 @@ function App() {
           {activeNavigationItem && (
             <MpButton
               active
+              aria-label={activeNavigationItem.label}
               className="main-window-tab"
               data-page={activeNavigationItem.id}
               size="nav"
               variant="nav"
+              title={activeNavigationItem.label}
               onClick={() => openDesktopNavigationPage(activeNavigationItem.id)}
             >
               <MobileNavIcon name={mobileNavigationIconNames[activeNavigationItem.id]} />
@@ -4302,6 +4304,8 @@ function App() {
                   key={item.id}
                   type="button"
                   role="menuitem"
+                  aria-label={item.label}
+                  title={item.label}
                   onClick={() => openDesktopNavigationPage(item.id)}
                 >
                   <MobileNavIcon name={mobileNavigationIconNames[item.id]} />

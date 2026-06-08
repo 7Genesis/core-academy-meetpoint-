@@ -27490,13 +27490,13 @@ html body header.topbar.topbar nav.main-window-nav {
   justify-content: flex-start !important;
   flex-direction: column !important;
   gap: 8px !important;
-  width: 164px !important;
-  max-width: 164px !important;
+  width: 76px !important;
+  max-width: 76px !important;
   min-height: 0 !important;
   margin: 0 !important;
   padding: 8px !important;
   border: 1px solid var(--mobile-dock-border, rgba(17, 19, 24, 0.12)) !important;
-  border-radius: 28px !important;
+  border-radius: 999px !important;
   background: rgba(255, 255, 255, 0.78) !important;
   background-image: none !important;
   box-shadow: var(--mobile-dock-shadow, 0 18px 48px rgba(17, 24, 39, 0.18)), inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
@@ -27506,76 +27506,73 @@ html body header.topbar.topbar nav.main-window-nav {
 }
 
 html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab {
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: 100% !important;
-  min-height: 48px !important;
-  height: 48px !important;
-  padding: 0 14px !important;
-  gap: 8px !important;
-  border: 1px solid rgba(17, 19, 24, 0.1) !important;
+  width: 56px !important;
+  min-width: 56px !important;
+  max-width: 56px !important;
+  min-height: 56px !important;
+  height: 56px !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  justify-content: center !important;
+  border: 1px solid rgba(255, 248, 220, 0.16) !important;
   border-radius: 999px !important;
-  background: #f4ecd8 !important;
-  color: #101216 !important;
+  background: #101216 !important;
+  color: #fff8dc !important;
   -webkit-text-fill-color: currentColor !important;
-  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
+  box-shadow: 0 10px 24px rgba(17, 19, 24, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab svg {
-  width: 26px !important;
-  height: 26px !important;
-  min-width: 26px !important;
+  width: 27px !important;
+  height: 27px !important;
+  min-width: 27px !important;
   display: block !important;
   color: currentColor !important;
   stroke: currentColor !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab small {
-  display: inline-block !important;
-  max-width: 72px !important;
-  overflow: hidden !important;
-  color: currentColor !important;
-  -webkit-text-fill-color: currentColor !important;
-  font-size: 0.92rem !important;
-  font-weight: 950 !important;
-  line-height: 1 !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
+  display: none !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab.active {
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: 100% !important;
-  padding-inline: 14px !important;
+  width: 56px !important;
+  min-width: 56px !important;
+  max-width: 56px !important;
+  padding: 0 !important;
   justify-content: center !important;
-  background: #f4ecd8 !important;
-  color: #101216 !important;
+  background: #101216 !important;
+  color: #fff8dc !important;
   -webkit-text-fill-color: currentColor !important;
-  box-shadow: 0 8px 20px rgba(17, 24, 39, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
+  box-shadow: 0 10px 24px rgba(17, 19, 24, 0.2), inset 0 0 0 2px rgba(244, 206, 85, 0.42) !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab.active small {
-  display: inline-block !important;
+  display: none !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav > .main-window-more-button {
-  width: 100% !important;
-  min-height: 44px !important;
-  border: 1px solid rgba(17, 19, 24, 0.1) !important;
+  width: 56px !important;
+  min-width: 56px !important;
+  max-width: 56px !important;
+  min-height: 56px !important;
+  height: 56px !important;
+  border: 1px solid rgba(255, 248, 220, 0.16) !important;
   border-radius: 999px !important;
-  background: #f4ecd8 !important;
-  color: #101216 !important;
-  -webkit-text-fill-color: #101216 !important;
+  background: #101216 !important;
+  color: #fff8dc !important;
+  -webkit-text-fill-color: #fff8dc !important;
   font-size: 1.45rem !important;
   font-weight: 950 !important;
   line-height: 1 !important;
-  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
+  box-shadow: 0 10px 24px rgba(17, 19, 24, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav > .main-window-more-button.active {
-  background: #fff1b8 !important;
-  color: #101216 !important;
+  background: #101216 !important;
+  border-color: rgba(244, 206, 85, 0.6) !important;
+  color: #fff8dc !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav > .main-window-more-panel {
@@ -27583,40 +27580,53 @@ html body header.topbar.topbar nav.main-window-nav > .main-window-more-panel {
   display: grid !important;
   gap: 7px !important;
   padding-top: 2px !important;
+  justify-items: center !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav .main-window-more-item {
-  width: 100% !important;
-  min-height: 42px !important;
+  width: 56px !important;
+  min-width: 56px !important;
+  max-width: 56px !important;
+  min-height: 56px !important;
+  height: 56px !important;
   display: inline-flex !important;
   align-items: center !important;
-  justify-content: flex-start !important;
-  gap: 9px !important;
-  padding: 0 12px !important;
-  border: 1px solid rgba(17, 19, 24, 0.1) !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  border: 1px solid rgba(255, 248, 220, 0.16) !important;
   border-radius: 999px !important;
-  background: #f4ecd8 !important;
-  color: #101216 !important;
-  -webkit-text-fill-color: #101216 !important;
+  background: #101216 !important;
+  color: #fff8dc !important;
+  -webkit-text-fill-color: #fff8dc !important;
   font-size: 0.86rem !important;
   font-weight: 950 !important;
   line-height: 1 !important;
-  box-shadow: none !important;
+  box-shadow: 0 10px 24px rgba(17, 19, 24, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav .main-window-more-item svg {
-  width: 20px !important;
-  height: 20px !important;
-  min-width: 20px !important;
+  width: 25px !important;
+  height: 25px !important;
+  min-width: 25px !important;
   color: currentColor !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav .main-window-more-item span {
-  min-width: 0 !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-  color: currentColor !important;
+  display: none !important;
+}
+
+html body header.topbar.topbar nav.main-window-nav > .main-window-more-button:hover,
+html body header.topbar.topbar nav.main-window-nav .main-window-more-item:hover {
+  border-color: rgba(244, 206, 85, 0.54) !important;
+  box-shadow: 0 14px 30px rgba(17, 19, 24, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
+  transform: scale(1.04) !important;
+}
+
+html body header.topbar.topbar nav.main-window-nav > .main-window-more-button:active,
+html body header.topbar.topbar nav.main-window-nav .main-window-more-item:active {
+  transform: scale(0.97) !important;
 }
 
 html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab.active::before {
@@ -27657,10 +27667,10 @@ html body .home-hero-actions .ghost.mp-button {
 @media (max-width: 980px) {
   html body header.topbar.topbar nav.main-window-nav {
     gap: 6px !important;
-    width: 150px !important;
-    max-width: 150px !important;
+    width: 68px !important;
+    max-width: 68px !important;
     min-height: 0 !important;
-    padding: 8px !important;
+    padding: 7px !important;
   }
 
   html body .mp-button-top {
@@ -27669,17 +27679,26 @@ html body .home-hero-actions .ghost.mp-button {
   }
 
   html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    min-height: 44px !important;
-    height: 44px !important;
+    width: 50px !important;
+    min-width: 50px !important;
+    max-width: 50px !important;
+    min-height: 50px !important;
+    height: 50px !important;
   }
 
   html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab.active {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    padding-inline: 10px !important;
+    width: 50px !important;
+    min-width: 50px !important;
+    max-width: 50px !important;
+    padding: 0 !important;
+  }
+
+  html body header.topbar.topbar nav.main-window-nav > .main-window-more-button,
+  html body header.topbar.topbar nav.main-window-nav .main-window-more-item {
+    width: 50px !important;
+    min-width: 50px !important;
+    max-width: 50px !important;
+    min-height: 50px !important;
+    height: 50px !important;
   }
 }
