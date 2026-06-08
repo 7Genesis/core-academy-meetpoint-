@@ -90,6 +90,14 @@ CREATE POLICY course_sale_access ON course_sales
   USING (app.is_platform_admin() OR "tenantId" = app.current_tenant_id())
   WITH CHECK (app.is_platform_admin() OR "tenantId" = app.current_tenant_id());
 
+ALTER TABLE payment_checkouts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_checkouts FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS payment_checkout_access ON payment_checkouts;
+CREATE POLICY payment_checkout_access ON payment_checkouts
+  USING (app.is_platform_admin() OR "tenantId" = app.current_tenant_id())
+  WITH CHECK (app.is_platform_admin() OR "tenantId" = app.current_tenant_id());
+
 ALTER TABLE payment_webhook_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_webhook_events FORCE ROW LEVEL SECURITY;
 

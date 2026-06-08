@@ -10,7 +10,6 @@ const strictProductionValues = [
   'JWT_AUDIENCE',
   'PII_ENCRYPTION_KEY',
   'WEBHOOK_SECRET',
-  'STRIPE_WEBHOOK_SECRET',
 ] as const;
 
 function isWeakSecret(value: string | undefined) {
@@ -40,7 +39,6 @@ export function validateRuntimeConfig() {
     'JWT_PRIVATE_KEY',
     'PII_ENCRYPTION_KEY',
     'WEBHOOK_SECRET',
-    'STRIPE_WEBHOOK_SECRET',
   ].filter((key) => process.env[key] && isWeakSecret(process.env[key]));
 
   if (weakSecrets.length > 0) {
@@ -108,6 +106,9 @@ function normalizeRuntimeEnv() {
     'COOKIE_SECURE',
     'ENABLE_SWAGGER',
     'CORS_ORIGIN',
+    'INFINITEPAY_HANDLE',
+    'INFINITEPAY_SUCCESS_URL',
+    'INFINITEPAY_WEBHOOK_URL',
     'TESTE',
   ];
 
@@ -139,9 +140,10 @@ function logRuntimeEnvDiagnostics() {
     process.env.PII_ENCRYPTION_KEY?.length,
   );
   console.log('ENV CHECK HAS_WEBHOOK_SECRET=', !!process.env.WEBHOOK_SECRET);
+  console.log('ENV CHECK HAS_INFINITEPAY_HANDLE=', !!process.env.INFINITEPAY_HANDLE);
   console.log(
-    'ENV CHECK HAS_STRIPE_WEBHOOK_SECRET=',
-    !!process.env.STRIPE_WEBHOOK_SECRET,
+    'ENV CHECK HAS_INFINITEPAY_WEBHOOK_URL=',
+    !!process.env.INFINITEPAY_WEBHOOK_URL,
   );
 }
 

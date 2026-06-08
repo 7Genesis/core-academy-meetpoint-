@@ -4,12 +4,26 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import Stripe from 'stripe';
 import { AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { EnrollmentPaymentStatus } from '../common/prisma-enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCourseCheckoutDto } from './dto/create-course-checkout.dto';
+
+const INFINITEPAY_GATEWAY = 'infinitepay';
+
+export type InfinitePayLinkResponse = {
+  id?: string;
+  invoice_slug?: string;
+  slug?: string;
+  url?: string;
+  checkout_url?: string;
+  checkoutUrl?: string;
+  payment_url?: string;
+  link?: string;
+  data?: InfinitePayLinkResponse;
+};
 
 @Injectable()
 export class PaymentsService {
@@ -20,11 +34,14 @@ export class PaymentsService {
     user: AuthenticatedUser,
     dto: CreateCourseCheckoutDto,
   ) {
-    return this.prisma.withTenant(tenantId, async (tx) => {
+    const checkoutReference = randomUUID();
+    const orderNsu = `meetpoint-course-${checkoutReference}`;
+
+    const prepared = await this.prisma.withTenant(tenantId, async (tx) => {
       const [userRecord, course] = await Promise.all([
         tx.user.findFirst({
           where: { id: user.sub, tenantId },
-          select: { id: true, email: true, status: true },
+          select: { id: true, email: true, name: true, status: true },
         }),
         tx.course.findFirst({
           where: { id: dto.courseId, tenantId },
@@ -44,32 +61,12 @@ export class PaymentsService {
         throw new ForbiddenException('Blocked users cannot start checkout');
       }
 
-      const checkoutReference = randomUUID();
       const amountCents = course.priceCents;
       const platformFeeCents = Math.round(
         (amountCents * course.platformFeeBps) / 10_000,
       );
       const producerNetCents = amountCents - platformFeeCents;
       const isFree = amountCents === 0;
-
-      const metadata = {
-        tenantId,
-        userId: userRecord.id,
-        courseId: course.id,
-        checkoutReference,
-      };
-      const checkoutSession = isFree
-        ? null
-        : await this.createStripeCheckoutSession({
-            amountCents,
-            cancelUrl: dto.cancelUrl,
-            checkoutReference,
-            courseTitle: course.title,
-            currency: course.currency,
-            customerEmail: userRecord.email,
-            metadata,
-            successUrl: dto.successUrl,
-          });
 
       const enrollment = isFree
         ? await tx.enrollment.upsert({
@@ -98,102 +95,181 @@ export class PaymentsService {
           })
         : null;
 
+      if (!isFree) {
+        await tx.paymentCheckout.create({
+          data: {
+            gateway: INFINITEPAY_GATEWAY,
+            orderNsu,
+            tenantId,
+            userId: userRecord.id,
+            courseId: course.id,
+            amountCents,
+            currency: course.currency,
+            status: EnrollmentPaymentStatus.PENDING,
+          },
+        });
+      }
+
       return {
-        provider: isFree ? 'internal' : 'stripe',
-        status: isFree ? 'FREE' : 'PENDING',
-        courseId: course.id,
-        courseTitle: course.title,
+        userRecord,
+        course,
         amountCents,
-        currency: course.currency,
-        platformFeeBps: course.platformFeeBps,
         platformFeeCents,
         producerNetCents,
-        paymentMethod: dto.paymentMethod ?? 'card',
-        checkoutReference,
-        checkoutSession,
+        isFree,
         enrollment,
-        security: {
-          amountSource: 'server',
-          tenantScoped: true,
-          userScoped: true,
-          webhookRequiredToReleaseCourse: !isFree,
-          idempotencyKey: `stripe:${checkoutReference}`,
-        },
       };
     });
+
+    const checkoutSession = prepared.isFree
+      ? null
+      : await this.createInfinitePayCheckoutSession({
+          amountCents: prepared.amountCents,
+          checkoutReference,
+          courseTitle: prepared.course.title,
+          currency: prepared.course.currency,
+          customerEmail: prepared.userRecord.email,
+          customerName: prepared.userRecord.name,
+          orderNsu,
+          successUrl: dto.successUrl,
+        });
+
+    if (checkoutSession) {
+      await this.prisma.withTenant(tenantId, (tx) =>
+        tx.paymentCheckout.update({
+          where: { orderNsu },
+          data: {
+            checkoutUrl: checkoutSession.url,
+            gatewayCheckoutId: checkoutSession.id,
+            payload: checkoutSession.raw as Prisma.InputJsonValue,
+          },
+        }),
+      );
+    }
+
+    return {
+      provider: prepared.isFree ? 'internal' : INFINITEPAY_GATEWAY,
+      status: prepared.isFree ? 'FREE' : 'PENDING',
+      courseId: prepared.course.id,
+      courseTitle: prepared.course.title,
+      amountCents: prepared.amountCents,
+      currency: prepared.course.currency,
+      platformFeeBps: prepared.course.platformFeeBps,
+      platformFeeCents: prepared.platformFeeCents,
+      producerNetCents: prepared.producerNetCents,
+      paymentMethod: dto.paymentMethod ?? 'pix',
+      checkoutReference,
+      orderNsu,
+      checkoutSession,
+      enrollment: prepared.enrollment,
+      security: {
+        amountSource: 'server',
+        tenantScoped: true,
+        userScoped: true,
+        webhookRequiredToReleaseCourse: !prepared.isFree,
+        idempotencyKey: `${INFINITEPAY_GATEWAY}:${orderNsu}`,
+      },
+    };
   }
 
-  private async createStripeCheckoutSession(params: {
+  private async createInfinitePayCheckoutSession(params: {
     amountCents: number;
-    cancelUrl?: string;
     checkoutReference: string;
     courseTitle: string;
     currency: string;
     customerEmail: string;
-    metadata: Record<string, string>;
+    customerName: string;
+    orderNsu: string;
     successUrl?: string;
   }) {
-    const successUrl = this.resolveCheckoutUrl(
-      params.successUrl ?? process.env.STRIPE_SUCCESS_URL,
-      'successUrl',
-    );
-    const cancelUrl = this.resolveCheckoutUrl(
-      params.cancelUrl ?? process.env.STRIPE_CANCEL_URL,
-      'cancelUrl',
-    );
-    const stripe = this.getStripeClient();
-
-    if (stripe) {
-      const session = await stripe.checkout.sessions.create(
-        {
-          mode: 'payment',
-          client_reference_id: params.checkoutReference,
-          customer_email: params.customerEmail,
-          success_url: successUrl,
-          cancel_url: cancelUrl,
-          metadata: params.metadata,
-          payment_intent_data: {
-            metadata: params.metadata,
-          },
-          line_items: [
-            {
-              quantity: 1,
-              price_data: {
-                currency: params.currency.toLowerCase(),
-                unit_amount: params.amountCents,
-                product_data: {
-                  name: params.courseTitle,
-                },
-              },
-            },
-          ],
-        },
-        {
-          idempotencyKey: `course_checkout_${params.checkoutReference}`,
-        },
-      );
-
-      return {
-        id: session.id,
-        url: session.url,
-        successUrl,
-        cancelUrl,
-        live: true,
-      };
+    if (params.currency.toUpperCase() !== 'BRL') {
+      throw new BadRequestException('InfinitePay checkout supports BRL only');
     }
 
+    const handle = this.getInfinitePayHandle();
+    const redirectUrl = this.resolveCheckoutUrl(
+      params.successUrl ?? process.env.INFINITEPAY_SUCCESS_URL,
+      'successUrl',
+    );
+    const webhookUrl = this.resolveCheckoutUrl(
+      process.env.INFINITEPAY_WEBHOOK_URL ?? this.deriveInfinitePayWebhookUrl(),
+      'INFINITEPAY_WEBHOOK_URL',
+      false,
+    );
+    const payload = {
+      handle,
+      items: [
+        {
+          quantity: 1,
+          price: params.amountCents,
+          description: params.courseTitle,
+        },
+      ],
+      order_nsu: params.orderNsu,
+      redirect_url: redirectUrl,
+      webhook_url: webhookUrl,
+      customer: {
+        name: params.customerName,
+        email: params.customerEmail,
+      },
+    };
+
+    const endpoint =
+      process.env.INFINITEPAY_LINKS_ENDPOINT ??
+      'https://api.checkout.infinitepay.io/links';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const raw = await parseJsonResponse<InfinitePayLinkResponse>(response);
+    if (!response.ok) {
+      throw new BadRequestException({
+        message: 'InfinitePay checkout link creation failed',
+        status: response.status,
+        response: raw,
+      });
+    }
+
+    const linkData = raw.data ?? raw;
+    const checkoutUrl =
+      linkData.url ??
+      linkData.checkout_url ??
+      linkData.checkoutUrl ??
+      linkData.payment_url ??
+      linkData.link ??
+      this.buildDirectInfinitePayCheckoutUrl({
+        handle,
+        items: payload.items,
+        orderNsu: params.orderNsu,
+        redirectUrl,
+        webhookUrl,
+      });
+
     return {
-      id: `cs_prototype_${params.checkoutReference}`,
-      url: process.env.STRIPE_CHECKOUT_BASE_URL
-        ? `${process.env.STRIPE_CHECKOUT_BASE_URL}?session_id=cs_prototype_${params.checkoutReference}`
-        : null,
-      successUrl,
-      cancelUrl,
-      live: false,
+      id: linkData.id ?? linkData.invoice_slug ?? linkData.slug ?? params.orderNsu,
+      url: checkoutUrl,
+      successUrl: redirectUrl,
+      webhookUrl,
+      live: true,
+      raw,
     };
   }
 
-  private resolveCheckoutUrl(candidate: string | undefined, label: string) {
+  private getInfinitePayHandle() {
+    const handle = process.env.INFINITEPAY_HANDLE?.trim().replace(/^\$/, '');
+    if (!handle) {
+      throw new BadRequestException('INFINITEPAY_HANDLE is required for paid checkout');
+    }
+    return handle;
+  }
+
+  private resolveCheckoutUrl(
+    candidate: string | undefined,
+    label: string,
+    enforceAllowedOrigin = true,
+  ) {
     if (!candidate) {
       throw new BadRequestException(`${label} is required for paid checkout`);
     }
@@ -209,9 +285,11 @@ export class PaymentsService {
       throw new BadRequestException(`${label} must use http or https`);
     }
 
-    const allowedOrigins = this.getAllowedCheckoutOrigins();
-    if (allowedOrigins.length > 0 && !allowedOrigins.includes(parsed.origin)) {
-      throw new BadRequestException(`${label} origin is not allowed`);
+    if (enforceAllowedOrigin) {
+      const allowedOrigins = this.getAllowedCheckoutOrigins();
+      if (allowedOrigins.length > 0 && !allowedOrigins.includes(parsed.origin)) {
+        throw new BadRequestException(`${label} origin is not allowed`);
+      }
     }
 
     return parsed.toString();
@@ -236,9 +314,39 @@ export class PaymentsService {
       .filter((origin): origin is string => Boolean(origin));
   }
 
-  private getStripeClient() {
-    const secretKey = process.env.STRIPE_SECRET_KEY;
-    if (!secretKey || secretKey.includes('change_me')) return null;
-    return new Stripe(secretKey);
+  private deriveInfinitePayWebhookUrl() {
+    const baseUrl =
+      process.env.API_PUBLIC_URL ??
+      process.env.PUBLIC_API_URL ??
+      process.env.BACKEND_PUBLIC_URL;
+    if (!baseUrl) return undefined;
+    return new URL('/webhooks/infinitepay', baseUrl).toString();
+  }
+
+  private buildDirectInfinitePayCheckoutUrl(params: {
+    handle: string;
+    items: Array<{ quantity: number; price: number; description: string }>;
+    orderNsu: string;
+    redirectUrl: string;
+    webhookUrl: string;
+  }) {
+    const checkoutUrl = new URL(
+      `https://checkout.infinitepay.io/${encodeURIComponent(params.handle)}`,
+    );
+    checkoutUrl.searchParams.set('items', JSON.stringify(params.items));
+    checkoutUrl.searchParams.set('order_nsu', params.orderNsu);
+    checkoutUrl.searchParams.set('redirect_url', params.redirectUrl);
+    checkoutUrl.searchParams.set('webhook_url', params.webhookUrl);
+    return checkoutUrl.toString();
+  }
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!text) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return { raw: text } as T;
   }
 }

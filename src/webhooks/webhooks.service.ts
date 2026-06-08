@@ -1,10 +1,5 @@
-import {
-  BadRequestException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
   EnrollmentPaymentStatus,
   type EnrollmentPaymentStatus as EnrollmentPaymentStatusType,
@@ -14,33 +9,40 @@ import { FieldEncryptionService } from '../common/security/field-encryption.serv
 import { EnrollmentsService } from '../enrollments/enrollments.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-type StripeWebhookEvent = {
-  id?: string;
-  type?: string;
-  data?: {
-    object?: StripePaymentObject;
-  };
+const INFINITEPAY_GATEWAY = 'infinitepay';
+
+type InfinitePayWebhookEvent = {
+  amount?: number | string;
+  capture_method?: string;
+  invoice_slug?: string;
+  installments?: number | string;
+  items?: unknown;
+  order_nsu?: string;
+  paid_amount?: number | string;
+  receipt_url?: string;
+  transaction_nsu?: string;
 };
 
-type StripePaymentObject = {
-  id?: string;
-  amount?: number;
-  amount_received?: number;
-  amount_total?: number;
-  customer_details?: { email?: string };
-  metadata?: Record<string, string | undefined>;
-  payment_intent?: string | { id?: string };
-  receipt_email?: string;
+type InfinitePayPaymentCheckResponse = {
+  success?: boolean;
+  paid?: boolean;
+  amount?: number | string;
+  paid_amount?: number | string;
+  capture_method?: string;
 };
 
 type PaymentEventData = {
   amountCents: number;
-  courseId?: string;
+  courseId: string;
   customerEmail?: string;
+  eventId: string;
+  eventType: string;
   gatewayPaymentId: string;
-  paymentStatus?: EnrollmentPaymentStatusType;
-  tenantId?: string;
-  userId?: string;
+  orderNsu: string;
+  paymentStatus: EnrollmentPaymentStatusType;
+  receiptUrl?: string;
+  tenantId: string;
+  userId: string;
 };
 
 @Injectable()
@@ -52,217 +54,186 @@ export class WebhooksService {
     private readonly fieldEncryption: FieldEncryptionService,
   ) {}
 
-  async handleStripeEvent(
-    signatureHeader: string | undefined,
-    rawBody: Buffer | undefined,
-    parsedBody: unknown,
-  ) {
-    if (!rawBody) {
-      throw new BadRequestException('Raw webhook body is required');
+  async handleInfinitePayEvent(rawBody: Buffer | undefined, parsedBody: unknown) {
+    const event = this.parseInfinitePayEvent(rawBody, parsedBody);
+    const orderNsu = event.order_nsu?.trim();
+    const transactionNsu = event.transaction_nsu?.trim();
+    const invoiceSlug = event.invoice_slug?.trim();
+
+    if (!orderNsu || !transactionNsu) {
+      throw new BadRequestException(
+        'InfinitePay order_nsu and transaction_nsu are required',
+      );
     }
 
-    this.assertStripeSignature(signatureHeader, rawBody);
-
-    const event = this.parseStripeEvent(rawBody, parsedBody);
-    const eventId = event.id;
-    const eventType = event.type;
-    if (!eventId || !eventType) {
-      throw new BadRequestException('Stripe event id and type are required');
-    }
-
-    const payment = this.extractPaymentData(event);
-    const ledger = await this.registerWebhookEvent(
-      eventId,
-      eventType,
-      event,
-      payment,
+    const checkout = await this.prisma.withPlatformAdmin((tx) =>
+      tx.paymentCheckout.findUnique({
+        where: { orderNsu },
+        select: {
+          id: true,
+          tenantId: true,
+          userId: true,
+          courseId: true,
+          amountCents: true,
+          status: true,
+        },
+      }),
     );
+    if (!checkout) {
+      throw new BadRequestException('Unknown InfinitePay order_nsu');
+    }
+
+    const amountCents = normalizeAmountCents(event.amount);
+    if (amountCents !== checkout.amountCents) {
+      throw new BadRequestException('InfinitePay amount does not match checkout');
+    }
+
+    await this.verifyInfinitePayPayment({
+      amountCents,
+      invoiceSlug,
+      orderNsu,
+      transactionNsu,
+    });
+
+    const payment: PaymentEventData = {
+      amountCents,
+      courseId: checkout.courseId,
+      eventId: transactionNsu,
+      eventType: 'payment.approved',
+      gatewayPaymentId: transactionNsu,
+      orderNsu,
+      paymentStatus: EnrollmentPaymentStatus.PAID,
+      receiptUrl: event.receipt_url,
+      tenantId: checkout.tenantId,
+      userId: checkout.userId,
+    };
+
+    const ledger = await this.registerWebhookEvent(payment.eventId, event, payment);
 
     if (ledger.duplicate) {
-      return { ok: true, duplicate: true, eventId, eventType };
-    }
-
-    if (!payment.paymentStatus) {
-      await this.markWebhookEventProcessed(eventId, 'IGNORED');
-      return { ok: true, ignored: true, eventId, eventType };
-    }
-
-    if (!payment.tenantId || !payment.courseId) {
-      await this.markWebhookEventFailed(
-        eventId,
-        'tenantId and courseId metadata are required',
-      );
-      throw new BadRequestException('tenantId and courseId metadata are required');
-    }
-
-    const userId =
-      payment.userId ??
-      (await this.findUserIdByEmail(payment.tenantId, payment.customerEmail));
-    if (!userId) {
-      await this.markWebhookEventFailed(
-        eventId,
-        'userId metadata or customer email matching an existing user is required',
-      );
-      throw new BadRequestException(
-        'userId metadata or existing customer email is required',
-      );
+      return {
+        ok: true,
+        duplicate: true,
+        eventId: payment.eventId,
+        orderNsu,
+      };
     }
 
     try {
+      await this.prisma.withPlatformAdmin((tx) =>
+        tx.paymentCheckout.update({
+          where: { id: checkout.id },
+          data: {
+            status: EnrollmentPaymentStatus.PAID,
+            transactionNsu,
+            receiptUrl: event.receipt_url,
+            paidAt: new Date(),
+            payload: this.dataMasking.redactObject(event) as Prisma.InputJsonValue,
+          },
+        }),
+      );
+
       const enrollment = await this.enrollmentsService.createFromPurchase(
         payment.tenantId,
-        userId,
+        payment.userId,
         payment.courseId,
         {
-          gateway: 'stripe',
+          gateway: INFINITEPAY_GATEWAY,
           gatewayPaymentId: payment.gatewayPaymentId,
           amountCents: payment.amountCents,
           paymentStatus: payment.paymentStatus,
         },
       );
 
-      await this.markWebhookEventProcessed(eventId, 'PROCESSED');
-      return { ok: true, eventId, eventType, enrollment };
+      await this.markWebhookEventProcessed(payment.eventId, 'PROCESSED');
+      return {
+        ok: true,
+        eventId: payment.eventId,
+        orderNsu,
+        enrollment,
+      };
     } catch (error) {
       await this.markWebhookEventFailed(
-        eventId,
+        payment.eventId,
         error instanceof Error ? error.message : 'Unknown webhook processing error',
       );
       throw error;
     }
   }
 
-  private assertStripeSignature(
-    signatureHeader: string | undefined,
-    rawBody: Buffer,
-  ) {
-    const secret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!secret) {
-      throw new UnauthorizedException('STRIPE_WEBHOOK_SECRET is required');
-    }
-    if (!signatureHeader) {
-      throw new UnauthorizedException('Missing Stripe signature');
-    }
-
-    const parts = new Map(
-      signatureHeader.split(',').map((part) => {
-        const [key, value] = part.split('=');
-        return [key, value];
-      }),
-    );
-    const timestamp = parts.get('t');
-    const signatures = signatureHeader
-      .split(',')
-      .filter((part) => part.startsWith('v1='))
-      .map((part) => part.slice(3));
-
-    if (!timestamp || signatures.length === 0) {
-      throw new UnauthorizedException('Invalid Stripe signature header');
-    }
-
-    const toleranceSeconds = Number(
-      process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS ?? 300,
-    );
-    const ageSeconds = Math.abs(Date.now() / 1000 - Number(timestamp));
-    if (!Number.isFinite(ageSeconds) || ageSeconds > toleranceSeconds) {
-      throw new UnauthorizedException('Stripe webhook timestamp is outside tolerance');
-    }
-
-    const signedPayload = `${timestamp}.${rawBody.toString('utf8')}`;
-    const expected = createHmac('sha256', secret)
-      .update(signedPayload)
-      .digest('hex');
-    const expectedBuffer = Buffer.from(expected, 'hex');
-    const isValid = signatures.some((signature) => {
-      const signatureBuffer = Buffer.from(signature, 'hex');
-      return (
-        signatureBuffer.length === expectedBuffer.length &&
-        timingSafeEqual(signatureBuffer, expectedBuffer)
-      );
-    });
-
-    if (!isValid) {
-      throw new UnauthorizedException('Invalid Stripe webhook signature');
-    }
-  }
-
-  private parseStripeEvent(
-    rawBody: Buffer,
+  private parseInfinitePayEvent(
+    rawBody: Buffer | undefined,
     parsedBody: unknown,
-  ): StripeWebhookEvent {
+  ): InfinitePayWebhookEvent {
     if (parsedBody && typeof parsedBody === 'object') {
-      return parsedBody as StripeWebhookEvent;
+      return parsedBody as InfinitePayWebhookEvent;
+    }
+
+    if (!rawBody) {
+      throw new BadRequestException('Raw webhook body is required');
     }
 
     try {
-      return JSON.parse(rawBody.toString('utf8')) as StripeWebhookEvent;
+      return JSON.parse(rawBody.toString('utf8')) as InfinitePayWebhookEvent;
     } catch {
-      throw new BadRequestException('Invalid Stripe webhook JSON');
+      throw new BadRequestException('Invalid InfinitePay webhook JSON');
     }
   }
 
-  private extractPaymentData(event: StripeWebhookEvent): PaymentEventData {
-    const stripeObject = event.data?.object ?? {};
-    const metadata = stripeObject.metadata ?? {};
-    const paymentIntentId =
-      typeof stripeObject.payment_intent === 'string'
-        ? stripeObject.payment_intent
-        : stripeObject.payment_intent?.id;
-    const gatewayPaymentId = paymentIntentId ?? stripeObject.id;
-    if (!gatewayPaymentId) {
-      throw new BadRequestException('Stripe payment id is required');
+  private async verifyInfinitePayPayment(params: {
+    amountCents: number;
+    invoiceSlug?: string;
+    orderNsu: string;
+    transactionNsu: string;
+  }) {
+    const handle = process.env.INFINITEPAY_HANDLE?.trim().replace(/^\$/, '');
+    if (!handle) {
+      throw new BadRequestException('INFINITEPAY_HANDLE is required for webhook verification');
+    }
+    if (!params.invoiceSlug) {
+      throw new BadRequestException('InfinitePay invoice_slug is required');
     }
 
-    return {
-      tenantId: metadata.tenantId,
-      userId: metadata.userId,
-      courseId: metadata.courseId,
-      customerEmail:
-        stripeObject.customer_details?.email ??
-        stripeObject.receipt_email ??
-        metadata.customerEmail,
-      gatewayPaymentId,
-      amountCents: Number(
-        stripeObject.amount_total ??
-          stripeObject.amount_received ??
-          stripeObject.amount ??
-          metadata.amountCents ??
-          0,
-      ),
-      paymentStatus: this.mapStripeEventToPaymentStatus(event.type),
-    };
-  }
+    const endpoint =
+      process.env.INFINITEPAY_PAYMENT_CHECK_ENDPOINT ??
+      'https://api.checkout.infinitepay.io/payment_check';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        handle,
+        order_nsu: params.orderNsu,
+        transaction_nsu: params.transactionNsu,
+        slug: params.invoiceSlug,
+      }),
+    });
+    const paymentCheck =
+      await parseJsonResponse<InfinitePayPaymentCheckResponse>(response);
 
-  private mapStripeEventToPaymentStatus(eventType?: string) {
-    if (
-      eventType === 'checkout.session.completed' ||
-      eventType === 'payment_intent.succeeded'
-    ) {
-      return EnrollmentPaymentStatus.PAID;
+    if (!response.ok || !paymentCheck.success || !paymentCheck.paid) {
+      throw new BadRequestException({
+        message: 'InfinitePay payment_check did not confirm payment',
+        status: response.status,
+        response: paymentCheck,
+      });
     }
-    if (
-      eventType === 'checkout.session.async_payment_failed' ||
-      eventType === 'payment_intent.payment_failed'
-    ) {
-      return EnrollmentPaymentStatus.FAILED;
+
+    const confirmedAmount = normalizeAmountCents(paymentCheck.amount);
+    if (confirmedAmount !== params.amountCents) {
+      throw new BadRequestException('InfinitePay confirmed amount does not match checkout');
     }
-    if (eventType === 'charge.refunded') {
-      return EnrollmentPaymentStatus.REFUNDED;
-    }
-    return undefined;
   }
 
   private async registerWebhookEvent(
     eventId: string,
-    eventType: string,
-    event: StripeWebhookEvent,
+    event: InfinitePayWebhookEvent,
     payment: PaymentEventData,
   ) {
     return this.prisma.withPlatformAdmin(async (tx) => {
       const existing = await tx.paymentWebhookEvent.findUnique({
         where: {
           gateway_gatewayEventId: {
-            gateway: 'stripe',
+            gateway: INFINITEPAY_GATEWAY,
             gatewayEventId: eventId,
           },
         },
@@ -272,9 +243,9 @@ export class WebhooksService {
 
       await tx.paymentWebhookEvent.create({
         data: {
-          gateway: 'stripe',
+          gateway: INFINITEPAY_GATEWAY,
           gatewayEventId: eventId,
-          eventType,
+          eventType: payment.eventType,
           tenantId: payment.tenantId,
           userId: payment.userId,
           courseId: payment.courseId,
@@ -296,7 +267,7 @@ export class WebhooksService {
       tx.paymentWebhookEvent.update({
         where: {
           gateway_gatewayEventId: {
-            gateway: 'stripe',
+            gateway: INFINITEPAY_GATEWAY,
             gatewayEventId: eventId,
           },
         },
@@ -314,7 +285,7 @@ export class WebhooksService {
       tx.paymentWebhookEvent.update({
         where: {
           gateway_gatewayEventId: {
-            gateway: 'stripe',
+            gateway: INFINITEPAY_GATEWAY,
             gatewayEventId: eventId,
           },
         },
@@ -325,23 +296,22 @@ export class WebhooksService {
       }),
     );
   }
+}
 
-  private async findUserIdByEmail(tenantId: string, email?: string) {
-    if (!email) return null;
-    const emailHash = this.fieldEncryption.hashForLookup(email, 'email');
-    const user = await this.prisma.withTenant(tenantId, (tx) =>
-      tx.user.findFirst({
-        where: {
-          tenantId,
-          OR: [
-            ...(emailHash ? [{ emailHash }] : []),
-            ...(emailHash ? [{ contactEmailHash: emailHash }] : []),
-            { email },
-          ],
-        },
-        select: { id: true },
-      }),
-    );
-    return user?.id ?? null;
+function normalizeAmountCents(value: number | string | undefined) {
+  const amount = Number(value);
+  if (!Number.isInteger(amount) || amount < 0) {
+    throw new BadRequestException('InfinitePay amount must be an integer in cents');
+  }
+  return amount;
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!text) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return { raw: text } as T;
   }
 }

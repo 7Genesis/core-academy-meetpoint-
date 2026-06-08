@@ -49,12 +49,12 @@ services:
         value: "false"
       - key: WEBHOOK_SECRET
         generateValue: true
-      - key: STRIPE_SECRET_KEY
+      - key: INFINITEPAY_HANDLE
         sync: false
-      - key: STRIPE_WEBHOOK_SECRET
+      - key: INFINITEPAY_SUCCESS_URL
         sync: false
-      - key: STRIPE_WEBHOOK_TOLERANCE_SECONDS
-        value: "300"
+      - key: INFINITEPAY_WEBHOOK_URL
+        sync: false
       - key: SUBSCRIPTION_WEBHOOK_SECRET
         generateValue: true
       - key: SUBSCRIPTION_WEBHOOK_TOLERANCE_SECONDS

@@ -80,13 +80,9 @@ export class WebhooksController {
   }
 
   @Public()
-  @Post('stripe')
-  stripeWebhook(
-    @Headers('stripe-signature') stripeSignature: string | undefined,
-    @Req() request: RawBodyRequest<Request>,
-  ) {
-    return this.webhooksService.handleStripeEvent(
-      stripeSignature,
+  @Post('infinitepay')
+  infinitePayWebhook(@Req() request: RawBodyRequest<Request>) {
+    return this.webhooksService.handleInfinitePayEvent(
       request.rawBody,
       request.body,
     );
