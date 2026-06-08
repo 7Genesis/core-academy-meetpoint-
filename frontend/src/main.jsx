@@ -1844,6 +1844,8 @@ function getAccountTypeLabel(accountOrSegment) {
     company: 'Empresa',
     platform: 'Plataforma',
     employee: 'Equipe interna',
+    sponsor: 'Patrocinador',
+    ambassador: 'Embaixador',
     pf: 'Pessoa Física',
     pj: 'Pessoa Jurídica',
   }[segment] ?? 'Conta';
@@ -1859,6 +1861,8 @@ function getAccountTypeCode(accountOrSegment) {
     company: 'Empresa',
     platform: 'Plataforma',
     employee: 'Interno',
+    sponsor: 'Patrocinador',
+    ambassador: 'Embaixador',
     pf: 'PF',
     pj: 'PJ',
   }[segment] ?? 'Conta';
@@ -15245,6 +15249,18 @@ function PlatformProfile({
   const [employeeDepartment, setEmployeeDepartment] = useState('Suporte técnico');
   const [adminSearch, setAdminSearch] = useState('');
   const [accountSearch, setAccountSearch] = useState('');
+  const [accountProvision, setAccountProvision] = useState({
+    segment: 'student',
+    name: '',
+    email: '',
+    city: '',
+    state: '',
+    password: '',
+    companyName: '',
+    grantFreeAccess: true,
+    reason: '',
+  });
+  const [provisionedAccounts, setProvisionedAccounts] = useState([]);
   const [platformView, setPlatformView] = useState('dashboard');
   const [directoryType, setDirectoryType] = useState('companies');
   const [selectedAccountType, setSelectedAccountType] = useState('student');
@@ -15388,6 +15404,160 @@ function PlatformProfile({
 
   function updateBenefitDraft(field, value) {
     setBenefitDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateAccountProvision(field, value) {
+    setAccountProvision((current) => ({ ...current, [field]: value }));
+  }
+
+  function getProvisionPermissions(segment) {
+    if (segment === 'sponsor') return ['Divulgar benefícios', 'Patrocínios', 'Relacionamento comercial'];
+    if (segment === 'ambassador') return ['Divulgar MeetPoint', 'Indicações', 'Comunidades e eventos'];
+    if (segment === 'company') return ['Conta empresa', 'Publicar vagas', 'Solicitar benefícios'];
+    if (segment === 'teacher') return ['Conta PJ', 'Publicar cursos', 'Publicar eventos'];
+    return ['Conta PF', 'Acesso de cortesia'];
+  }
+
+  function getProvisionBackendPermissions(segment) {
+    if (segment === 'sponsor') return ['COMPANIES_WRITE', 'SUPPORT_WRITE'];
+    if (segment === 'ambassador') return ['SUPPORT_WRITE'];
+    if (segment === 'company') return ['COMPANIES_WRITE'];
+    if (segment === 'teacher') return ['COURSES_WRITE'];
+    return ['USERS_WRITE'];
+  }
+
+  function getProvisionDepartment(segment) {
+    if (segment === 'sponsor') return 'Patrocinadores';
+    if (segment === 'ambassador') return 'Embaixadores';
+    if (segment === 'company') return 'Empresas parceiras';
+    if (segment === 'teacher') return 'Pessoas Jurídicas';
+    return 'Pessoas Físicas';
+  }
+
+  async function createProvisionedAccount(event) {
+    event?.preventDefault();
+    const provision = {
+      ...accountProvision,
+      name: accountProvision.name.trim(),
+      email: accountProvision.email.trim().toLowerCase(),
+      city: accountProvision.city.trim(),
+      state: accountProvision.state.trim().toUpperCase(),
+      password: accountProvision.password.trim(),
+      companyName: accountProvision.companyName.trim(),
+      reason: accountProvision.reason.trim(),
+    };
+    if (!provision.name || !provision.email || !provision.city || !provision.state || !provision.password) {
+      setNotice('Informe nome, email, cidade, estado e senha temporária para criar a conta.');
+      return;
+    }
+    if (provision.password.length < 8 || !/[A-Z]/.test(provision.password) || !/[a-z]/.test(provision.password) || !/\d/.test(provision.password)) {
+      setNotice('A senha temporária precisa ter 8+ caracteres, maiúscula, minúscula e número.');
+      return;
+    }
+
+    const segmentLabel = getAccountTypeLabel(provision.segment);
+    const createdAccount = {
+      id: `provision-${Date.now()}`,
+      ...provision,
+      status: provision.grantFreeAccess ? 'Cortesia ativa' : 'Criada sem cortesia',
+      permissions: getProvisionPermissions(provision.segment),
+      createdAt: new Date().toISOString(),
+    };
+
+    setProvisionedAccounts((current) => [createdAccount, ...current]);
+    setPlatformView('account');
+    setNotice(`${segmentLabel} ${provision.name} criada pelo admin${provision.grantFreeAccess ? ' com cortesia operacional' : ''}.`);
+    setDashboard((current) => ({
+      ...current,
+      students: current.students + (provision.segment === 'student' ? 1 : 0),
+      teachers: current.teachers + (provision.segment === 'teacher' ? 1 : 0),
+      companies: current.companies + (['company', 'sponsor', 'ambassador'].includes(provision.segment) ? 1 : 0),
+    }));
+
+    if (['sponsor', 'ambassador'].includes(provision.segment)) {
+      const operationalProfile = {
+        id: `operational-${createdAccount.id}`,
+        name: provision.name,
+        email: provision.email,
+        notificationEmail: provision.email,
+        department: getProvisionDepartment(provision.segment),
+        temporaryPassword: provision.password,
+        permissions: createdAccount.permissions,
+        profileType: segmentLabel,
+      };
+      setEmployees((current) => [operationalProfile, ...current]);
+      setSelectedEmployeeEmail(operationalProfile.email);
+    }
+
+    registerRequest({
+      name: provision.name,
+      email: provision.email,
+      password: provision.password,
+      passwordConfirm: provision.password,
+      city: provision.city,
+      state: provision.state,
+      bio: [
+        provision.companyName ? `Organização: ${provision.companyName}` : '',
+        provision.reason ? `Origem administrativa: ${provision.reason}` : '',
+        provision.grantFreeAccess ? 'Conta criada com cortesia administrativa.' : '',
+        ['sponsor', 'ambassador'].includes(provision.segment) ? `Perfil diferenciado: ${segmentLabel}.` : '',
+      ].filter(Boolean).join(' '),
+      acceptedTerms: true,
+      acceptedPrivacyPolicy: true,
+      termsVersion: TERMS_VERSION,
+      privacyVersion: PRIVACY_VERSION,
+    })
+      .then(() => setApiStatus(`${segmentLabel} registrada na API de autenticação.`))
+      .catch((error) => {
+        const message = String(error?.message ?? '');
+        setApiStatus(
+          message.includes('already registered')
+            ? `${segmentLabel} já existia na API; mantida no controle administrativo local.`
+            : `${segmentLabel} mantida localmente; API ainda não persistiu cortesia/perfil especial.`,
+        );
+      });
+
+    if (authToken && ['sponsor', 'ambassador'].includes(provision.segment)) {
+      platformAdminRequest('/staff', authToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: provision.name,
+          email: provision.email,
+          role: 'OPERATIONS',
+          permissions: getProvisionBackendPermissions(provision.segment),
+        }),
+      })
+        .then((staff) => {
+          setEmployees((current) =>
+            current.map((employee) =>
+              employee.id === `operational-${createdAccount.id}`
+                ? {
+                    ...employee,
+                    id: staff.id,
+                    email: staff.email,
+                    permissions: staff.permissions.map(
+                      (item) => permissionLabelByEnum[item.permission] ?? item.permission,
+                    ),
+                  }
+                : employee,
+            ),
+          );
+          setApiStatus(`${segmentLabel} também registrado como perfil operacional.`);
+        })
+        .catch(() => setApiStatus(`${segmentLabel} criado no controle local; API operacional não aceitou o perfil especial.`));
+    }
+
+    setAccountProvision({
+      segment: 'student',
+      name: '',
+      email: '',
+      city: '',
+      state: '',
+      password: '',
+      companyName: '',
+      grantFreeAccess: true,
+      reason: '',
+    });
   }
 
   function publishBenefit() {
@@ -15734,7 +15904,7 @@ function PlatformProfile({
               {platformView === 'maintenance' && 'Manutenção técnica'}
               {platformView === 'finance' && 'Financeiro da plataforma'}
               {platformView === 'benefits' && 'Benefícios e envios por email'}
-              {platformView === 'account' && 'Edição de conta'}
+              {platformView === 'account' && 'Contas e cortesias'}
               {platformView === 'employees' && 'Funcionários internos'}
             </strong>
           </div>
@@ -16107,24 +16277,148 @@ function PlatformProfile({
 
         {platformView === 'account' && (
           <div className="account-editor">
-            <label>
-              Conta em análise
-              <input
-                value={accountSearch}
-                onChange={(event) => setAccountSearch(event.target.value)}
-                placeholder="Nome, email ou documento"
-              />
-            </label>
-            <div className="platform-tabs">
-              <button className={selectedAccountType === 'student' ? 'active' : ''} onClick={() => editAccount('student')}>Pessoa Física</button>
-              <button className={selectedAccountType === 'teacher' ? 'active' : ''} onClick={() => editAccount('teacher')}>Pessoa Jurídica</button>
-              <button className={selectedAccountType === 'company' ? 'active' : ''} onClick={() => editAccount('company')}>Empresa</button>
-            </div>
-            <div className="admin-actions">
-              <button onClick={() => setNotice('Perfil atualizado com trilha de auditoria.')}>Salvar alterações</button>
-              <button onClick={blockAccount}>Bloquear conta</button>
-              <button onClick={() => setNotice('Solicitação de nova verificação documental enviada.')}>Solicitar documento</button>
-            </div>
+            <section className="module-card">
+              <strong>Provisionar conta pelo admin</strong>
+              <p>
+                Use para criar PF, PJ, Empresa ou liberar conta cortesia para funcionários,
+                patrocinadores e embaixadores. O acesso pago continua bloqueando contas comuns.
+              </p>
+              <form onSubmit={createProvisionedAccount}>
+                <div className="platform-tabs">
+                  {['student', 'teacher', 'company', 'sponsor', 'ambassador'].map((segment) => (
+                    <button
+                      className={accountProvision.segment === segment ? 'active' : ''}
+                      key={segment}
+                      type="button"
+                      onClick={() => updateAccountProvision('segment', segment)}
+                    >
+                      {getAccountTypeLabel(segment)}
+                    </button>
+                  ))}
+                </div>
+                <div className="benefit-admin-grid">
+                  <label>
+                    Nome da conta
+                    <input
+                      value={accountProvision.name}
+                      onChange={(event) => updateAccountProvision('name', event.target.value)}
+                      placeholder="Nome completo, marca ou empresa"
+                    />
+                  </label>
+                  <label>
+                    Email de login
+                    <input
+                      type="email"
+                      value={accountProvision.email}
+                      onChange={(event) => updateAccountProvision('email', event.target.value)}
+                      placeholder="email@dominio.com"
+                    />
+                  </label>
+                  <label>
+                    Cidade
+                    <input
+                      value={accountProvision.city}
+                      onChange={(event) => updateAccountProvision('city', event.target.value)}
+                      placeholder="Cidade"
+                    />
+                  </label>
+                  <label>
+                    Estado
+                    <input
+                      maxLength="2"
+                      value={accountProvision.state}
+                      onChange={(event) => updateAccountProvision('state', event.target.value.toUpperCase())}
+                      placeholder="UF"
+                    />
+                  </label>
+                  <label>
+                    Senha temporária
+                    <input
+                      type="password"
+                      data-protected-password="true"
+                      autoComplete="new-password"
+                      value={accountProvision.password}
+                      onChange={(event) => updateAccountProvision('password', event.target.value)}
+                      placeholder="Senha inicial segura"
+                    />
+                  </label>
+                  <label>
+                    Empresa ou vínculo
+                    <input
+                      value={accountProvision.companyName}
+                      onChange={(event) => updateAccountProvision('companyName', event.target.value)}
+                      placeholder="Empresa, patrocinador ou origem"
+                    />
+                  </label>
+                </div>
+                <label>
+                  Motivo da cortesia ou vínculo
+                  <textarea
+                    className="platform-textarea"
+                    value={accountProvision.reason}
+                    onChange={(event) => updateAccountProvision('reason', event.target.value)}
+                    placeholder="Ex: funcionário da empresa, patrocinador regional, embaixador autorizado..."
+                  />
+                </label>
+                <label className="terms-consent-check">
+                  <input
+                    type="checkbox"
+                    checked={accountProvision.grantFreeAccess}
+                    onChange={(event) => updateAccountProvision('grantFreeAccess', event.target.checked)}
+                  />
+                  <span>Liberar cortesia administrativa e não exigir pagamento inicial.</span>
+                </label>
+                <button type="submit">Criar conta pelo admin</button>
+              </form>
+              {['sponsor', 'ambassador'].includes(accountProvision.segment) && (
+                <p className="policy-note">
+                  Patrocinador e embaixador também entram como perfil operacional diferenciado,
+                  separado do perfil comum e parecido com funcionário.
+                </p>
+              )}
+            </section>
+
+            <section className="module-card">
+              <strong>Editar ou bloquear conta existente</strong>
+              <label>
+                Conta em análise
+                <input
+                  value={accountSearch}
+                  onChange={(event) => setAccountSearch(event.target.value)}
+                  placeholder="Nome, email ou documento"
+                />
+              </label>
+              <div className="platform-tabs">
+                <button className={selectedAccountType === 'student' ? 'active' : ''} onClick={() => editAccount('student')}>Pessoa Física</button>
+                <button className={selectedAccountType === 'teacher' ? 'active' : ''} onClick={() => editAccount('teacher')}>Pessoa Jurídica</button>
+                <button className={selectedAccountType === 'company' ? 'active' : ''} onClick={() => editAccount('company')}>Empresa</button>
+              </div>
+              <div className="admin-actions">
+                <button onClick={() => setNotice('Perfil atualizado com trilha de auditoria.')}>Salvar alterações</button>
+                <button onClick={blockAccount}>Bloquear conta</button>
+                <button onClick={() => setNotice('Solicitação de nova verificação documental enviada.')}>Solicitar documento</button>
+              </div>
+            </section>
+
+            <section className="module-card">
+              <strong>Contas criadas pelo admin</strong>
+              {provisionedAccounts.length === 0 ? (
+                <p className="empty-state">Nenhuma conta criada manualmente ainda.</p>
+              ) : provisionedAccounts.map((account) => (
+                <article className="platform-record" key={account.id}>
+                  <span>{getAccountTypeCode(account.segment)}</span>
+                  <div>
+                    <strong>{account.name}</strong>
+                    <small>{getAccountTypeLabel(account.segment)} - {account.email}</small>
+                    <small>{account.status} {account.companyName ? `- ${account.companyName}` : ''}</small>
+                    <small>{account.permissions.join(', ')}</small>
+                  </div>
+                  <button type="button" onClick={() => setNotice(`${account.name}: ${account.status}.`)}>
+                    Ver acesso
+                  </button>
+                </article>
+              ))}
+            </section>
           </div>
         )}
 
@@ -16154,7 +16448,7 @@ function PlatformProfile({
       <div className="platform-control-grid">
         <section className="module-card">
           <strong>Editar contas</strong>
-          <p>Acesso central para alterar contas de Pessoas Físicas, Pessoas Jurídicas e Empresas.</p>
+          <p>Acesso central para criar, alterar e liberar cortesia para PF, PJ, Empresa, patrocinador e embaixador.</p>
           <label>
             Buscar conta
             <input
@@ -16164,6 +16458,7 @@ function PlatformProfile({
             />
           </label>
           <div className="admin-actions">
+            <button onClick={() => setPlatformView('account')}>Criar conta/cortesia</button>
             <button onClick={() => editAccount('student')}>Editar Pessoa Física</button>
             <button onClick={() => editAccount('teacher')}>Editar Pessoa Jurídica</button>
             <button onClick={() => editAccount('company')}>Editar empresa</button>
@@ -16253,6 +16548,7 @@ function PlatformProfile({
             <span>{getInitials(employee.name)}</span>
             <div>
               <strong>{employee.name}</strong>
+              {employee.profileType && <small>Perfil: {employee.profileType}</small>}
               <small>{employee.email}</small>
               {employee.notificationEmail && <small>Notificações: {employee.notificationEmail}</small>}
               {employee.department && <small>Setor: {employee.department}</small>}
