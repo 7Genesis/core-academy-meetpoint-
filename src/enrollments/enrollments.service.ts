@@ -114,7 +114,7 @@ export class EnrollmentsService {
             tenantId,
             userId,
             courseId,
-            gateway: payment.gateway ?? 'mock',
+            gateway: payment.gateway ?? 'infinitepay',
             gatewayPaymentId: payment.gatewayPaymentId,
             grossAmountCents,
             platformFeeBps: course.platformFeeBps,

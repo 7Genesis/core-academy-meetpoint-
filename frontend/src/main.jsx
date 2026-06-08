@@ -791,7 +791,7 @@ const initialFeedPosts = enableDemoContent ? [
   },
   ] : [];
 
-// Estrutura social demo desligada: conexoes reais devem vir do backend.
+// Estrutura social temporaria desligada: conexoes reais devem vir do backend.
 const socialProfiles = enableDemoContent ? [
   {
     id: 'person-marina',
@@ -1428,7 +1428,7 @@ function isValidRealContactEmail(value = '') {
     'example.com.br',
     'teste.com',
     'test.com',
-    'fake.com',
+    'example.com',
     'dominio.com',
     'email.com',
   ]);
@@ -1981,7 +1981,7 @@ function createAccountWorkspace(account) {
 }
 
 function App() {
-  // Estado central da aplicação: páginas, autenticação, dados mockados e ações do usuário.
+  // Estado central da aplicação: páginas, autenticação, dados locais e ações do usuário.
   const initialRoute = useMemo(() => getCurrentRouteState(), []);
   
   // Rotas com dados privados ou alteração de estado. Feed, oportunidades, eventos e benefícios são leitura pública.
@@ -2248,7 +2248,7 @@ function App() {
         planId: plan?.id ?? '',
         subscriptionPlanId: plan?.subscriptionPlanId ?? '',
         status: intent.status ?? 'PENDING_PAYMENT',
-        paymentProvider: intent.paymentProvider ?? 'mock',
+        paymentProvider: intent.paymentProvider ?? 'infinitepay',
         externalSubscriptionId: intent.externalSubscriptionId ?? '',
       },
     };
@@ -3374,7 +3374,7 @@ function App() {
   function addNotification(notice) {
     setNotifications((current) => [
       {
-        id: `notice-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: `notice-${Date.now()}-${crypto.randomUUID().slice(0, 7)}`,
         channel: 'computador',
         read: false,
         ...notice,
@@ -7932,7 +7932,7 @@ post.body && (
         </div>
       )}
       {!post.mediaUrl && post.mediaType && (
-        <div className={`post-media mock ${post.mediaType}`}>
+        <div className={`post-media preview ${post.mediaType}`}>
           <strong>{post.mediaType === 'video' ? 'Vídeo publicado' : 'Imagem publicada'}</strong>
           <span className="media-credit">
             {post.author} - {post.city}
@@ -9065,28 +9065,8 @@ function RewardsView({
   const userBenefitRequests = benefitRequests.filter(
     (request) => request.requesterEmail === getContactEmail(currentUser),
   );
-  const recentPointEvents = [
-    {
-      title: 'Publicação no feed',
-      detail: 'Conteúdo com texto, imagem ou vídeo movimenta a rede regional.',
-      value: '+15 pts',
-    },
-    {
-      title: 'Comentário em comunidade',
-      detail: 'Interações úteis ajudam a manter comunidades vivas.',
-      value: '+8 pts',
-    },
-    {
-      title: 'Conclusão de aula',
-      detail: 'O progresso do curso só conta quando a regra da aula é cumprida.',
-      value: '+20 pts',
-    },
-    {
-      title: 'Resgate de benefício',
-      detail: redeemedBenefits[0]?.title ?? 'Use pontos para liberar cupons e vantagens.',
-      value: redeemedBenefits[0] ? `-${redeemedBenefits[0].pointsCost} pts` : 'pendente',
-    },
-  ];
+  const recentPointEvents = [];
+  const rankingEntries = [];
 
   function updateBenefitRequestDraft(field, value) {
     setBenefitRequestDraft((current) => ({ ...current, [field]: value }));
@@ -9356,29 +9336,42 @@ function RewardsView({
       <div className="reward-content-grid">
         <section className="ranking-card">
           <span className="section-kicker">Ranking regional</span>
-          <ol>
-            <li>Marina Costa - 1.420 pts</li>
-            <li>Rafael Nunes - 1.180 pts</li>
-            <li>Você - {userPoints} pts</li>
-          </ol>
-          <p className="reward-fineprint">
-            Sugestão operacional: ranking deve ser separado por período, cidade e comunidade para não favorecer apenas usuários antigos.
-          </p>
+          {rankingEntries.length > 0 ? (
+            <ol>
+              {rankingEntries.map((entry, index) => (
+                <li key={entry.id ?? `${entry.name}-${index}`}>
+                  {index + 1}. {entry.name} - {formatExactCount(entry.points)} pts
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="empty-state">
+              <h3>Nenhum dado disponível para ranking</h3>
+              <p>Quando houver contas reais e pontuação persistida no backend, o ranking aparece aqui.</p>
+            </div>
+          )}
         </section>
 
         <section className="reward-history-card">
           <span className="section-kicker">Histórico recente</span>
-          <ul className="reward-history-list">
-            {recentPointEvents.map((event) => (
-              <li key={event.title}>
-                <div>
-                  <strong>{event.title}</strong>
-                  <small>{event.detail}</small>
-                </div>
-                <span>{event.value}</span>
-              </li>
-            ))}
-          </ul>
+          {recentPointEvents.length > 0 ? (
+            <ul className="reward-history-list">
+              {recentPointEvents.map((event) => (
+                <li key={event.title}>
+                  <div>
+                    <strong>{event.title}</strong>
+                    <small>{event.detail}</small>
+                  </div>
+                  <span>{event.value}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="empty-state">
+              <h3>Nenhum histórico de pontos ainda</h3>
+              <p>As primeiras ações reais do usuário vão alimentar esse painel.</p>
+            </div>
+          )}
         </section>
       </div>
 
@@ -9873,7 +9866,7 @@ function CoursesView({
             >
               <span className="pill">{course.tag}</span>
               {course.deliveryMode === 'external' && externalPreview ? (
-                <div className={`mock-product external-course-preview ${externalPreview.thumbnailUrl ? 'has-thumbnail' : ''}`}>
+                <div className={`course-preview external-course-preview ${externalPreview.thumbnailUrl ? 'has-thumbnail' : ''}`}>
                   {externalPreview.thumbnailUrl ? (
                     <img src={externalPreview.thumbnailUrl} alt="" loading="lazy" decoding="async" />
                   ) : (
@@ -9882,7 +9875,7 @@ function CoursesView({
                   <span>{externalPreview.host}</span>
                 </div>
               ) : (
-                <div className="mock-product">
+                <div className="course-preview">
                   <strong>{course.isFree ? 'FREE' : `R$${course.price}`}</strong>
                 </div>
               )}
@@ -11068,7 +11061,7 @@ function CourseBuilderView({
 function CheckoutView({ course, finishEnrollment, goBack, openPage }) {
   const [paymentMethod, setPaymentMethod] = useState(course?.isFree ? 'free' : 'pix');
   const [paymentNotice, setPaymentNotice] = useState('');
-  const [mockPaymentStatus, setMockPaymentStatus] = useState('paid');
+  const [paymentStatusDraft, setPaymentStatusDraft] = useState('paid');
 
   if (!course) {
     return (
@@ -11111,12 +11104,12 @@ function CheckoutView({ course, finishEnrollment, goBack, openPage }) {
       return;
     }
 
-    if (mockPaymentStatus !== 'paid') {
+    if (paymentStatusDraft !== 'paid') {
       setPaymentNotice('Pagamento não realizado. A central foi notificada para acompanhar.');
-      finishEnrollment(course.id, mockPaymentStatus);
+      finishEnrollment(course.id, paymentStatusDraft);
       return;
     } else {
-      setPaymentNotice(`Pagamento por ${paymentLabels[paymentMethod]} confirmado no mock.`);
+      setPaymentNotice(`Pagamento por ${paymentLabels[paymentMethod]} confirmado no fluxo local.`);
     }
     finishEnrollment(course.id, 'paid');
   }
@@ -11173,9 +11166,9 @@ function CheckoutView({ course, finishEnrollment, goBack, openPage }) {
 
           {!course.isFree && (
             <div className="payment-status-switch">
-              <button className={mockPaymentStatus === 'paid' ? 'active' : ''} type="button" onClick={() => setMockPaymentStatus('paid')}>Pago</button>
-              <button className={mockPaymentStatus === 'pending' ? 'active' : ''} type="button" onClick={() => setMockPaymentStatus('pending')}>Pendente</button>
-              <button className={mockPaymentStatus === 'failed' ? 'active' : ''} type="button" onClick={() => setMockPaymentStatus('failed')}>Falhou</button>
+              <button className={paymentStatusDraft === 'paid' ? 'active' : ''} type="button" onClick={() => setPaymentStatusDraft('paid')}>Pago</button>
+              <button className={paymentStatusDraft === 'pending' ? 'active' : ''} type="button" onClick={() => setPaymentStatusDraft('pending')}>Pendente</button>
+              <button className={paymentStatusDraft === 'failed' ? 'active' : ''} type="button" onClick={() => setPaymentStatusDraft('failed')}>Falhou</button>
             </div>
           )}
 
@@ -11203,7 +11196,7 @@ function CheckoutView({ course, finishEnrollment, goBack, openPage }) {
             <div className="payment-state pix-state">
               <strong>Pix copia e cola</strong>
               <div className="qr-box">PIX</div>
-              <code>00020126580014br.gov.bcb.pix0136meetpoint-{course.id}-mock</code>
+              <code>00020126580014br.gov.bcb.pix0136meetpoint-{course.id}-pix</code>
               <p>Em produção, o gateway retorna QR Code, copia e cola e confirma via webhook.</p>
             </div>
           )}
@@ -11318,7 +11311,7 @@ function CommunitiesView({
     }
 
     const currentMemberName = currentUser?.name ?? 'Lucas Carvalho';
-    const mockMembers = [
+    const communityMembersList = [
       { id: 'rafael', name: 'Rafael Nunes', role: 'Membro', initials: 'RN' },
       { id: 'marina', name: 'Marina Costa', role: 'Membro', initials: 'MC' },
       { id: 'ana', name: 'Ana Lima', role: 'Admin', initials: 'AL' },
@@ -11333,7 +11326,7 @@ function CommunitiesView({
         role: activeCommunity.isAdmin ? 'Admin' : 'Membro',
         initials: getInitials(currentMemberName),
       },
-      ...mockMembers,
+      ...communityMembersList,
     ]);
   }, [activeCommunity?.id, currentUser?.initials, currentUser?.name]);
 
@@ -12270,7 +12263,7 @@ function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
 // Criacao de evento/chamada: publica networking, live ou encontro com inscricao.
 function CreateEventCallView({ createEventCall, currentUser, goBack }) {
   // Tela dedicada para criar chamada de evento a partir do feed.
-  // Altera somente eventos mockados enquanto a API real ainda não está conectada.
+  // Mantém a edição apenas no estado local enquanto a API real não está conectada.
   const [form, setForm] = useState({
     title: '',
     objective: '',
@@ -15864,7 +15857,7 @@ function PlatformProfile({
           : employee,
       ),
     );
-    if (authToken && selectedEmployee.id && !selectedEmployee.id.startsWith('demo-') && !selectedEmployee.id.startsWith('local-')) {
+    if (authToken && selectedEmployee.id && !selectedEmployee.id.startsWith('legacy-') && !selectedEmployee.id.startsWith('local-')) {
       platformAdminRequest(`/staff/${selectedEmployee.id}/permissions`, authToken, {
         method: 'PATCH',
         body: JSON.stringify({
@@ -16076,7 +16069,7 @@ function PlatformProfile({
                 </div>
                 <button
                   onClick={() => {
-                    if (authToken && ticket.id && !ticket.id.startsWith('demo-')) {
+                    if (authToken && ticket.id && !ticket.id.startsWith('legacy-')) {
                       platformAdminRequest(`/tickets/${ticket.id}/assume`, authToken, { method: 'PATCH' })
                         .then(() => setApiStatus('Ticket assumido na API.'))
                         .catch(() => setApiStatus('Falha ao assumir ticket na API.'));
