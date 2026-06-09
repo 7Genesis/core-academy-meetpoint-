@@ -15824,9 +15824,11 @@ function PlatformProfile({
           email: created.email ?? provision.email,
           linkedPeople: created.linkedPeople ?? accountPayload.linkedPeople,
         };
+        const sentCredentialEmails = created.credentialEmails?.filter((delivery) => delivery.sent).length ?? 0;
+        const totalCredentialEmails = created.credentialEmails?.length ?? 1;
         setProvisionedAccounts((current) => [nextAccount, ...current]);
         setNotice(
-          `${segmentLabel} ${provision.name} criada pelo admin com acesso liberado sem pagamento.`,
+          `${segmentLabel} ${provision.name} criada pelo admin com acesso liberado sem pagamento. Emails de acesso enviados: ${sentCredentialEmails}/${totalCredentialEmails}.`,
         );
         setApiStatus(`${segmentLabel} registrado na API administrativa.`);
       } else {

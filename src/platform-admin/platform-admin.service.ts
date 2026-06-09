@@ -10,6 +10,7 @@ import {
   SupportTicketStatus,
 } from '@prisma/client';
 import { hash } from 'bcryptjs';
+import * as nodemailer from 'nodemailer';
 import { DataMaskingService } from '../common/security/data-masking.service';
 import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -158,7 +159,7 @@ export class PlatformAdminService {
           tenantId: tenant.id,
           email: normalizedEmail,
           contactEmailVerifiedAt: new Date(),
-          password: dto.password,
+          password: passwordHash,
           passwordHash,
           role: segment === 'company' ? 'USER' : 'USER',
           status: AccountStatus.ACTIVE,
@@ -236,10 +237,27 @@ export class PlatformAdminService {
       return { user, linkedUsers };
     });
 
+    const credentialEmails = await this.sendManagedAccountCredentialEmails([
+      {
+        email: normalizedEmail,
+        name: normalizedName,
+        password: dto.password,
+        segment,
+      },
+      ...linkedPeople.map((person) => ({
+        email: person.email,
+        name: person.name,
+        password: person.password,
+        segment: 'employee' as const,
+        companyName: normalizedCompanyName || normalizedName,
+      })),
+    ]);
+
     return {
       ...result.user,
       email: this.dataMasking.maskEmail(result.user.email),
       accountSegment: segment,
+      credentialEmails,
       linkedPeople: result.linkedUsers.map((person) => ({
         ...person,
         email: this.dataMasking.maskEmail(person.email),
@@ -713,6 +731,121 @@ export class PlatformAdminService {
     return this.createAuditLog(tx, data);
   }
 
+  private async sendManagedAccountCredentialEmails(
+    recipients: Array<{
+      email: string;
+      name: string;
+      password: string;
+      segment: ManagedAccountSegment | 'employee';
+      companyName?: string;
+    }>,
+  ) {
+    const deliveries = await Promise.allSettled(
+      recipients.map((recipient) => this.sendManagedAccountCredentialEmail(recipient)),
+    );
+
+    return recipients.map((recipient, index) => ({
+      email: this.dataMasking.maskEmail(recipient.email),
+      sent: deliveries[index]?.status === 'fulfilled',
+    }));
+  }
+
+  private async sendManagedAccountCredentialEmail(recipient: {
+    email: string;
+    name: string;
+    password: string;
+    segment: ManagedAccountSegment | 'employee';
+    companyName?: string;
+  }) {
+    const host = process.env.SMTP_HOST?.trim();
+    const user = process.env.SMTP_USER?.trim();
+    const pass = process.env.SMTP_PASS?.trim();
+    const from =
+      process.env.SMTP_FROM?.trim() ||
+      process.env.MAIL_FROM?.trim() ||
+      'MeetPoint <no-reply@meetpoint.com>';
+
+    if (!host || !user || !pass) {
+      throw new Error('SMTP is not configured for managed account credential email');
+    }
+
+    const accessUrl =
+      process.env.MEETPOINT_FRONTEND_URL?.trim() ||
+      process.env.FRONTEND_URL?.trim() ||
+      'https://novalab.me/meetpoint/';
+    const segmentLabel =
+      recipient.segment === 'employee'
+        ? `pessoa vinculada${recipient.companyName ? ` a ${recipient.companyName}` : ''}`
+        : this.getManagedAccountSegmentLabel(recipient.segment);
+    const transport = nodemailer.createTransport({
+      host,
+      port: Number(process.env.SMTP_PORT ?? 587),
+      secure: process.env.SMTP_SECURE?.trim().toLowerCase() === 'true',
+      auth: { user, pass },
+    });
+
+    await transport.sendMail({
+      from,
+      to: recipient.email,
+      subject: 'Seu acesso MeetPoint foi criado',
+      text: [
+        `Ola, ${recipient.name}.`,
+        '',
+        `Uma conta ${segmentLabel} foi criada para voce pela administracao da MeetPoint.`,
+        '',
+        `Acesso: ${accessUrl}`,
+        `Login: ${recipient.email}`,
+        `Senha temporaria: ${recipient.password}`,
+        '',
+        'Por seguranca, altere a senha no primeiro acesso ou solicite troca ao suporte se nao reconhecer essa criacao.',
+        '',
+        'MeetPoint',
+      ].join('\n'),
+      html: this.buildManagedAccountCredentialEmailHtml({
+        accessUrl,
+        email: recipient.email,
+        name: recipient.name,
+        password: recipient.password,
+        segmentLabel,
+      }),
+    });
+  }
+
+  private getManagedAccountSegmentLabel(segment: ManagedAccountSegment) {
+    if (segment === 'student') return 'Pessoa Fisica';
+    if (segment === 'teacher') return 'Pessoa Juridica';
+    if (segment === 'company') return 'Empresa';
+    if (segment === 'sponsor') return 'Patrocinador';
+    return 'Embaixador';
+  }
+
+  private buildManagedAccountCredentialEmailHtml(params: {
+    accessUrl: string;
+    email: string;
+    name: string;
+    password: string;
+    segmentLabel: string;
+  }) {
+    return `
+      <div style="font-family:Arial,sans-serif;background:#fffaf0;padding:28px;color:#111318">
+        <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e6dcc5;border-radius:18px;padding:28px">
+          <div style="display:inline-flex;align-items:center;gap:10px;margin-bottom:20px">
+            <span style="display:inline-grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#f4ce55;font-weight:900">MP</span>
+            <strong style="font-size:22px">MeetPoint</strong>
+          </div>
+          <h1 style="font-size:26px;line-height:1.1;margin:0 0 12px">Seu acesso foi criado</h1>
+          <p style="font-size:16px;line-height:1.5;margin:0 0 18px">Ola, ${escapeHtml(params.name)}. Uma conta ${escapeHtml(params.segmentLabel)} foi criada para voce pela administracao da MeetPoint.</p>
+          <div style="background:#fff3c7;border:2px solid #111318;border-radius:14px;padding:18px;margin-bottom:18px">
+            <p style="margin:0 0 10px"><strong>Acesso:</strong> <a href="${escapeHtml(params.accessUrl)}">${escapeHtml(params.accessUrl)}</a></p>
+            <p style="margin:0 0 10px"><strong>Login:</strong> ${escapeHtml(params.email)}</p>
+            <p style="margin:0"><strong>Senha temporaria:</strong> ${escapeHtml(params.password)}</p>
+          </div>
+          <p style="font-size:14px;line-height:1.5;margin:0;color:#4b5563">Por seguranca, altere a senha no primeiro acesso ou solicite troca ao suporte se nao reconhecer essa criacao.</p>
+        </div>
+      </div>
+    `;
+  }
+
   private async createAuditLog(
     tx: Prisma.TransactionClient,
     data: {
@@ -787,4 +920,13 @@ export class PlatformAdminService {
         : ticket.assignedTo,
     };
   }
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
