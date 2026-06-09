@@ -27517,7 +27517,7 @@ html body header.topbar.topbar nav.main-window-nav {
   max-width: 760px !important;
   min-height: 54px !important;
   margin: 0 auto !important;
-  padding: 7px 12px 8px !important;
+  padding: 7px 14px 10px !important;
   border: 1px solid var(--mobile-dock-border, rgba(17, 19, 24, 0.12)) !important;
   border-radius: 0 0 22px 22px !important;
   background: rgba(255, 251, 240, 0.88) !important;
@@ -27542,12 +27542,12 @@ html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab 
   max-width: 132px !important;
   min-height: 39px !important;
   height: 39px !important;
-  margin-left: -1px !important;
+  margin-left: -7px !important;
   padding: 0 12px !important;
   gap: 7px !important;
   justify-content: center !important;
   border: 1px solid rgba(17, 19, 24, 0.12) !important;
-  border-radius: 16px 16px 10px 10px !important;
+  border-radius: 8px 8px 19px 19px !important;
   background: #fff8e4 !important;
   color: #20242c !important;
   -webkit-text-fill-color: currentColor !important;
@@ -27590,6 +27590,7 @@ html body header.topbar.topbar nav.main-window-nav > .mp-button.main-window-tab.
   justify-content: center !important;
   z-index: 3 !important;
   border-color: rgba(214, 169, 22, 0.48) !important;
+  border-radius: 8px 8px 22px 22px !important;
   background: #f4ce55 !important;
   color: #111318 !important;
   -webkit-text-fill-color: currentColor !important;
