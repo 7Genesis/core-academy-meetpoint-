@@ -33,6 +33,10 @@ export class RegisterDto {
   @MinLength(2)
   state!: string;
 
+  @IsString()
+  @MinLength(10)
+  phone!: string;
+
   @IsOptional()
   @IsString()
   profileImage?: string;
@@ -58,4 +62,8 @@ export class RegisterDto {
   @IsString()
   @MinLength(6)
   emailVerificationCode!: string;
+
+  @IsString()
+  @MinLength(6)
+  phoneVerificationCode!: string;
 }

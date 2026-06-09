@@ -130,6 +130,10 @@ model User {
   contactEmailHash String?
   contactEmailEncrypted String?
   contactEmailVerifiedAt DateTime?
+  /// Celular/WhatsApp real verificado. Usado para notificacoes e avisos operacionais.
+  contactPhoneHash String?
+  contactPhoneEncrypted String?
+  contactPhoneVerifiedAt DateTime?
   password  String
   passwordHash String?
   name      String @default("")
@@ -166,9 +170,11 @@ model User {
   @@unique([tenantId, email])
   @@unique([tenantId, emailHash])
   @@unique([tenantId, contactEmailHash])
+  @@unique([tenantId, contactPhoneHash])
   @@index([tenantId])
   @@index([emailHash])
   @@index([contactEmailHash])
+  @@index([contactPhoneHash])
   @@index([status])
   @@map("users")
 }
@@ -438,6 +444,22 @@ model EmailVerificationCode {
   @@index([purpose])
   @@index([expiresAt])
   @@map("email_verification_codes")
+}
+
+model PhoneVerificationCode {
+  id         String    @id @default(uuid()) @db.Uuid
+  phone      String
+  codeHash   String
+  purpose    String    @default("registration")
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone])
+  @@index([purpose])
+  @@index([expiresAt])
+  @@map("phone_verification_codes")
 }
 
 model PlatformStaff {

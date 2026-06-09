@@ -1362,6 +1362,13 @@ function requestEmailVerificationCodeRequest(payload = {}) {
   });
 }
 
+function requestPhoneVerificationCodeRequest(payload = {}) {
+  return apiRequest('/auth/phone-verification-code', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 function authenticatedUserRequest() {
   return apiRequest('/auth/me');
 }
@@ -1528,6 +1535,18 @@ function isValidRealContactEmail(value = '') {
   if (blockedDomains.has(domain)) return false;
   if (domain.endsWith('.invalid') || domain.endsWith('.test') || domain === 'localhost') return false;
   return true;
+}
+
+function normalizeSignupPhone(value = '') {
+  const digits = onlyDigits(value);
+  if (digits.length === 10 || digits.length === 11) return `+55${digits}`;
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return `+${digits}`;
+  if (digits.length >= 10 && digits.length <= 15) return `+${digits}`;
+  return '';
+}
+
+function isValidSignupPhone(value = '') {
+  return /^\+\d{10,15}$/.test(normalizeSignupPhone(value));
 }
 
 function getContactEmail(account) {
@@ -14441,6 +14460,7 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
     password: '',
     passwordConfirm: '',
     confirmationCode: '',
+    phoneConfirmationCode: '',
     city: '',
     state: '',
     bio: '',
@@ -14457,6 +14477,9 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
   const [isSendingEmailCode, setIsSendingEmailCode] = useState(false);
   const [emailCodeNotice, setEmailCodeNotice] = useState('');
   const [emailCodeRequested, setEmailCodeRequested] = useState(false);
+  const [isSendingPhoneCode, setIsSendingPhoneCode] = useState(false);
+  const [phoneCodeNotice, setPhoneCodeNotice] = useState('');
+  const [phoneCodeRequested, setPhoneCodeRequested] = useState(false);
   const [rgVerification, setRgVerification] = useState({
     status: 'idle',
     fileName: '',
@@ -14473,8 +14496,10 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
         : 'Cadastro de empresa';
   const publicName = form.displayName || form.tradeName || form.legalName || segmentTitle;
   const contactEmail = form.email.trim().toLowerCase();
+  const normalizedPhone = normalizeSignupPhone(form.phone);
   const platformAccessEmail = contactEmail;
   const showInvalidEmail = Boolean(contactEmail) && !isValidRealContactEmail(contactEmail);
+  const showInvalidPhone = Boolean(form.phone.trim()) && !isValidSignupPhone(form.phone);
 
   const normalizedCpf = onlyDigits(form.cpf);
   const normalizedCnpj = onlyDigits(form.cnpj);
@@ -14516,6 +14541,13 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
         : 'Informe a data de nascimento';
 
   function update(field, value) {
+    if (field === 'phone') {
+      setForm((current) => ({ ...current, phone: value, phoneConfirmationCode: '' }));
+      setPhoneCodeRequested(false);
+      setPhoneCodeNotice('');
+      return;
+    }
+
     setForm((current) => ({ ...current, [field]: value }));
     if (field === 'rg') {
       setRgVerification({ status: 'idle', fileName: '', notice: '' });
@@ -14622,6 +14654,7 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
   function validateBasicSignup() {
     if (!form.legalName.trim()) return 'Preencha o nome principal do cadastro.';
     if (!isValidRealContactEmail(contactEmail)) return 'Email inválido.';
+    if (!isValidSignupPhone(form.phone)) return 'Informe um WhatsApp válido com DDD.';
     if (!platformAccessEmail) return 'Email inválido.';
     if (!form.city.trim()) return 'Informe a cidade.';
     if (!form.state.trim()) return 'Informe o estado.';
@@ -14639,6 +14672,7 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
     if (isPfSignup && !rgIsAcceptedForSignup) return 'Envie uma foto ou PDF do RG/CNH para continuar.';
     if ((isPjSignup || isCompanySignup) && !validateCnpj(normalizedCnpj)) return 'Informe um CNPJ válido.';
     if (!form.confirmationCode.trim()) return 'Confirme o email com o código enviado pela MeetPoint.';
+    if (!form.phoneConfirmationCode.trim()) return 'Confirme o WhatsApp com o código enviado pela MeetPoint.';
     return '';
   }
 
@@ -14669,6 +14703,33 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
     }
   }
 
+  async function sendPhoneVerificationCode() {
+    if (!isValidSignupPhone(form.phone)) {
+      setPhoneCodeNotice('Informe um WhatsApp válido com DDD para enviar o código.');
+      return;
+    }
+
+    setIsSendingPhoneCode(true);
+    setPhoneCodeNotice('');
+
+    try {
+      const result = await requestPhoneVerificationCodeRequest({
+        phone: normalizedPhone,
+        name: (form.displayName || form.tradeName || form.legalName).trim(),
+      });
+      setPhoneCodeRequested(true);
+      setPhoneCodeNotice(
+        result.sent
+          ? `Código enviado por WhatsApp para ${result.phone}.`
+          : `Código gerado para teste local: ${result.developmentCode ?? ''}`.trim(),
+      );
+    } catch (error) {
+      setPhoneCodeNotice(getSignupFailureMessage(String(error?.message ?? ''), error));
+    } finally {
+      setIsSendingPhoneCode(false);
+    }
+  }
+
   async function continueToPayment(event) {
     event.preventDefault();
     if (isCreatingAccount) return;
@@ -14696,6 +14757,8 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
         termsVersion: TERMS_VERSION,
         privacyVersion: PRIVACY_VERSION,
         emailVerificationCode: form.confirmationCode.trim(),
+        phone: normalizedPhone,
+        phoneVerificationCode: form.phoneConfirmationCode.trim(),
       });
       localStorage.setItem(LAST_SIGNUP_LOGIN_KEY, contactEmail);
       localStorage.setItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY, contactEmail);
@@ -14719,7 +14782,14 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
   }
 
   function getSignupFailureMessage(message, error) {
+    if (message.includes('Phone is already registered')) return 'Este WhatsApp já está cadastrado.';
     if (message.includes('already registered')) return 'Este email já está cadastrado.';
+    if (message.includes('WhatsApp verification service is not configured')) {
+      return 'O envio por WhatsApp ainda não está configurado no servidor.';
+    }
+    if (message.includes('Phone verification') || message.includes('phone verification')) {
+      return 'Código de WhatsApp inválido, expirado ou bloqueado.';
+    }
     if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
       return 'Não foi possível conectar à API de cadastro. Verifique se o backend está ativo no cPanel e se a URL da API aponta para /meetpoint.';
     }
@@ -14843,6 +14913,9 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
                 placeholder="+55 11 99999-0000"
               />
             </label>
+            {showInvalidPhone && (
+              <p className="invalid-note">Informe um WhatsApp válido com DDD.</p>
+            )}
             <label>
               Cidade
               <input
@@ -15024,6 +15097,31 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
                 </p>
               )}
             </div>
+            <div className="signup-email-verification-box">
+              <label>
+                Código enviado por WhatsApp
+                <input
+                  value={form.phoneConfirmationCode}
+                  onChange={(event) => update('phoneConfirmationCode', event.target.value)}
+                  placeholder="Digite o código de 6 dígitos"
+                  maxLength="6"
+                  inputMode="numeric"
+                />
+              </label>
+              <div className="button-row">
+                <button type="button" className="light" onClick={sendPhoneVerificationCode} disabled={isSendingPhoneCode}>
+                  {isSendingPhoneCode ? 'Enviando...' : 'Enviar WhatsApp'}
+                </button>
+                <button type="button" className="light" onClick={sendPhoneVerificationCode}>
+                  Reenviar
+                </button>
+              </div>
+              {phoneCodeNotice && (
+                <p className={phoneCodeNotice.toLowerCase().includes('enviado') ? 'valid-note' : 'invalid-note'}>
+                  {phoneCodeNotice}
+                </p>
+              )}
+            </div>
             <div className="signup-privacy-consent-box">
               <strong>Termos e privacidade obrigatórios</strong>
               <p>
@@ -15068,7 +15166,7 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
                 {signupNotice}
               </p>
             )}
-            <button type="submit" disabled={isCreatingAccount || !emailCodeRequested}>
+            <button type="submit" disabled={isCreatingAccount || !emailCodeRequested || !phoneCodeRequested}>
               {isCreatingAccount ? 'Criando conta...' : 'Continuar para pagamento'}
             </button>
           </section>

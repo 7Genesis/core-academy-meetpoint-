@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { JwtPayload } from './jwt.strategy';
 import { JwtKeyService } from './jwt-key.service';
 import { TokenRevocationService } from './token-revocation.service';
@@ -17,6 +18,7 @@ import { LoginDto } from './dto/login.dto';
 import { PrivacyConsentDto } from './dto/privacy-consent.dto';
 import { RegisterDto } from './dto/register.dto';
 import { EmailVerificationService } from './email-verification.service';
+import { PhoneVerificationService } from './phone-verification.service';
 
 type ConsentMetadata = {
   ip?: string;
@@ -37,6 +39,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly subscriptionsService: SubscriptionsService,
     private readonly emailVerificationService: EmailVerificationService,
+    private readonly phoneVerificationService: PhoneVerificationService,
+    private readonly fieldEncryptionService: FieldEncryptionService,
   ) {}
 
   async register(dto: RegisterDto, consentMetadata: ConsentMetadata = {}) {
@@ -70,6 +74,22 @@ export class AuthService {
     if (existing) {
       throw new ConflictException('Email is already registered');
     }
+    const normalizedPhone = await this.phoneVerificationService.consumeRegistrationCode(
+      dto.phone,
+      dto.phoneVerificationCode,
+    );
+    const phoneHash = this.fieldEncryptionService.hashForLookup(normalizedPhone, 'phone');
+    const existingPhone = phoneHash
+      ? await this.prisma.user.findFirst({
+          where: { tenantId: tenant.id, contactPhoneHash: phoneHash },
+          select: { id: true },
+        })
+      : null;
+
+    if (existingPhone) {
+      throw new ConflictException('Phone is already registered');
+    }
+
     await this.emailVerificationService.consumeRegistrationCode(
       normalizedEmail,
       dto.emailVerificationCode,
@@ -81,6 +101,9 @@ export class AuthService {
         tenantId: tenant.id,
         email: normalizedEmail,
         contactEmailVerifiedAt: new Date(),
+        contactPhoneHash: phoneHash,
+        contactPhoneEncrypted: this.fieldEncryptionService.encryptString(normalizedPhone),
+        contactPhoneVerifiedAt: new Date(),
         password: passwordHash,
         passwordHash,
         role: 'USER',
@@ -259,6 +282,7 @@ export class AuthService {
     createdAt?: Date | null;
     updatedAt?: Date | null;
     lastLoginAt?: Date | null;
+    contactPhoneVerifiedAt?: Date | null;
   }) {
     return {
       sub: user.id,
@@ -275,6 +299,7 @@ export class AuthService {
       bio: stripAccountMetadata(user.bio),
       acceptedTerms: Boolean(user.acceptedTerms),
       acceptedPrivacyPolicy: Boolean(user.acceptedPrivacyPolicy),
+      phoneVerified: Boolean(user.contactPhoneVerifiedAt),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       lastLoginAt: user.lastLoginAt,

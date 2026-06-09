@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { EmailVerificationService } from './email-verification.service';
+import { PhoneVerificationService } from './phone-verification.service';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtKeyService } from './jwt-key.service';
 import { TokenRevocationService } from './token-revocation.service';
@@ -66,7 +67,14 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, EmailVerificationService, JwtStrategy, JwtKeyService, TokenRevocationService],
+  providers: [
+    AuthService,
+    EmailVerificationService,
+    PhoneVerificationService,
+    JwtStrategy,
+    JwtKeyService,
+    TokenRevocationService,
+  ],
   exports: [JwtKeyService, TokenRevocationService],
 })
 export class AuthModule {}
