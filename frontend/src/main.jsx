@@ -4755,6 +4755,7 @@ function App() {
               goBack={goBack}
               openPage={openPage}
               currentUser={currentUser}
+              authToken={authToken}
               onSubscriptionPending={markSubscriptionPaymentProcessing}
             />
           )}
@@ -9667,7 +9668,14 @@ function PartnersView({ leads, registerPartnerLead, openPage, openSupport }) {
   );
 }
 
-function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubscriptionPending }) {
+function SubscriptionCheckoutView({
+  plan,
+  goBack,
+  openPage,
+  currentUser,
+  authToken,
+  onSubscriptionPending,
+}) {
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [paymentNotice, setPaymentNotice] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -9689,6 +9697,17 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
       return;
     }
 
+    const checkoutAuthToken =
+      typeof authToken === 'string' && authToken.split('.').length === 3
+        ? authToken
+        : readSessionAuthToken();
+    if (!checkoutAuthToken || checkoutAuthToken.split('.').length !== 3) {
+      setPaymentNotice(
+        'Sua sessão de pagamento não possui autenticação válida. Saia da conta, entre novamente e tente pagar.',
+      );
+      return;
+    }
+
     const useCurrentTabCheckout =
       typeof window !== 'undefined' &&
       window.matchMedia?.('(max-width: 760px)').matches;
@@ -9706,6 +9725,7 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
     try {
       const intent = await subscriptionRequest('/checkout-intent', {
         method: 'POST',
+        token: checkoutAuthToken,
         body: JSON.stringify({
           planId: plan.subscriptionPlanId,
           paymentProvider: plan.price > 0 ? 'infinitepay' : 'internal',
