@@ -147,7 +147,7 @@ export class PlatformAdminService {
       [
         normalizedReason ? `Origem administrativa: ${normalizedReason}` : '',
         normalizedCompanyName ? `Organizacao: ${normalizedCompanyName}` : '',
-        dto.grantFreeAccess ? 'Conta criada com cortesia administrativa.' : '',
+        'Conta criada pelo admin com cortesia administrativa.',
       ].filter(Boolean).join(' '),
       segment,
     );
@@ -161,7 +161,7 @@ export class PlatformAdminService {
           password: dto.password,
           passwordHash,
           role: segment === 'company' ? 'USER' : 'USER',
-          status: dto.grantFreeAccess ? AccountStatus.ACTIVE : AccountStatus.PENDING_PAYMENT,
+          status: AccountStatus.ACTIVE,
           name: normalizedName,
           city: normalizedCity,
           state: normalizedState,
@@ -228,7 +228,7 @@ export class PlatformAdminService {
           segment,
           email: this.dataMasking.maskEmail(normalizedEmail),
           companyName: normalizedCompanyName,
-          grantFreeAccess: Boolean(dto.grantFreeAccess),
+          grantFreeAccess: true,
           linkedPeopleCount: linkedUsers.length,
         },
       });

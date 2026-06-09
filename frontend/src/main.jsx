@@ -15652,6 +15652,7 @@ function PlatformProfile({
   const permissionLabelByEnum = Object.fromEntries(
     permissionOptions.map(([, label, backend]) => [backend, label]),
   );
+  const managedProvisionSegments = ['student', 'teacher', 'company'];
   const directoryData = {
     companies: [],
     students: [],
@@ -15738,6 +15739,11 @@ function PlatformProfile({
     setAccountProvision((current) => ({ ...current, [field]: value }));
   }
 
+  function openManagedAccountProvision() {
+    setPlatformView('account');
+    setNotice('Aba aberta: crie PF, PJ ou Empresa com acesso liberado pelo admin, sem cobrança inicial.');
+  }
+
   function getProvisionPermissions(segment) {
     if (segment === 'sponsor') return ['Divulgar benefícios', 'Patrocínios', 'Relacionamento comercial'];
     if (segment === 'ambassador') return ['Divulgar MeetPoint', 'Indicações', 'Comunidades e eventos'];
@@ -15788,7 +15794,7 @@ function PlatformProfile({
     const createdAccount = {
       id: `provision-${Date.now()}`,
       ...provision,
-      status: provision.grantFreeAccess ? 'Cortesia ativa' : 'Criada sem cortesia',
+      status: 'Cortesia ativa',
       permissions: getProvisionPermissions(provision.segment),
       createdAt: new Date().toISOString(),
     };
@@ -15801,7 +15807,7 @@ function PlatformProfile({
       password: provision.password,
       companyName: provision.companyName || provision.name,
       reason: provision.reason,
-      grantFreeAccess: provision.grantFreeAccess,
+      grantFreeAccess: true,
       linkedPeople: parseLinkedPeopleProvision(provision.linkedPeopleText),
     };
 
@@ -15820,13 +15826,13 @@ function PlatformProfile({
         };
         setProvisionedAccounts((current) => [nextAccount, ...current]);
         setNotice(
-          `${segmentLabel} ${provision.name} criada pelo admin${provision.grantFreeAccess ? ' com cortesia operacional' : ''}.`,
+          `${segmentLabel} ${provision.name} criada pelo admin com acesso liberado sem pagamento.`,
         );
         setApiStatus(`${segmentLabel} registrado na API administrativa.`);
       } else {
         setProvisionedAccounts((current) => [createdAccount, ...current]);
         setNotice(
-          `${segmentLabel} ${provision.name} criada localmente${provision.grantFreeAccess ? ' com cortesia operacional' : ''}.`,
+          `${segmentLabel} ${provision.name} criada localmente com acesso liberado sem pagamento.`,
         );
         setApiStatus(`${segmentLabel} criado no modo visual sem API administrativa.`);
       }
@@ -15869,7 +15875,7 @@ function PlatformProfile({
       password: '',
       companyName: '',
       linkedPeopleText: '',
-      grantFreeAccess: true,
+        grantFreeAccess: true,
       reason: '',
     });
   }
@@ -16068,6 +16074,13 @@ function PlatformProfile({
 
       <div className="support-grid">
         <section className="module-card">
+          <strong>Criar PF, PJ ou Empresa</strong>
+          <p>Cria perfis reais pelo admin com acesso liberado, sem passar pelo pagamento inicial.</p>
+          <button onClick={openManagedAccountProvision}>
+            Criar conta pelo admin
+          </button>
+        </section>
+        <section className="module-card">
           <strong>Suporte de IA</strong>
           <p>Responde dúvidas simples, orienta pessoas e sugere respostas para PJs e empresas.</p>
           <button
@@ -16142,6 +16155,7 @@ function PlatformProfile({
         <button onClick={() => openDirectory('companies')}>Ver empresas cadastradas</button>
         <button onClick={() => openDirectory('students')}>Ver Pessoas Físicas</button>
         <button onClick={() => openDirectory('teachers')}>Ver Pessoas Jurídicas</button>
+        <button onClick={openManagedAccountProvision}>Criar PF/PJ/Empresa</button>
         <button
           onClick={() => {
             setHumanQueueOpen(true);
@@ -16175,7 +16189,7 @@ function PlatformProfile({
               {platformView === 'maintenance' && 'Manutenção técnica'}
               {platformView === 'finance' && 'Financeiro da plataforma'}
               {platformView === 'benefits' && 'Benefícios e envios por email'}
-              {platformView === 'account' && 'Contas e cortesias'}
+              {platformView === 'account' && 'Criar PF, PJ ou Empresa'}
               {platformView === 'employees' && 'Funcionários internos'}
             </strong>
           </div>
@@ -16491,12 +16505,12 @@ function PlatformProfile({
             <section className="module-card">
               <strong>Provisionar conta pelo admin</strong>
               <p>
-                Use para criar PF, PJ, Empresa ou liberar conta cortesia para funcionários,
-                patrocinadores e embaixadores. O acesso pago continua bloqueando contas comuns.
+                Use esta aba para criar Pessoa Física, Pessoa Jurídica ou Empresa com acesso
+                liberado pelo admin. Essas contas não passam pelo pagamento inicial.
               </p>
               <form onSubmit={createProvisionedAccount}>
                 <div className="platform-tabs">
-                  {['student', 'teacher', 'company', 'sponsor', 'ambassador'].map((segment) => (
+                  {managedProvisionSegments.map((segment) => (
                     <button
                       className={accountProvision.segment === segment ? 'active' : ''}
                       key={segment}
@@ -16558,7 +16572,7 @@ function PlatformProfile({
                     <input
                       value={accountProvision.companyName}
                       onChange={(event) => updateAccountProvision('companyName', event.target.value)}
-                      placeholder="Empresa, patrocinador ou origem"
+                      placeholder="Empresa, vínculo ou origem"
                     />
                   </label>
                 </div>
@@ -16582,25 +16596,14 @@ function PlatformProfile({
                     className="platform-textarea"
                     value={accountProvision.reason}
                     onChange={(event) => updateAccountProvision('reason', event.target.value)}
-                    placeholder="Ex: funcionário da empresa, patrocinador regional, embaixador autorizado..."
+                    placeholder="Ex: funcionário autorizado, cortesia comercial, conta criada pela administração..."
                   />
                 </label>
-                <label className="terms-consent-check">
-                  <input
-                    type="checkbox"
-                    checked={accountProvision.grantFreeAccess}
-                    onChange={(event) => updateAccountProvision('grantFreeAccess', event.target.checked)}
-                  />
-                  <span>Liberar cortesia administrativa e não exigir pagamento inicial.</span>
-                </label>
+                <p className="valid-note">
+                  Acesso liberado pelo admin: essa conta será criada ativa e não precisará pagar a assinatura inicial.
+                </p>
                 <button type="submit">Criar conta pelo admin</button>
               </form>
-              {['sponsor', 'ambassador'].includes(accountProvision.segment) && (
-                <p className="policy-note">
-                  Patrocinador e embaixador também entram como perfil operacional diferenciado,
-                  separado do perfil comum e parecido com funcionário.
-                </p>
-              )}
             </section>
 
             <section className="module-card">
