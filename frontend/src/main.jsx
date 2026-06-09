@@ -1254,6 +1254,7 @@ async function apiRequest(path, options = {}) {
         const error = new Error(parseApiErrorMessage(errorText) || `Erro HTTP ${response.status}`);
         error.status = response.status;
         error.url = targetUrl;
+        error.responseText = errorText;
         if ([404, 405].includes(response.status) && API_BASE_URLS.length > 1) {
           lastError = error;
           continue;
@@ -1292,6 +1293,15 @@ function parseApiErrorMessage(errorText = '') {
     if (parsed.error && typeof parsed.error === 'string') return parsed.error;
     if (parsed.response?.message && typeof parsed.response.message === 'string') {
       return parsed.response.message;
+    }
+    if (parsed.details?.message && typeof parsed.details.message === 'string') {
+      return parsed.details.message;
+    }
+    if (parsed.infinitePay?.body?.error && typeof parsed.infinitePay.body.error === 'string') {
+      return parsed.infinitePay.body.error;
+    }
+    if (parsed.infinitePay?.body?.message && typeof parsed.infinitePay.body.message === 'string') {
+      return parsed.infinitePay.body.message;
     }
     return errorText;
   } catch {
@@ -9701,8 +9711,9 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
       setPaymentNotice('Cadastro de embaixador enviado para validação comercial. A liberação depende de aprovação.');
     } catch (error) {
       checkoutWindow?.close();
+      const statusHint = error.status ? ` (HTTP ${error.status})` : '';
       setPaymentNotice(
-        `Não foi possível abrir o checkout InfinitePay: ${error.message}`,
+        `Não foi possível abrir o checkout InfinitePay${statusHint}: ${error.message}`,
       );
     } finally {
       setCheckoutLoading(false);

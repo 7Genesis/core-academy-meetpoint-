@@ -57,10 +57,6 @@ export type InfinitePayLinkResponse = {
   invoice_slug?: string;
   slug?: string;
   url?: string;
-  checkout_url?: string;
-  checkoutUrl?: string;
-  payment_url?: string;
-  link?: string;
   data?: InfinitePayLinkResponse;
 };
 
@@ -659,15 +655,8 @@ export class SubscriptionsService {
     const endpoint =
       process.env.INFINITEPAY_LINKS_ENDPOINT ??
       'https://api.checkout.infinitepay.io/links';
-    const directUrl = buildDirectInfinitePayCheckoutUrl({
-      handle,
-      items: [item],
-      orderNsu: params.orderNsu,
-      redirectUrl,
-      webhookUrl,
-    });
-    let raw: InfinitePayLinkResponse = {};
-    let url = directUrl;
+    let raw: InfinitePayLinkResponse;
+    let url: string;
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -677,33 +666,36 @@ export class SubscriptionsService {
       raw = await parseJsonResponse<InfinitePayLinkResponse>(response);
       if (response.ok) {
         const linkData = raw.data ?? raw;
-        url =
-          linkData.url ??
-          linkData.checkout_url ??
-          linkData.checkoutUrl ??
-          linkData.payment_url ??
-          linkData.link ??
-          directUrl;
-      } else {
-        console.warn(
-          JSON.stringify({
-            message: 'InfinitePay subscription links endpoint failed; using direct checkout URL.',
-            infinitePayError: {
+        url = linkData.url ?? '';
+        if (!optionalUrl(url)) {
+          throw new ServiceUnavailableException({
+            message: 'InfinitePay did not return a valid checkout URL',
+            infinitePay: {
               endpoint,
               status: response.status,
-              statusText: response.statusText,
               body: raw,
             },
-          }),
-        );
+          });
+        }
+      } else {
+        throw new ServiceUnavailableException({
+          message: 'InfinitePay checkout link creation failed',
+          infinitePay: {
+            endpoint,
+            status: response.status,
+            statusText: response.statusText,
+            body: raw,
+          },
+        });
       }
     } catch (error) {
-      console.warn(
-        JSON.stringify({
-          message: 'InfinitePay subscription links endpoint unavailable; using direct checkout URL.',
-          infinitePayError: normalizeIntegrationError(error),
-        }),
-      );
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new ServiceUnavailableException({
+        message: 'InfinitePay checkout link creation request failed',
+        details: normalizeIntegrationError(error),
+      });
     }
 
     return {
@@ -996,23 +988,6 @@ function getInfinitePaySubscriptionWebhookUrl() {
   }
 
   return 'https://meetpoint-api-y46s.onrender.com/subscriptions/infinitepay-webhook';
-}
-
-function buildDirectInfinitePayCheckoutUrl(params: {
-  handle: string;
-  items: InfinitePayCheckoutItem[];
-  orderNsu: string;
-  redirectUrl: string;
-  webhookUrl: string;
-}) {
-  const checkoutUrl = new URL(
-    `https://checkout.infinitepay.io/${encodeURIComponent(params.handle)}`,
-  );
-  checkoutUrl.searchParams.set('items', JSON.stringify(params.items));
-  checkoutUrl.searchParams.set('order_nsu', params.orderNsu);
-  checkoutUrl.searchParams.set('redirect_url', params.redirectUrl);
-  checkoutUrl.searchParams.set('webhook_url', params.webhookUrl);
-  return checkoutUrl.toString();
 }
 
 function normalizeIntegrationError(error: unknown) {
