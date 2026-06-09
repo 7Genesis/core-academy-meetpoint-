@@ -20,6 +20,7 @@ import { CreateManagedAccountDto } from './dto/create-managed-account.dto';
 import { CreatePlatformFeePayoutDto } from './dto/create-platform-fee-payout.dto';
 import { CreatePlatformStaffDto } from './dto/create-platform-staff.dto';
 import { CreateSupportTicketDto } from './dto/create-support-ticket.dto';
+import { ReplySupportTicketDto } from './dto/reply-support-ticket.dto';
 import { UpdatePlatformStaffPermissionsDto } from './dto/update-platform-staff-permissions.dto';
 import { UpdateSupportTicketStatusDto } from './dto/update-support-ticket-status.dto';
 import { PlatformAdminGuard } from './platform-admin.guard';
@@ -124,6 +125,20 @@ export class PlatformAdminController {
   @PlatformPermissions(PlatformPermission.SUPPORT_WRITE)
   assumeTicket(@Req() request: PlatformRequest, @Param('id') id: string) {
     return this.platformAdminService.assumeTicket(id, getActorStaffId(request));
+  }
+
+  @Post('tickets/:id/reply')
+  @PlatformPermissions(PlatformPermission.SUPPORT_WRITE)
+  replyTicket(
+    @Req() request: PlatformRequest,
+    @Param('id') id: string,
+    @Body() dto: ReplySupportTicketDto,
+  ) {
+    return this.platformAdminService.replyTicket(
+      id,
+      dto,
+      getActorStaffId(request),
+    );
   }
 
   @Patch('tickets/:id/status')

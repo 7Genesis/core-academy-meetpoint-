@@ -4396,6 +4396,7 @@ function App() {
             <MpButton
               className="signup-top-button"
               size="top"
+              variant="soft"
               onClick={() => openPage('profile', { signupChoice: true })}
             >
               Cadastrar
@@ -13282,6 +13283,7 @@ function ProfileView({
         {currentUser?.segment === 'employee' && <EmployeeProfile currentUser={currentUser} />}
         {currentUser?.segment === 'platform' && (
           <PlatformProfile
+            addNotification={addNotification}
             authToken={authToken}
             benefits={benefits}
             createBenefit={createBenefit}
@@ -13958,7 +13960,13 @@ function OperationalProfileHeader({ currentUser, authToken }) {
   );
 }
 
-function OperationalSupportConsole({ mode = 'employee', employees = [], tickets = [] }) {
+function OperationalSupportConsole({
+  authToken,
+  mode = 'employee',
+  employees = [],
+  tickets = [],
+  onSupportReply,
+}) {
   const defaultInternal = employees.length
     ? employees.map((employee) => ({
         id: employee.id ?? employee.email,
@@ -13981,6 +13989,7 @@ function OperationalSupportConsole({ mode = 'employee', employees = [], tickets 
   ];
   const [activeChannelId, setActiveChannelId] = useState(channels[0]?.id ?? '');
   const [draft, setDraft] = useState('');
+  const [replyStatus, setReplyStatus] = useState('');
   const [messages, setMessages] = useState(() =>
     Object.fromEntries(
       channels.map((channel) => [
@@ -14001,10 +14010,36 @@ function OperationalSupportConsole({ mode = 'employee', employees = [], tickets 
   const activeChannel = channels.find((channel) => channel.id === activeChannelId) ?? channels[0];
   const activeMessages = messages[activeChannel?.id] ?? [];
 
-  function sendOperationalMessage(event) {
+  useEffect(() => {
+    if (!channels.length) return;
+    setActiveChannelId((current) =>
+      channels.some((channel) => channel.id === current) ? current : channels[0].id,
+    );
+    setMessages((current) => {
+      const next = { ...current };
+      channels.forEach((channel) => {
+        if (!next[channel.id]) {
+          next[channel.id] = [
+            {
+              id: `${channel.id}-initial`,
+              author: channel.type === 'Interno' ? channel.name : 'Solicitante',
+              body: channel.type === 'Interno'
+                ? 'Canal operacional aberto para alinhamento de atendimento.'
+                : channel.meta,
+              time: 'Agora',
+            },
+          ];
+        }
+      });
+      return next;
+    });
+  }, [channels.map((channel) => channel.id).join('|')]);
+
+  async function sendOperationalMessage(event) {
     event.preventDefault();
     const body = draft.trim();
     if (!body || !activeChannel) return;
+    setReplyStatus('');
     setMessages((current) => ({
       ...current,
       [activeChannel.id]: [
@@ -14018,6 +14053,29 @@ function OperationalSupportConsole({ mode = 'employee', employees = [], tickets 
       ],
     }));
     setDraft('');
+
+    if (activeChannel.type !== 'Suporte') return;
+
+    if (!authToken || !activeChannel.id || String(activeChannel.id).startsWith('legacy-')) {
+      setReplyStatus('Resposta registrada localmente. Conecte a API administrativa para notificar a pessoa.');
+      onSupportReply?.(activeChannel, body, { notification: { sent: false } });
+      return;
+    }
+
+    try {
+      const result = await platformAdminRequest(`/tickets/${activeChannel.id}/reply`, authToken, {
+        method: 'POST',
+        body: JSON.stringify({ message: body }),
+      });
+      setReplyStatus(
+        result.notification?.sent
+          ? 'Resposta enviada. A pessoa recebeu notificação por email.'
+          : 'Resposta registrada. SMTP não configurado ou ticket sem email de solicitante.',
+      );
+      onSupportReply?.(activeChannel, body, result);
+    } catch (error) {
+      setReplyStatus(String(error?.message ?? 'Falha ao notificar o solicitante.'));
+    }
   }
 
   return (
@@ -14075,6 +14133,7 @@ function OperationalSupportConsole({ mode = 'employee', employees = [], tickets 
             />
             <button type="submit">Enviar</button>
           </form>
+          {replyStatus && <p className="support-reply-status">{replyStatus}</p>}
         </section>
       </div>
       )}
@@ -15575,6 +15634,7 @@ function EmployeeProfile({ currentUser }) {
 
 // Admin central: operacao da plataforma, suporte, funcionarios, beneficios e conciliacao financeira.
 function PlatformProfile({
+  addNotification,
   authToken,
   benefits,
   createBenefit,
@@ -16057,7 +16117,27 @@ function PlatformProfile({
       </p>
       <p className="policy-note">{apiStatus}</p>
 
-      <OperationalSupportConsole mode="platform" employees={employees} tickets={ticketSource} />
+      <OperationalSupportConsole
+        authToken={authToken}
+        mode="platform"
+        employees={employees}
+        tickets={ticketSource}
+        onSupportReply={(channel, message, result) => {
+          const emailSent = result?.notification?.sent;
+          setNotice(
+            emailSent
+              ? `Resposta enviada para ${channel.name}. A pessoa foi notificada por email.`
+              : `Resposta registrada para ${channel.name}. Configure SMTP para notificar por email automaticamente.`,
+          );
+          addNotification?.({
+            title: emailSent
+              ? `Suporte respondeu ${channel.name}`
+              : `Resposta registrada para ${channel.name}`,
+            message,
+            category: 'support',
+          });
+        }}
+      />
 
       <div className="platform-metrics">
         <article><strong>{dashboard.students}</strong><span>Pessoas Físicas</span></article>

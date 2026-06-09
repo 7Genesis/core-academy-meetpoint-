@@ -281,8 +281,9 @@ button:disabled {
   padding: 0 14px;
   border: 2px solid var(--ink);
   border-radius: 8px;
-  color: #fff;
-  background: var(--charcoal);
+  color: #111318;
+  -webkit-text-fill-color: #111318;
+  background: #fff3c7;
   font-weight: 950;
   box-shadow: 4px 4px 0 rgba(13, 15, 20, 0.22);
 }
@@ -6583,8 +6584,9 @@ html[data-theme] body .created-courses-section.created-courses-section p.empty-s
   height: 36px;
   border-radius: 999px !important;
   border: 1px solid rgba(17, 19, 24, 0.12) !important;
-  background: var(--charcoal) !important;
-  color: #fff !important;
+  background: #fff3c7 !important;
+  color: #111318 !important;
+  -webkit-text-fill-color: #111318 !important;
   box-shadow: 0 12px 24px rgba(17, 19, 24, 0.14) !important;
 }
 
@@ -21816,7 +21818,7 @@ html[data-theme="dark"] :is(.course-detail-curriculum article, .policy-note) sma
 }
 
 /* Botao padrao: reduz transparencia indevida e define estados previsiveis. */
-button:not(.brand-button):not(.main-window-tab):not(.account-button):not(.private-chat-fab):not(.support-fab):not(.modal-close-button):not(.options-trigger):not(.product-card):not(.community-item):not(.social-post-author):not(.method-card):not(.signup-method-link):not(.job-card):not(.benefit-card):not(.event-card):not(.reward-action-card):not(.created-course-card):not(.issue-button):not(.opportunity-choice):not(.contact-method-choice):not(.feed-shortcut-card):not(.people-discovery-trigger):not(.feed-mini-row):not(.private-chat-tab-button):not(.private-conversation-button):not(.feed-side-card-button):not(.person-open-button):not(.person-action-button):not(.people-chip-button):not(.profile-stat-card):not(.composer-media-button):not(.composer-event-button):not(.social-action-button):not(.reaction-summary-button):not(.comment-count-button):not(.reaction-picker-button):not(.support-mode-button):not(.support-close-button):not(.support-submit-button):not(.support-escalate-button):not(.dock-side-button):not(.dock-item):not(.billing-cycle-button),
+button:not(.brand-button):not(.main-window-tab):not(.account-button):not(.logout-button):not(.signup-top-button):not(.back-button):not(.private-chat-fab):not(.support-fab):not(.modal-close-button):not(.options-trigger):not(.product-card):not(.community-item):not(.social-post-author):not(.method-card):not(.signup-method-link):not(.job-card):not(.benefit-card):not(.event-card):not(.reward-action-card):not(.created-course-card):not(.issue-button):not(.opportunity-choice):not(.contact-method-choice):not(.feed-shortcut-card):not(.people-discovery-trigger):not(.feed-mini-row):not(.private-chat-tab-button):not(.private-conversation-button):not(.feed-side-card-button):not(.person-open-button):not(.person-action-button):not(.people-chip-button):not(.profile-stat-card):not(.composer-media-button):not(.composer-event-button):not(.social-action-button):not(.reaction-summary-button):not(.comment-count-button):not(.reaction-picker-button):not(.support-mode-button):not(.support-close-button):not(.support-submit-button):not(.support-escalate-button):not(.dock-side-button):not(.dock-item):not(.billing-cycle-button),
 .button-link,
 .plan-card-actions a,
 .plan-card-actions button {
@@ -23035,7 +23037,7 @@ body {
 }
 
 /* Botoes: primario escuro tem letra bege; botao claro tem letra escura. */
-button:not(.brand-button):not(.main-window-tab):not(.account-button):not(.private-chat-fab):not(.support-fab):not(.product-card):not(.community-item):not(.method-card):not(.job-card):not(.benefit-card):not(.event-card):not(.reward-action-card):not(.social-post-author):not(.signup-method-link):not(.modal-close-button):not(.created-course-card):not(.issue-button):not(.opportunity-choice):not(.contact-method-choice):not(.feed-shortcut-card):not(.people-discovery-trigger):not(.feed-mini-row):not(.private-chat-tab-button):not(.private-conversation-button):not(.feed-side-card-button):not(.person-open-button):not(.person-action-button):not(.people-chip-button):not(.profile-stat-card):not(.composer-media-button):not(.composer-event-button):not(.social-action-button):not(.reaction-summary-button):not(.comment-count-button):not(.reaction-picker-button):not(.support-mode-button):not(.support-close-button):not(.support-submit-button):not(.support-escalate-button):not(.dock-side-button):not(.dock-item):not(.billing-cycle-button),
+button:not(.brand-button):not(.main-window-tab):not(.account-button):not(.logout-button):not(.signup-top-button):not(.back-button):not(.private-chat-fab):not(.support-fab):not(.product-card):not(.community-item):not(.method-card):not(.job-card):not(.benefit-card):not(.event-card):not(.reward-action-card):not(.social-post-author):not(.signup-method-link):not(.modal-close-button):not(.created-course-card):not(.issue-button):not(.opportunity-choice):not(.contact-method-choice):not(.feed-shortcut-card):not(.people-discovery-trigger):not(.feed-mini-row):not(.private-chat-tab-button):not(.private-conversation-button):not(.feed-side-card-button):not(.person-open-button):not(.person-action-button):not(.people-chip-button):not(.profile-stat-card):not(.composer-media-button):not(.composer-event-button):not(.social-action-button):not(.reaction-summary-button):not(.comment-count-button):not(.reaction-picker-button):not(.support-mode-button):not(.support-close-button):not(.support-submit-button):not(.support-escalate-button):not(.dock-side-button):not(.dock-item):not(.billing-cycle-button),
 .button-link:not(.light) {
   background: var(--primary) !important;
   color: var(--primary-foreground) !important;
@@ -28109,4 +28111,150 @@ html body .payment-card .billing-options > button :is(strong, small) {
     padding-inline: 4px !important;
     gap: 3px !important;
   }
+}
+
+/* Ajuste final solicitado: abas superiores interligadas e botoes mobile claros/legiveis. */
+html body .support-reply-status {
+  margin: 8px 0 0 !important;
+  padding: 10px 12px !important;
+  border: 1px solid rgba(17, 19, 24, 0.14) !important;
+  border-radius: 12px !important;
+  background: #e3f8ec !important;
+  color: #20242c !important;
+  -webkit-text-fill-color: #20242c !important;
+  font-weight: 850 !important;
+}
+
+@media (min-width: 761px) {
+  html body header.topbar.topbar nav.main-window-nav.main-window-nav {
+    max-width: min(1040px, calc(100vw - 456px)) !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    align-items: flex-start !important;
+    padding: 0 8px 8px !important;
+    border-radius: 0 0 22px 22px !important;
+    overflow: visible !important;
+  }
+
+  html body header.topbar.topbar nav.main-window-nav.main-window-nav > .mp-button.main-window-tab {
+    height: 42px !important;
+    min-height: 42px !important;
+    margin-left: -2px !important;
+    padding-inline: clamp(4px, 0.58vw, 12px) !important;
+    border-radius: 0 0 18px 18px !important;
+    background: #fff8e4 !important;
+    color: #20242c !important;
+    -webkit-text-fill-color: #20242c !important;
+    transform-origin: center top !important;
+  }
+
+  html body header.topbar.topbar nav.main-window-nav.main-window-nav > .mp-button.main-window-tab:first-child {
+    margin-left: 0 !important;
+    border-bottom-left-radius: 22px !important;
+  }
+
+  html body header.topbar.topbar nav.main-window-nav.main-window-nav > .mp-button.main-window-tab:last-child {
+    border-bottom-right-radius: 22px !important;
+  }
+
+  html body header.topbar.topbar nav.main-window-nav.main-window-nav > .mp-button.main-window-tab.active,
+  html body header.topbar.topbar nav.main-window-nav.main-window-nav > .mp-button.main-window-tab[aria-current="page"] {
+    background: #f4ce55 !important;
+    color: #111318 !important;
+    -webkit-text-fill-color: #111318 !important;
+    transform: translateY(5px) scale(1.055) !important;
+    border-radius: 0 0 22px 22px !important;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1120px) {
+  html body header.topbar.topbar nav.main-window-nav.main-window-nav {
+    max-width: calc(100vw - 400px) !important;
+  }
+
+  html body header.topbar.topbar nav.main-window-nav.main-window-nav > .mp-button.main-window-tab small {
+    font-size: clamp(0.58rem, 0.9vw, 0.72rem) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  html body .mobile-more-sheet.mobile-more-sheet {
+    background: #fffdf7 !important;
+    color: #111318 !important;
+    -webkit-text-fill-color: #111318 !important;
+  }
+
+  html body .mobile-more-sheet.mobile-more-sheet header strong,
+  html body .mobile-more-sheet.mobile-more-sheet header button,
+  html body .mobile-more-grid.mobile-more-grid button,
+  html body .mobile-more-grid.mobile-more-grid button *,
+  html body .mobile-more-grid.mobile-more-grid button strong,
+  html body .mobile-more-grid.mobile-more-grid button span,
+  html body .mobile-more-grid.mobile-more-grid button svg,
+  html body .mobile-more-grid.mobile-more-grid button.mobile-more-logout,
+  html body .mobile-more-grid.mobile-more-grid button.mobile-more-logout *,
+  html body header.topbar.topbar .signup-top-button.signup-top-button,
+  html body header.topbar.topbar .signup-top-button.signup-top-button *,
+  html body .checkout-page .back-button.back-button,
+  html body header.topbar.topbar .logout-button.logout-button {
+    color: #111318 !important;
+    -webkit-text-fill-color: #111318 !important;
+    opacity: 1 !important;
+    text-shadow: none !important;
+  }
+
+  html body .mobile-more-sheet.mobile-more-sheet header button,
+  html body .mobile-more-grid.mobile-more-grid button,
+  html body .mobile-more-grid.mobile-more-grid button.mobile-more-logout,
+  html body header.topbar.topbar .signup-top-button.signup-top-button,
+  html body .checkout-page .back-button.back-button,
+  html body header.topbar.topbar .logout-button.logout-button {
+    background: #fff3c7 !important;
+    background-color: #fff3c7 !important;
+    border: 2px solid rgba(17, 19, 24, 0.18) !important;
+    border-radius: 24px !important;
+    box-shadow: 0 10px 22px rgba(17, 24, 39, 0.10) !important;
+  }
+
+  html body .mobile-more-grid.mobile-more-grid button.active,
+  html body .mobile-more-grid.mobile-more-grid button:active,
+  html body .mobile-tabbar.mobile-bottom-dock.mobile-bottom-dock button.active {
+    background: #f4ce55 !important;
+    background-color: #f4ce55 !important;
+    color: #111318 !important;
+    -webkit-text-fill-color: #111318 !important;
+    transform: translateY(-1px) scale(1.02) !important;
+  }
+
+  html body header.topbar.topbar .account-actions.guest-actions > .signup-top-button.mp-button.mp-button-primary,
+  html body header.topbar.topbar .account-actions.guest-actions > button.signup-top-button.mp-button-primary {
+    background: #fff3c7 !important;
+    background-color: #fff3c7 !important;
+    background-image: none !important;
+    color: #111318 !important;
+    -webkit-text-fill-color: #111318 !important;
+    border: 2px solid rgba(17, 19, 24, 0.18) !important;
+    box-shadow: 0 10px 22px rgba(17, 24, 39, 0.10) !important;
+  }
+}
+
+html body .topbar .signup-top-button.signup-top-button,
+html body .topbar button.signup-top-button.signup-top-button.mp-button,
+html body .topbar .signup-top-button.signup-top-button.mp-button-soft,
+html body .topbar .signup-top-button.signup-top-button.mp-button-primary {
+  background: #fff3c7 !important;
+  background-color: #fff3c7 !important;
+  background-image: none !important;
+  color: #111318 !important;
+  -webkit-text-fill-color: #111318 !important;
+  border: 2px solid rgba(17, 19, 24, 0.18) !important;
+  box-shadow: 0 10px 22px rgba(17, 24, 39, 0.10) !important;
+}
+
+html body .topbar button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button.signup-top-button {
+  background: #fff3c7 !important;
+  background-color: #fff3c7 !important;
+  background-image: none !important;
+  color: #111318 !important;
+  -webkit-text-fill-color: #111318 !important;
 }

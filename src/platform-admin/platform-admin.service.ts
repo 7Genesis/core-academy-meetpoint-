@@ -19,6 +19,7 @@ import { CreateManagedAccountDto, type ManagedAccountSegment } from './dto/creat
 import { CreatePlatformFeePayoutDto } from './dto/create-platform-fee-payout.dto';
 import { CreatePlatformStaffDto } from './dto/create-platform-staff.dto';
 import { CreateSupportTicketDto } from './dto/create-support-ticket.dto';
+import { ReplySupportTicketDto } from './dto/reply-support-ticket.dto';
 import { UpdatePlatformStaffPermissionsDto } from './dto/update-platform-staff-permissions.dto';
 import { UpdateSupportTicketStatusDto } from './dto/update-support-ticket-status.dto';
 
@@ -498,6 +499,91 @@ export class PlatformAdminService {
     });
   }
 
+  async replyTicket(
+    ticketId: string,
+    dto: ReplySupportTicketDto,
+    actorStaffId?: string,
+  ) {
+    const safeMessage = this.dataMasking.sanitizeText(dto.message)?.trim();
+    if (!safeMessage) throw new BadRequestException('Reply message is required');
+
+    const result = await this.prisma.withPlatformAdmin(async (tx) => {
+      const ticket = await tx.supportTicket.findUnique({
+        where: { id: ticketId },
+        include: {
+          user: { select: { email: true } },
+          tenant: { select: { name: true } },
+        },
+      });
+      if (!ticket) throw new NotFoundException('Support ticket not found');
+
+      const requesterEmail =
+        this.fieldEncryption.decryptString(ticket.requesterEmailEncrypted) ||
+        ticket.user?.email ||
+        null;
+      const previousDescription =
+        this.fieldEncryption.decryptString(ticket.description) ?? '';
+      const replyEntry = [
+        previousDescription,
+        '',
+        `[Resposta do suporte - ${new Date().toISOString()}]`,
+        safeMessage,
+      ].filter(Boolean).join('\n');
+      const assignee = actorStaffId
+        ? await tx.platformStaff.findUnique({
+            where: { id: actorStaffId },
+            select: { id: true },
+          })
+        : null;
+      const updateData = {
+        description: this.fieldEncryption.encryptString(replyEntry),
+        status: ticket.status === 'OPEN' ? 'ASSIGNED' : ticket.status,
+        ...(ticket.assignedToId || !assignee?.id
+          ? {}
+          : { assignedToId: assignee.id }),
+      };
+
+      const updated = await tx.supportTicket.update({
+        where: { id: ticketId },
+        data: updateData,
+        include: {
+          tenant: { select: { id: true, name: true, subdomain: true } },
+          user: { select: { id: true, email: true, role: true, status: true } },
+          assignedTo: { select: { id: true, name: true, email: true } },
+        },
+      });
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'SUPPORT_TICKET_REPLIED',
+        targetType: 'SupportTicket',
+        targetId: ticketId,
+        metadata: {
+          notifiedByEmail: Boolean(requesterEmail),
+          subject: ticket.subject,
+        },
+      });
+
+      return {
+        ticket: updated,
+        requesterEmail,
+        tenantName: ticket.tenant?.name,
+      };
+    });
+
+    const emailDelivery = await this.sendSupportReplyEmail({
+      to: result.requesterEmail,
+      subject: result.ticket.subject,
+      message: safeMessage,
+      tenantName: result.tenantName,
+    });
+
+    return {
+      ticket: this.maskSupportTicket(result.ticket),
+      notification: emailDelivery,
+    };
+  }
+
   async updateTicketStatus(
     ticketId: string,
     dto: UpdateSupportTicketStatusDto,
@@ -809,6 +895,77 @@ export class PlatformAdminService {
         segmentLabel,
       }),
     });
+  }
+
+  private async sendSupportReplyEmail(params: {
+    to: string | null;
+    subject: string;
+    message: string;
+    tenantName?: string;
+  }) {
+    if (!params.to) {
+      return { sent: false, reason: 'ticket_without_requester_email' };
+    }
+
+    const host = process.env.SMTP_HOST?.trim();
+    const user = process.env.SMTP_USER?.trim();
+    const pass = process.env.SMTP_PASS?.trim();
+    const from =
+      process.env.SMTP_FROM?.trim() ||
+      process.env.MAIL_FROM?.trim() ||
+      'MeetPoint <no-reply@meetpoint.com>';
+
+    if (!host || !user || !pass) {
+      return { sent: false, reason: 'smtp_not_configured' };
+    }
+
+    const accessUrl =
+      process.env.MEETPOINT_FRONTEND_URL?.trim() ||
+      process.env.FRONTEND_URL?.trim() ||
+      'https://novalab.me/meetpoint/';
+    const transport = nodemailer.createTransport({
+      host,
+      port: Number(process.env.SMTP_PORT ?? 587),
+      secure: process.env.SMTP_SECURE?.trim().toLowerCase() === 'true',
+      auth: { user, pass },
+    });
+
+    await transport.sendMail({
+      from,
+      to: params.to,
+      subject: 'O suporte MeetPoint respondeu seu atendimento',
+      text: [
+        'O suporte MeetPoint respondeu seu atendimento.',
+        '',
+        `Ticket: ${params.subject}`,
+        params.tenantName ? `Conta: ${params.tenantName}` : '',
+        '',
+        params.message,
+        '',
+        `Acesse: ${accessUrl}`,
+      ].filter(Boolean).join('\n'),
+      html: `
+        <div style="font-family:Arial,sans-serif;background:#fffaf0;padding:28px;color:#111318">
+          <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e6dcc5;border-radius:18px;padding:28px">
+            <div style="display:inline-flex;align-items:center;gap:10px;margin-bottom:20px">
+              <span style="display:inline-grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#f4ce55;font-weight:900">MP</span>
+              <strong style="font-size:22px">MeetPoint</strong>
+            </div>
+            <h1 style="font-size:24px;line-height:1.15;margin:0 0 12px">O suporte respondeu seu atendimento</h1>
+            <p style="font-size:15px;line-height:1.5;margin:0 0 16px"><strong>Ticket:</strong> ${escapeHtml(params.subject)}</p>
+            <div style="background:#fff3c7;border:2px solid #111318;border-radius:14px;padding:18px;margin-bottom:18px">
+              ${escapeHtml(params.message).replace(/\n/g, '<br>')}
+            </div>
+            <a href="${escapeHtml(accessUrl)}" style="display:inline-block;background:#111318;color:#fff8dc;text-decoration:none;border-radius:999px;padding:13px 18px;font-weight:900">Abrir MeetPoint</a>
+          </div>
+        </div>
+      `,
+    });
+
+    return {
+      sent: true,
+      to: this.dataMasking.maskEmail(params.to),
+    };
   }
 
   private getManagedAccountSegmentLabel(segment: ManagedAccountSegment) {
