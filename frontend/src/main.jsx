@@ -25,6 +25,7 @@ const guestPrimaryMobilePageIds = ['feed', 'opportunities', 'events', 'benefits'
 const TERMS_VERSION = 'meetpoint-lgpd-2026-06-03';
 const PRIVACY_VERSION = 'meetpoint-privacy-lgpd-2026-06-03';
 const REQUIRED_CONSENT_TYPE = 'platform_usage';
+const AUTH_SESSION_TOKEN_KEY = 'meetPointSessionToken';
 const TERMS_CONSENT_TEXT =
   'Li e aceito os Termos de Uso e autorizo o tratamento dos meus dados conforme a Política de Privacidade.';
 
@@ -1232,14 +1233,29 @@ function calculatePlatformSplit(price) {
   };
 }
 
+function readSessionAuthToken() {
+  if (typeof sessionStorage === 'undefined') return '';
+  return sessionStorage.getItem(AUTH_SESSION_TOKEN_KEY) || '';
+}
+
+function writeSessionAuthToken(token = '') {
+  if (typeof sessionStorage === 'undefined') return;
+  if (token) {
+    sessionStorage.setItem(AUTH_SESSION_TOKEN_KEY, token);
+  } else {
+    sessionStorage.removeItem(AUTH_SESSION_TOKEN_KEY);
+  }
+}
+
 async function apiRequest(path, options = {}) {
   const { token, headers, ...requestOptions } = options;
+  const bearerToken = token || readSessionAuthToken();
   const requestConfig = {
     ...requestOptions,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
       ...(headers ?? {}),
     },
   };
@@ -2077,10 +2093,11 @@ function App() {
       try {
         const result = await authenticatedUserRequest();
         if (cancelled) return;
-        activateUserSession(mapBackendUserToAccount(result.user), 'cookie-session');
+        activateUserSession(mapBackendUserToAccount(result.user), readSessionAuthToken() || 'cookie-session');
       } catch {
         if (cancelled) return;
         setAuthToken('');
+        writeSessionAuthToken('');
         setCurrentUser(null);
         localStorage.removeItem('currentUser');
       }
@@ -2881,7 +2898,9 @@ function App() {
     }
 
     setCurrentUser(account);
-    setAuthToken(token || 'cookie-session');
+    const sessionToken = token || readSessionAuthToken();
+    if (token) writeSessionAuthToken(token);
+    setAuthToken(sessionToken || 'cookie-session');
     localStorage.removeItem('currentUser');
     applyWorkspaceSnapshot(nextWorkspace, account);
     const pendingSubscriptionEmail = localStorage.getItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY);
@@ -2917,6 +2936,7 @@ function App() {
     }
     setCurrentUser(null);
     setAuthToken('');
+    writeSessionAuthToken('');
     localStorage.removeItem('currentUser');
     setLockedRoute('');
     applyWorkspaceSnapshot(createGuestWorkspace(), null);

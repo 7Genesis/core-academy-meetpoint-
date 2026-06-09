@@ -42,8 +42,7 @@ export class AuthController {
       ...getAuthCookieOptions(),
       maxAge: ACCESS_TOKEN_MAX_AGE_MS,
     });
-    const { accessToken: _accessToken, ...safeLogin } = login;
-    return safeLogin;
+    return login;
   }
 
   @Get('me')

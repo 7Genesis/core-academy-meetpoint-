@@ -27849,13 +27849,17 @@ html body .payment-card .billing-options > button :is(strong, small) {
 
   html body header.topbar.topbar > .brand-button.brand-button {
     grid-column: 1 !important;
+    grid-row: 1 !important;
     justify-self: start !important;
-    max-width: min(188px, calc(100vw - 150px)) !important;
+    max-width: min(166px, calc(100vw - 116px)) !important;
     overflow: hidden !important;
+    font-size: 1rem !important;
   }
 
   html body header.topbar.topbar > .brand-button.brand-button > span:first-child {
-    flex: 0 0 38px !important;
+    flex: 0 0 36px !important;
+    width: 36px !important;
+    height: 36px !important;
   }
 
   html body header.topbar.topbar > .brand-button.brand-button {
@@ -27864,6 +27868,7 @@ html body .payment-card .billing-options > button :is(strong, small) {
 
   html body header.topbar.topbar > .account-actions.signed-in-actions {
     grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
     width: 100% !important;
     min-width: 0 !important;
     display: grid !important;
@@ -27882,25 +27887,43 @@ html body .payment-card .billing-options > button :is(strong, small) {
     width: 100% !important;
     min-width: 0 !important;
     max-width: none !important;
+    height: 44px !important;
+    padding: 4px 8px !important;
     justify-content: flex-start !important;
     overflow: hidden !important;
   }
 
   html body header.topbar.topbar > .account-actions.signed-in-actions > .account-button.account-button .account-name {
+    display: block !important;
     min-width: 0 !important;
-    max-width: 100% !important;
+    max-width: min(34vw, 132px) !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
+    font-size: 0.92rem !important;
   }
 
   html body header.topbar.topbar > .account-actions.signed-in-actions > .account-button.account-button .points-inline-badge {
     flex: 0 0 auto !important;
+    min-width: 58px !important;
+    padding-inline: 8px !important;
+    font-size: 0.82rem !important;
   }
 
   html body header.topbar.topbar > .account-actions.signed-in-actions > .logout-button.logout-button {
     grid-column: 3 !important;
+    height: 44px !important;
     min-width: 74px !important;
     padding-inline: 16px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  html body header.topbar.topbar > .brand-button.brand-button {
+    max-width: 150px !important;
+  }
+
+  html body header.topbar.topbar > .account-actions.signed-in-actions > .account-button.account-button .account-name {
+    max-width: 92px !important;
   }
 }
