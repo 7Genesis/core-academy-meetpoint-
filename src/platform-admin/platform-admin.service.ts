@@ -9,10 +9,12 @@ import {
   Prisma,
   SupportTicketStatus,
 } from '@prisma/client';
+import { hash } from 'bcryptjs';
 import { DataMaskingService } from '../common/security/data-masking.service';
 import { FieldEncryptionService } from '../common/security/field-encryption.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BlockUserDto } from './dto/block-user.dto';
+import { CreateManagedAccountDto, type ManagedAccountSegment } from './dto/create-managed-account.dto';
 import { CreatePlatformFeePayoutDto } from './dto/create-platform-fee-payout.dto';
 import { CreatePlatformStaffDto } from './dto/create-platform-staff.dto';
 import { CreateSupportTicketDto } from './dto/create-support-ticket.dto';
@@ -108,6 +110,93 @@ export class PlatformAdminService {
           }
         : null,
     }));
+  }
+
+  async createManagedAccount(dto: CreateManagedAccountDto, actorStaffId?: string) {
+    const segment = dto.segment;
+    const normalizedEmail = dto.email.trim().toLowerCase();
+    const normalizedName = dto.name.trim();
+    const normalizedCity = dto.city.trim();
+    const normalizedState = dto.state.trim().toUpperCase();
+    const normalizedCompanyName = dto.companyName?.trim() ?? '';
+    const normalizedReason = dto.reason?.trim() ?? '';
+
+    if (!normalizedName || !normalizedEmail || !normalizedCity || !normalizedState) {
+      throw new BadRequestException('Nome, email, cidade e estado sao obrigatorios');
+    }
+    if (segment === 'company' && !normalizedCompanyName) {
+      throw new BadRequestException('Empresa exige nome da organizacao');
+    }
+
+    const tenant =
+      segment === 'company'
+        ? await this.createCompanyTenant(normalizedCompanyName || normalizedName)
+        : await this.resolveDefaultTenant();
+    const passwordHash = await hash(dto.password, 12);
+    const bio = this.decorateAccountBio(
+      [
+        normalizedReason ? `Origem administrativa: ${normalizedReason}` : '',
+        normalizedCompanyName ? `Organizacao: ${normalizedCompanyName}` : '',
+        dto.grantFreeAccess ? 'Conta criada com cortesia administrativa.' : '',
+      ].filter(Boolean).join(' '),
+      segment,
+    );
+
+    const user = await this.prisma.withPlatformAdmin(async (tx) =>
+      tx.user.create({
+        data: {
+          tenantId: tenant.id,
+          email: normalizedEmail,
+          contactEmailVerifiedAt: new Date(),
+          password: dto.password,
+          passwordHash,
+          role: segment === 'company' ? 'USER' : 'USER',
+          status: dto.grantFreeAccess ? AccountStatus.ACTIVE : AccountStatus.PENDING_PAYMENT,
+          name: normalizedName,
+          city: normalizedCity,
+          state: normalizedState,
+          bio,
+          acceptedTerms: true,
+          acceptedPrivacyPolicy: true,
+        },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          tenantId: true,
+          status: true,
+          name: true,
+          city: true,
+          state: true,
+          bio: true,
+          createdAt: true,
+          updatedAt: true,
+          lastLoginAt: true,
+          tenant: { select: { id: true, name: true, subdomain: true } },
+        },
+      }),
+    );
+
+    await this.prisma.withPlatformAdmin((tx) =>
+      this.audit(tx, {
+        actorStaffId,
+        action: 'MANAGED_ACCOUNT_CREATED',
+        targetType: 'User',
+        targetId: user.id,
+        metadata: {
+          segment,
+          email: this.dataMasking.maskEmail(normalizedEmail),
+          companyName: normalizedCompanyName,
+          grantFreeAccess: Boolean(dto.grantFreeAccess),
+        },
+      }),
+    );
+
+    return {
+      ...user,
+      email: this.dataMasking.maskEmail(user.email),
+      accountSegment: segment,
+    };
   }
 
   async createPlatformFeePayout(
@@ -464,6 +553,56 @@ export class PlatformAdminService {
         },
       },
     });
+  }
+
+  private async createCompanyTenant(name: string) {
+    const baseSubdomain = this.slugify(name);
+    const subdomain = await this.resolveUniqueSubdomain(baseSubdomain);
+
+    return this.prisma.tenant.create({
+      data: {
+        name,
+        subdomain,
+      },
+    });
+  }
+
+  private async resolveDefaultTenant() {
+    const subdomain = process.env.DEFAULT_TENANT_SUBDOMAIN?.trim() || 'meetpoint';
+    const name = process.env.DEFAULT_TENANT_NAME?.trim() || 'MeetPoint';
+
+    return this.prisma.tenant.upsert({
+      where: { subdomain },
+      update: {},
+      create: { subdomain, name },
+    });
+  }
+
+  private async resolveUniqueSubdomain(baseSubdomain: string) {
+    const fallback = baseSubdomain || 'empresa';
+    let candidate = fallback;
+    let counter = 1;
+    while (await this.prisma.tenant.findUnique({ where: { subdomain: candidate } })) {
+      candidate = `${fallback}-${counter++}`;
+    }
+    return candidate;
+  }
+
+  private slugify(value: string) {
+    return value
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40);
+  }
+
+  private decorateAccountBio(bio: string, segment: ManagedAccountSegment) {
+    const marker = `[[account-segment:${segment}]]`;
+    const cleanedBio = bio.trim();
+    if (!cleanedBio) return marker;
+    return cleanedBio.includes(marker) ? cleanedBio : `${cleanedBio} ${marker}`.trim();
   }
 
   private async listUsers(

@@ -83,7 +83,7 @@ export class AuthService {
         city: normalizedCity,
         state: normalizedState,
         profileImage: dto.profileImage?.trim() || null,
-        bio: dto.bio?.trim() || null,
+        bio: this.decorateAccountBio(dto.bio?.trim() || '', 'student'),
         acceptedTerms: true,
         acceptedPrivacyPolicy: true,
       },
@@ -260,6 +260,7 @@ export class AuthService {
       role: user.role,
       tenantId: user.tenantId,
       status: user.status,
+      accountSegment: parseAccountSegmentFromBio(user.bio),
       name: user.name ?? '',
       city: user.city ?? '',
       state: user.state ?? '',
@@ -282,6 +283,13 @@ export class AuthService {
       update: {},
       create: { subdomain, name },
     });
+  }
+
+  private decorateAccountBio(bio: string, segment: string) {
+    const marker = buildAccountSegmentMarker(segment);
+    const cleanedBio = bio.trim();
+    if (!cleanedBio) return marker;
+    return cleanedBio.includes(marker) ? cleanedBio : `${cleanedBio} ${marker}`.trim();
   }
 
   private findActivePlatformStaff(email: string) {
@@ -385,6 +393,19 @@ export class AuthService {
   jwks() {
     return this.jwtKeyService.getJwks();
   }
+}
+
+function buildAccountSegmentMarker(segment: string) {
+  return `[[account-segment:${segment}]]`;
+}
+
+function parseAccountSegmentFromBio(bio: string | null | undefined) {
+  const match = bio?.match(/\[\[account-segment:([a-z-]+)\]\]/i);
+  const value = match?.[1]?.toLowerCase?.() ?? '';
+  if (['student', 'teacher', 'company', 'sponsor', 'ambassador', 'platform', 'employee'].includes(value)) {
+    return value;
+  }
+  return 'student';
 }
 
 function isLoginAllowedStatus(status: string) {

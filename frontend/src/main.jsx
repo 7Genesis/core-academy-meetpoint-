@@ -1399,8 +1399,8 @@ function mapBackendUserToAccount(user = {}, extra = {}) {
     typeof localStorage === 'undefined' ? '' : localStorage.getItem(LAST_SIGNUP_SEGMENT_KEY);
   const segment = user.platformRole
     ? 'platform'
-    : user.role === 'ADMIN'
-      ? 'platform'
+    : user.accountSegment
+      ? user.accountSegment
       : pendingSignupEmail === email.toLowerCase() && pendingSignupSegment
         ? pendingSignupSegment
       : 'student';
@@ -15691,88 +15691,70 @@ function PlatformProfile({
       permissions: getProvisionPermissions(provision.segment),
       createdAt: new Date().toISOString(),
     };
-
-    setProvisionedAccounts((current) => [createdAccount, ...current]);
-    setPlatformView('account');
-    setNotice(`${segmentLabel} ${provision.name} criada pelo admin${provision.grantFreeAccess ? ' com cortesia operacional' : ''}.`);
-    setDashboard((current) => ({
-      ...current,
-      students: current.students + (provision.segment === 'student' ? 1 : 0),
-      teachers: current.teachers + (provision.segment === 'teacher' ? 1 : 0),
-      companies: current.companies + (['company', 'sponsor', 'ambassador'].includes(provision.segment) ? 1 : 0),
-    }));
-
-    if (['sponsor', 'ambassador'].includes(provision.segment)) {
-      const operationalProfile = {
-        id: `operational-${createdAccount.id}`,
-        name: provision.name,
-        email: provision.email,
-        notificationEmail: provision.email,
-        department: getProvisionDepartment(provision.segment),
-        temporaryPassword: provision.password,
-        permissions: createdAccount.permissions,
-        profileType: segmentLabel,
-      };
-      setEmployees((current) => [operationalProfile, ...current]);
-      setSelectedEmployeeEmail(operationalProfile.email);
-    }
-
-    registerRequest({
+    const accountPayload = {
+      segment: provision.segment,
       name: provision.name,
       email: provision.email,
-      password: provision.password,
-      passwordConfirm: provision.password,
       city: provision.city,
       state: provision.state,
-      bio: [
-        provision.companyName ? `Organização: ${provision.companyName}` : '',
-        provision.reason ? `Origem administrativa: ${provision.reason}` : '',
-        provision.grantFreeAccess ? 'Conta criada com cortesia administrativa.' : '',
-        ['sponsor', 'ambassador'].includes(provision.segment) ? `Perfil diferenciado: ${segmentLabel}.` : '',
-      ].filter(Boolean).join(' '),
-      acceptedTerms: true,
-      acceptedPrivacyPolicy: true,
-      termsVersion: TERMS_VERSION,
-      privacyVersion: PRIVACY_VERSION,
-    })
-      .then(() => setApiStatus(`${segmentLabel} registrada na API de autenticação.`))
-      .catch((error) => {
-        const message = String(error?.message ?? '');
-        setApiStatus(
-          message.includes('already registered')
-            ? `${segmentLabel} já existia na API; mantida no controle administrativo local.`
-            : `${segmentLabel} mantida localmente; API ainda não persistiu cortesia/perfil especial.`,
-        );
-      });
+      password: provision.password,
+      companyName: provision.companyName || provision.name,
+      reason: provision.reason,
+      grantFreeAccess: provision.grantFreeAccess,
+    };
 
-    if (authToken && ['sponsor', 'ambassador'].includes(provision.segment)) {
-      platformAdminRequest('/staff', authToken, {
-        method: 'POST',
-        body: JSON.stringify({
+    try {
+      if (authToken) {
+        const created = await platformAdminRequest('/accounts', authToken, {
+          method: 'POST',
+          body: JSON.stringify(accountPayload),
+        });
+        const nextAccount = {
+          ...createdAccount,
+          ...created,
+          segment: created.accountSegment ?? provision.segment,
+          email: created.email ?? provision.email,
+        };
+        setProvisionedAccounts((current) => [nextAccount, ...current]);
+        setNotice(
+          `${segmentLabel} ${provision.name} criada pelo admin${provision.grantFreeAccess ? ' com cortesia operacional' : ''}.`,
+        );
+        setApiStatus(`${segmentLabel} registrado na API administrativa.`);
+      } else {
+        setProvisionedAccounts((current) => [createdAccount, ...current]);
+        setNotice(
+          `${segmentLabel} ${provision.name} criada localmente${provision.grantFreeAccess ? ' com cortesia operacional' : ''}.`,
+        );
+        setApiStatus(`${segmentLabel} criado no modo visual sem API administrativa.`);
+      }
+
+      setPlatformView('account');
+      setDashboard((current) => ({
+        ...current,
+        students: current.students + (provision.segment === 'student' ? 1 : 0),
+        teachers: current.teachers + (provision.segment === 'teacher' ? 1 : 0),
+        companies: current.companies + (['company', 'sponsor', 'ambassador'].includes(provision.segment) ? 1 : 0),
+      }));
+
+      if (['sponsor', 'ambassador'].includes(provision.segment)) {
+        const operationalProfile = {
+          id: `operational-${createdAccount.id}`,
           name: provision.name,
           email: provision.email,
-          role: 'OPERATIONS',
-          permissions: getProvisionBackendPermissions(provision.segment),
-        }),
-      })
-        .then((staff) => {
-          setEmployees((current) =>
-            current.map((employee) =>
-              employee.id === `operational-${createdAccount.id}`
-                ? {
-                    ...employee,
-                    id: staff.id,
-                    email: staff.email,
-                    permissions: staff.permissions.map(
-                      (item) => permissionLabelByEnum[item.permission] ?? item.permission,
-                    ),
-                  }
-                : employee,
-            ),
-          );
-          setApiStatus(`${segmentLabel} também registrado como perfil operacional.`);
-        })
-        .catch(() => setApiStatus(`${segmentLabel} criado no controle local; API operacional não aceitou o perfil especial.`));
+          notificationEmail: provision.email,
+          department: getProvisionDepartment(provision.segment),
+          temporaryPassword: provision.password,
+          permissions: createdAccount.permissions,
+          profileType: segmentLabel,
+        };
+        setEmployees((current) => [operationalProfile, ...current]);
+        setSelectedEmployeeEmail(operationalProfile.email);
+      }
+    } catch (error) {
+      setProvisionedAccounts((current) => [createdAccount, ...current]);
+      setPlatformView('account');
+      setNotice(`${segmentLabel} mantida apenas no controle local porque a API administrativa recusou a criação.`);
+      setApiStatus(String(error?.message ?? 'Falha ao criar conta administrativa.'));
     }
 
     setAccountProvision({

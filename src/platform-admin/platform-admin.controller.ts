@@ -16,6 +16,7 @@ import {
   type SupportTicketStatus,
 } from '../common/prisma-enums';
 import { BlockUserDto } from './dto/block-user.dto';
+import { CreateManagedAccountDto } from './dto/create-managed-account.dto';
 import { CreatePlatformFeePayoutDto } from './dto/create-platform-fee-payout.dto';
 import { CreatePlatformStaffDto } from './dto/create-platform-staff.dto';
 import { CreateSupportTicketDto } from './dto/create-support-ticket.dto';
@@ -85,6 +86,12 @@ export class PlatformAdminController {
   @PlatformPermissions(PlatformPermission.MAINTENANCE_WRITE)
   createStaff(@Req() request: PlatformRequest, @Body() dto: CreatePlatformStaffDto) {
     return this.platformAdminService.createStaff(dto, getActorStaffId(request));
+  }
+
+  @Post('accounts')
+  @PlatformPermissions(PlatformPermission.COMPANIES_WRITE)
+  createAccount(@Req() request: PlatformRequest, @Body() dto: CreateManagedAccountDto) {
+    return this.platformAdminService.createManagedAccount(dto, getActorStaffId(request));
   }
 
   @Patch('staff/:id/permissions')
