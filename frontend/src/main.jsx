@@ -2078,17 +2078,22 @@ function App() {
   const [authToken, setAuthToken] = useState('');
 
   function resolveAccessiblePage(pageId, user = currentUser) {
-    if (user && pageId === 'home') return 'feed';
+    if (user && pageId === 'home' && hasActivePlatformSubscription(user)) return 'feed';
     if (user && ['platform', 'employee'].includes(user.segment) && pageId === 'private-chat') return 'profile';
     if (!user && protectedRoutes.includes(pageId)) return 'profile';
-    if (user && !hasActivePlatformSubscription(user)) {
+    if (
+      user &&
+      !hasActivePlatformSubscription(user) &&
+      !publicReadPageIds.includes(pageId) &&
+      subscriptionRequiredRoutes.includes(pageId)
+    ) {
       return 'subscription-checkout';
     }
     return pageId;
   }
   
   const [activePage, setActivePage] = useState(() => {
-    const startupRoute = !currentUser && isPublicDomainEntry() ? buildRouteState('feed') : initialRoute;
+    const startupRoute = !currentUser && isPublicDomainEntry() ? buildRouteState('home') : initialRoute;
     return resolveAccessiblePage(startupRoute.page, currentUser);
   });
   const [authMode, setAuthMode] = useState(
@@ -2105,6 +2110,7 @@ function App() {
         activateUserSession(
           mapBackendUserToAccount(result.user),
           result.accessToken || readSessionAuthToken() || 'cookie-session',
+          { preserveRoute: true },
         );
       } catch {
         if (cancelled) return;
@@ -2370,7 +2376,7 @@ function App() {
     const rawInitialRoute = getCurrentRouteState();
     const lockedRoute = getLockedRoute();
     const initialRoute = !currentUser && isPublicDomainEntry()
-      ? buildRouteState('feed')
+      ? buildRouteState('home')
       : lockedRoute
         ? buildRouteState(lockedRoute)
         : rawInitialRoute;
@@ -2892,7 +2898,7 @@ function App() {
   }
 
   // Login real/API: troca a conta ativa e carrega o estado isolado daquele perfil.
-  function activateUserSession(account, token = '') {
+  function activateUserSession(account, token = '', options = {}) {
     const previousSessionKey = getAccountSessionKey(currentUser);
     const nextSessionKey = getAccountSessionKey(account);
     const nextWorkspace =
@@ -2916,9 +2922,13 @@ function App() {
     localStorage.removeItem('currentUser');
     applyWorkspaceSnapshot(nextWorkspace, account);
     const pendingSubscriptionEmail = localStorage.getItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY);
+    const requestedRoute = getCurrentRouteState();
+    const routePage = isPublicDomainEntry()
+      ? 'home'
+      : resolveAccessiblePage(requestedRoute.page, account);
     const shouldOpenSubscriptionCheckout =
       pendingSubscriptionEmail === account.email?.toLowerCase() ||
-      !hasActivePlatformSubscription(account);
+      (!options.preserveRoute && !hasActivePlatformSubscription(account));
     if (shouldOpenSubscriptionCheckout) {
       localStorage.removeItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY);
       setLockedRoute('subscription-checkout');
@@ -2929,8 +2939,8 @@ function App() {
     } else {
       setLockedRoute('');
       setPreviousPage('profile');
-      setActivePage('feed');
-      syncBrowserHistory('feed');
+      setActivePage(routePage);
+      syncBrowserHistory(routePage);
     }
     setMotionKey((value) => value + 1);
   }
