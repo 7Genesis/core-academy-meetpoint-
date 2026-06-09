@@ -9669,7 +9669,10 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
       return;
     }
 
-    const checkoutWindow = plan.price > 0
+    const useCurrentTabCheckout =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(max-width: 760px)').matches;
+    const checkoutWindow = plan.price > 0 && !useCurrentTabCheckout
       ? window.open('about:blank', '_blank')
       : null;
     if (checkoutWindow) {
@@ -9699,12 +9702,18 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
         if (!intent.checkoutSession?.url) {
           throw new Error('A InfinitePay não retornou o link de checkout.');
         }
-        if (checkoutWindow) {
+        if (useCurrentTabCheckout) {
+          window.location.assign(intent.checkoutSession.url);
+        } else if (checkoutWindow) {
           checkoutWindow.location.href = intent.checkoutSession.url;
         } else {
-          window.open(intent.checkoutSession.url, '_blank', 'noopener,noreferrer');
+          window.location.assign(intent.checkoutSession.url);
         }
-        setPaymentNotice('Checkout InfinitePay aberto em uma nova janela. Conclua o pagamento para liberar a conta.');
+        setPaymentNotice(
+          useCurrentTabCheckout
+            ? 'Redirecionando para o checkout InfinitePay.'
+            : 'Checkout InfinitePay aberto em uma nova janela. Conclua o pagamento para liberar a conta.',
+        );
         return;
       }
 
