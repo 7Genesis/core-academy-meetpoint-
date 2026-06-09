@@ -1387,8 +1387,12 @@ function mapBackendUserToAccount(user = {}, extra = {}) {
     lastLoginAt: user.lastLoginAt,
     platformRole: user.platformRole,
     accountStatus: user.status,
-    subscriptionActive: user.subscription?.status === 'ACTIVE',
+    subscriptionActive: user.subscriptionActive ?? user.subscription?.status === 'ACTIVE',
     subscription: user.subscription ?? null,
+    subscriptionStatus: user.subscriptionStatus ?? user.subscription?.status ?? null,
+    subscriptionWarning: user.subscriptionWarning ?? '',
+    subscriptionShouldBlockAccount: Boolean(user.subscriptionShouldBlockAccount),
+    subscriptionLifecycle: user.subscriptionLifecycle ?? null,
     backendUser: user,
     ...extra,
   };
@@ -9647,11 +9651,21 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
     semiannual: 'Semestral com desconto',
     annual: 'Anual com maior desconto',
   }[billingCycle];
+  const subscriptionWarning = currentUser?.subscriptionWarning ?? '';
   async function confirmSubscription() {
     if (!currentUser) {
       setPaymentNotice('Entre na conta antes de iniciar o checkout de assinatura.');
       openPage('profile');
       return;
+    }
+
+    const checkoutWindow = plan.price > 0
+      ? window.open('about:blank', '_blank')
+      : null;
+    if (checkoutWindow) {
+      checkoutWindow.opener = null;
+      checkoutWindow.document.write('<!doctype html><title>MeetPoint checkout</title><p style="font-family:system-ui,sans-serif;padding:24px">Abrindo checkout InfinitePay...</p>');
+      checkoutWindow.document.close();
     }
 
     setCheckoutLoading(true);
@@ -9675,12 +9689,18 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
         if (!intent.checkoutSession?.url) {
           throw new Error('A InfinitePay não retornou o link de checkout.');
         }
-        window.location.href = intent.checkoutSession.url;
+        if (checkoutWindow) {
+          checkoutWindow.location.href = intent.checkoutSession.url;
+        } else {
+          window.open(intent.checkoutSession.url, '_blank', 'noopener,noreferrer');
+        }
+        setPaymentNotice('Checkout InfinitePay aberto em uma nova janela. Conclua o pagamento para liberar a conta.');
         return;
       }
 
       setPaymentNotice('Cadastro de embaixador enviado para validação comercial. A liberação depende de aprovação.');
     } catch (error) {
+      checkoutWindow?.close();
       setPaymentNotice(
         `Não foi possível abrir o checkout InfinitePay: ${error.message}`,
       );
@@ -9718,7 +9738,7 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
                 ['annual', 'Anual', formatCurrency(plan.price * 10)],
               ].map(([cycle, label, price]) => (
                 <button
-                  className={billingCycle === cycle ? 'active' : ''}
+                  className={`billing-cycle-button${billingCycle === cycle ? ' active' : ''}`}
                   key={cycle}
                   onClick={() => setBillingCycle(cycle)}
                 >
@@ -9726,6 +9746,12 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
                   <small>{price}</small>
                 </button>
               ))}
+            </div>
+          )}
+
+          {subscriptionWarning && (
+            <div className="valid-note subscription-warning-banner" role="status">
+              {subscriptionWarning}
             </div>
           )}
 
@@ -9737,7 +9763,7 @@ function SubscriptionCheckoutView({ plan, goBack, openPage, currentUser, onSubsc
                 A assinatura só libera depois da confirmação automática do pagamento.
               </p>
               <ul>
-                <li>Conta recebedora: $meetpoint</li>
+                <li>Conta recebedora: InfinitePay configurada no checkout</li>
                 <li>Valor: {formatCurrency(total)}</li>
                 <li>Ciclo: {cycleLabel}</li>
               </ul>

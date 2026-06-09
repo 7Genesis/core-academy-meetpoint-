@@ -8,11 +8,13 @@ import { JwtStrategy } from './jwt.strategy';
 import { JwtKeyService } from './jwt-key.service';
 import { TokenRevocationService } from './token-revocation.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     PrismaModule,
+    SubscriptionsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {

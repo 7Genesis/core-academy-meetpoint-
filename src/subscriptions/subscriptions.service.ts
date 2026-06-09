@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -15,6 +17,16 @@ type PlanRecord = {
   billingCycle: string;
   features: unknown;
   isActive: boolean;
+};
+
+type SubscriptionLifecycle = {
+  renewalDate: Date;
+  expiresAt: Date;
+  daysRemaining: number;
+  warningDaysRemaining: number;
+  isExpiringSoon: boolean;
+  isExpired: boolean;
+  nextChargeDate: Date;
 };
 
 type CheckoutIntentDto = {
@@ -58,6 +70,13 @@ type InfinitePayPaymentCheckResponse = {
   amount?: number | string;
 };
 
+type InfinitePayCheckoutItem = {
+  quantity: number;
+  price: number;
+  name: string;
+  description: string;
+};
+
 const fallbackPlans: PlanRecord[] = [
   {
     id: '00000000-0000-4000-8000-000000000049',
@@ -78,6 +97,18 @@ const fallbackPlans: PlanRecord[] = [
     isActive: true,
   },
 ];
+
+const BILLING_CYCLE_DAYS: Record<string, number> = {
+  monthly: 30,
+  semiannual: 180,
+  annual: 365,
+};
+
+const BILLING_CYCLE_LABELS: Record<string, string> = {
+  monthly: 'Mensal',
+  semiannual: 'Semestral',
+  annual: 'Anual',
+};
 
 @Injectable()
 export class SubscriptionsService {
@@ -100,19 +131,50 @@ export class SubscriptionsService {
   }
 
   async getCurrentSubscription(userId: string) {
-    const subscription = await this.findLatestSubscription(userId);
+    const subscription = await this.reconcileCurrentSubscription(userId);
+    const lifecycle = getSubscriptionLifecycle(subscription);
     return {
       active: isSubscriptionActive(subscription),
       subscription,
+      lifecycle,
+      status: subscription?.status ?? null,
+      warning: lifecycle?.isExpiringSoon
+        ? `Sua assinatura expira em ${formatRelativeSubscriptionDate(lifecycle.expiresAt)}.`
+        : lifecycle?.isExpired
+          ? 'Sua assinatura venceu e a conta foi colocada em renovação.'
+          : '',
+      shouldBlockAccount: Boolean(lifecycle?.isExpired),
     };
   }
 
   async hasActiveSubscription(userId: string) {
-    const subscription = await this.findLatestSubscription(userId);
+    const subscription = await this.reconcileCurrentSubscription(userId);
     return isSubscriptionActive(subscription);
   }
 
   async createCheckoutIntent(userId: string, dto: CheckoutIntentDto) {
+    try {
+      return await this.createCheckoutIntentUnsafe(userId, dto);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      console.error(
+        JSON.stringify({
+          message: 'Subscription checkout creation failed.',
+          checkoutError: normalizeIntegrationError(error),
+        }),
+      );
+
+      throw new ServiceUnavailableException({
+        message: 'Could not create subscription checkout',
+        details: getPublicIntegrationErrorDetails(error),
+      });
+    }
+  }
+
+  private async createCheckoutIntentUnsafe(userId: string, dto: CheckoutIntentDto) {
     if (!dto.planId?.trim()) {
       throw new BadRequestException('planId is required');
     }
@@ -121,9 +183,10 @@ export class SubscriptionsService {
     if (!plan) {
       throw new BadRequestException('Subscription plan not found');
     }
+    const persistedPlan = await this.ensureSubscriptionPlan(plan);
 
     const billingCycle = normalizeBillingCycle(dto.billingCycle);
-    const amountCents = calculatePlanAmountCents(plan, billingCycle);
+    const amountCents = calculatePlanAmountCents(persistedPlan, billingCycle);
     const externalSubscriptionId = `meetpoint-subscription-${randomUUID()}`;
 
     const subscription = await (this.prisma as unknown as {
@@ -133,7 +196,7 @@ export class SubscriptionsService {
     }).subscription?.create({
       data: {
         userId,
-        planId: dto.planId,
+        planId: persistedPlan.id,
         status: 'PENDING_PAYMENT',
         paymentProvider: amountCents > 0 ? 'infinitepay' : dto.paymentProvider ?? 'internal',
         externalSubscriptionId,
@@ -159,7 +222,7 @@ export class SubscriptionsService {
             amountCents,
             customerEmail: await this.findUserEmail(userId),
             customerName: await this.findUserName(userId),
-            description: `Assinatura ${plan.name} - ${billingCycle}`,
+            description: `Assinatura ${persistedPlan.name} - ${getBillingCycleLabel(billingCycle)}`,
             orderNsu: externalSubscriptionId,
           })
         : null;
@@ -206,6 +269,9 @@ export class SubscriptionsService {
       throw new BadRequestException('InfinitePay subscription amount does not match');
     }
 
+    const billingCycle = normalizeBillingCycle(
+      String(subscription.checkoutBillingCycle ?? 'monthly'),
+    );
     await this.verifyInfinitePayPayment({
       amountCents: expectedAmount,
       invoiceSlug,
@@ -226,6 +292,7 @@ export class SubscriptionsService {
         paidAt: new Date(),
         receiptUrl: event.receipt_url,
         transactionNsu,
+        cycle: billingCycle,
       },
     );
 
@@ -269,6 +336,41 @@ export class SubscriptionsService {
     }
   }
 
+  private async ensureSubscriptionPlan(plan: PlanRecord) {
+    try {
+      const stored = await (this.prisma as unknown as {
+        subscriptionPlan?: {
+          upsert: (args: unknown) => Promise<PlanRecord>;
+        };
+      }).subscriptionPlan?.upsert({
+        where: { id: plan.id },
+        update: {
+          name: plan.name,
+          description: plan.description ?? null,
+          price: plan.price,
+          billingCycle: plan.billingCycle,
+          features: plan.features,
+          isActive: plan.isActive,
+        },
+        create: {
+          id: plan.id,
+          name: plan.name,
+          description: plan.description ?? null,
+          price: plan.price,
+          billingCycle: plan.billingCycle,
+          features: plan.features,
+          isActive: plan.isActive,
+        },
+      });
+      return stored ?? plan;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new BadRequestException(`Could not prepare subscription plan: ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
   private async findLatestSubscription(userId: string) {
     try {
       return await (this.prisma as unknown as {
@@ -292,19 +394,22 @@ export class SubscriptionsService {
       paidAt?: Date;
       receiptUrl?: string;
       transactionNsu?: string;
+      cycle?: string;
     },
   ) {
     const now = new Date();
+    const billingCycle = normalizeBillingCycle(paymentData?.cycle);
+    const lifecycle = buildSubscriptionLifecycle(billingCycle, now);
     const activationData =
       dto.status === 'ACTIVE'
         ? {
             startedAt: now,
-            renewalDate: addDays(now, 30),
-            expiresAt: addDays(now, 35),
+            renewalDate: lifecycle.renewalDate,
+            expiresAt: lifecycle.expiresAt,
             cancelledAt: null,
           }
-        : dto.status === 'CANCELLED'
-          ? { cancelledAt: now }
+          : dto.status === 'CANCELLED'
+          ? { cancelledAt: now, expiresAt: now }
         : {};
     const paymentUpdate = {
       ...(paymentData?.paidAt ? { paidAt: paymentData.paidAt } : {}),
@@ -356,7 +461,37 @@ export class SubscriptionsService {
           user?: { update: (args: unknown) => Promise<unknown> };
         }).user?.update({
           where: { id: dto.userId },
-          data: { status: 'ACTIVE' },
+          data: { status: 'ACTIVE', blockedAt: null, blockedReason: null },
+        });
+      } else if (dto.status === 'EXPIRED' || dto.status === 'CANCELLED') {
+        await (this.prisma as unknown as {
+          user?: { update: (args: unknown) => Promise<unknown> };
+        }).user?.update({
+          where: { id: dto.userId },
+          data: {
+            status: 'PENDING_PAYMENT',
+            blockedAt: now,
+            blockedReason: `Assinatura ${dto.status === 'EXPIRED' ? 'expirada' : 'cancelada'} em ${now.toISOString()}`,
+          },
+        });
+        await this.writeAuditLog({
+          userId: dto.userId,
+          subscriptionId: String(subscription?.id ?? dto.externalSubscriptionId),
+          eventType: dto.status === 'EXPIRED' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_CANCELLED',
+          oldStatus: existing?.status ? String(existing.status) : null,
+          newStatus: dto.status,
+          paymentReference: eventId,
+        });
+        await this.writePlatformAuditLog({
+          action: dto.status === 'EXPIRED' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_CANCELLED',
+          targetType: 'USER',
+          targetId: dto.userId,
+          metadata: {
+            subscriptionId: String(subscription?.id ?? dto.externalSubscriptionId),
+            previousStatus: existing?.status ? String(existing.status) : null,
+            paymentReference: eventId,
+            blockedReason: dto.status === 'EXPIRED' ? 'subscription_expired' : 'subscription_cancelled',
+          },
         });
       }
 
@@ -414,6 +549,85 @@ export class SubscriptionsService {
     }
   }
 
+  private async writePlatformAuditLog(data: {
+    action: string;
+    targetType: string;
+    targetId?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    try {
+      await (this.prisma as unknown as {
+        platformAuditLog?: {
+          create: (args: unknown) => Promise<unknown>;
+        };
+      }).platformAuditLog?.create({ data });
+    } catch {
+      // Platform audit can be unavailable before migrations in local development.
+    }
+  }
+
+  private async reconcileCurrentSubscription(userId: string) {
+    const subscription = await this.findLatestSubscription(userId);
+    if (!subscription) return null;
+
+    const lifecycle = getSubscriptionLifecycle(subscription);
+    if (!lifecycle?.isExpired || subscription.status === 'EXPIRED') {
+      return subscription;
+    }
+
+    const updatedSubscription = await (this.prisma as unknown as {
+      subscription?: {
+        update: (args: unknown) => Promise<Record<string, unknown>>;
+      };
+      user?: {
+        update: (args: unknown) => Promise<unknown>;
+      };
+    });
+
+    const expiredSubscription = await updatedSubscription.subscription?.update({
+      where: { id: String(subscription.id) },
+      data: {
+        status: 'EXPIRED',
+        expiresAt: lifecycle.expiresAt,
+        renewalDate: lifecycle.renewalDate,
+      },
+    });
+
+    await updatedSubscription.user?.update({
+      where: { id: userId },
+      data: {
+        status: 'PENDING_PAYMENT',
+        blockedAt: new Date(),
+        blockedReason: `Assinatura expirada em ${lifecycle.expiresAt.toISOString()}`,
+      },
+    });
+
+    if (expiredSubscription) {
+      await this.writeAuditLog({
+        userId,
+        subscriptionId: String(expiredSubscription.id),
+        eventType: 'SUBSCRIPTION_EXPIRED',
+        oldStatus: String(subscription.status ?? 'ACTIVE'),
+        newStatus: 'EXPIRED',
+        paymentReference: String(subscription.externalSubscriptionId ?? expiredSubscription.id),
+      });
+      await this.writePlatformAuditLog({
+        action: 'SUBSCRIPTION_EXPIRED',
+        targetType: 'USER',
+        targetId: userId,
+        metadata: {
+          subscriptionId: String(expiredSubscription.id),
+          previousStatus: String(subscription.status ?? 'ACTIVE'),
+          expiresAt: lifecycle.expiresAt.toISOString(),
+          blockedReason: 'subscription_expired',
+        },
+      });
+      return expiredSubscription;
+    }
+
+    return subscription;
+  }
+
   private async createInfinitePayCheckoutLink(params: {
     amountCents: number;
     customerEmail: string;
@@ -421,28 +635,19 @@ export class SubscriptionsService {
     description: string;
     orderNsu: string;
   }) {
+    assertPositiveIntegerCents(params.amountCents);
     const handle = getInfinitePayHandle();
-    const redirectUrl = requireUrl(
-      process.env.INFINITEPAY_SUCCESS_URL,
-      'INFINITEPAY_SUCCESS_URL',
-    );
-    const webhookUrl = requireUrl(
-      process.env.INFINITEPAY_SUBSCRIPTION_WEBHOOK_URL ??
-        process.env.INFINITEPAY_WEBHOOK_URL?.replace(
-          '/webhooks/infinitepay',
-          '/subscriptions/infinitepay-webhook',
-        ),
-      'INFINITEPAY_SUBSCRIPTION_WEBHOOK_URL',
-    );
+    const redirectUrl = getInfinitePaySuccessUrl();
+    const webhookUrl = getInfinitePaySubscriptionWebhookUrl();
+    const item: InfinitePayCheckoutItem = {
+      quantity: 1,
+      price: params.amountCents,
+      name: params.description,
+      description: params.description,
+    };
     const payload = {
       handle,
-      items: [
-        {
-          quantity: 1,
-          price: params.amountCents,
-          description: params.description,
-        },
-      ],
+      items: [item],
       order_nsu: params.orderNsu,
       redirect_url: redirectUrl,
       webhook_url: webhookUrl,
@@ -454,37 +659,55 @@ export class SubscriptionsService {
     const endpoint =
       process.env.INFINITEPAY_LINKS_ENDPOINT ??
       'https://api.checkout.infinitepay.io/links';
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    const directUrl = buildDirectInfinitePayCheckoutUrl({
+      handle,
+      items: [item],
+      orderNsu: params.orderNsu,
+      redirectUrl,
+      webhookUrl,
     });
-    const raw = await parseJsonResponse<InfinitePayLinkResponse>(response);
-    if (!response.ok) {
-      throw new BadRequestException({
-        message: 'InfinitePay subscription checkout link creation failed',
-        status: response.status,
-        response: raw,
+    let raw: InfinitePayLinkResponse = {};
+    let url = directUrl;
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
+      raw = await parseJsonResponse<InfinitePayLinkResponse>(response);
+      if (response.ok) {
+        const linkData = raw.data ?? raw;
+        url =
+          linkData.url ??
+          linkData.checkout_url ??
+          linkData.checkoutUrl ??
+          linkData.payment_url ??
+          linkData.link ??
+          directUrl;
+      } else {
+        console.warn(
+          JSON.stringify({
+            message: 'InfinitePay subscription links endpoint failed; using direct checkout URL.',
+            infinitePayError: {
+              endpoint,
+              status: response.status,
+              statusText: response.statusText,
+              body: raw,
+            },
+          }),
+        );
+      }
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          message: 'InfinitePay subscription links endpoint unavailable; using direct checkout URL.',
+          infinitePayError: normalizeIntegrationError(error),
+        }),
+      );
     }
 
-    const linkData = raw.data ?? raw;
-    const url =
-      linkData.url ??
-      linkData.checkout_url ??
-      linkData.checkoutUrl ??
-      linkData.payment_url ??
-      linkData.link ??
-      buildDirectInfinitePayCheckoutUrl({
-        handle,
-        items: payload.items,
-        orderNsu: params.orderNsu,
-        redirectUrl,
-        webhookUrl,
-      });
-
     return {
-      id: linkData.id ?? linkData.invoice_slug ?? linkData.slug ?? params.orderNsu,
+      id: raw.id ?? raw.invoice_slug ?? raw.slug ?? params.orderNsu,
       url,
       successUrl: redirectUrl,
       webhookUrl,
@@ -516,7 +739,15 @@ export class SubscriptionsService {
       await parseJsonResponse<InfinitePayPaymentCheckResponse>(response);
 
     if (!response.ok || !paymentCheck.success || !paymentCheck.paid) {
-      throw new BadRequestException('InfinitePay payment_check did not confirm subscription');
+      throw new ServiceUnavailableException({
+        message: 'InfinitePay payment_check did not confirm subscription',
+        infinitePay: {
+          endpoint,
+          status: response.status,
+          statusText: response.statusText,
+          body: paymentCheck,
+        },
+      });
     }
 
     if (normalizeAmountCents(paymentCheck.amount) !== params.amountCents) {
@@ -588,6 +819,14 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
+function getBillingCycleDays(billingCycle: string) {
+  return BILLING_CYCLE_DAYS[billingCycle] ?? BILLING_CYCLE_DAYS.monthly;
+}
+
+function getBillingCycleLabel(billingCycle: string) {
+  return BILLING_CYCLE_LABELS[billingCycle] ?? BILLING_CYCLE_LABELS.monthly;
+}
+
 function normalizeBillingCycle(candidate: string | undefined) {
   if (candidate === 'semiannual' || candidate === 'annual') return candidate;
   return 'monthly';
@@ -598,6 +837,80 @@ function calculatePlanAmountCents(plan: PlanRecord, billingCycle: string) {
   const multiplier =
     billingCycle === 'annual' ? 10 : billingCycle === 'semiannual' ? 5.5 : 1;
   return Math.round(price * multiplier * 100);
+}
+
+function buildSubscriptionLifecycle(
+  billingCycle: string,
+  startedAt = new Date(),
+): SubscriptionLifecycle {
+  const cycleDays = getBillingCycleDays(billingCycle);
+  const expiresAt = addDays(startedAt, cycleDays);
+  const warningDaysRemaining = Math.min(Math.max(Math.floor(cycleDays * 0.25), 7), 30);
+  const warningAt = addDays(expiresAt, -warningDaysRemaining);
+  const now = new Date();
+  const daysRemaining = Math.ceil(
+    (expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+  );
+  return {
+    renewalDate: expiresAt,
+    expiresAt,
+    daysRemaining,
+    warningDaysRemaining,
+    isExpiringSoon: now >= warningAt && now < expiresAt,
+    isExpired: now >= expiresAt,
+    nextChargeDate: expiresAt,
+  };
+}
+
+function getSubscriptionLifecycle(subscription: Record<string, unknown> | null | undefined) {
+  if (!subscription) return null;
+  const billingCycle = normalizeBillingCycle(
+    typeof subscription.checkoutBillingCycle === 'string'
+      ? subscription.checkoutBillingCycle
+      : typeof subscription.plan === 'object' && subscription.plan && 'billingCycle' in subscription.plan
+        ? String((subscription.plan as { billingCycle?: string }).billingCycle ?? 'monthly')
+        : 'monthly',
+  );
+  const startedAt = subscription.startedAt instanceof Date
+    ? subscription.startedAt
+    : typeof subscription.startedAt === 'string'
+      ? new Date(subscription.startedAt)
+      : new Date();
+  const expiresAt = subscription.expiresAt instanceof Date
+    ? subscription.expiresAt
+    : typeof subscription.expiresAt === 'string'
+      ? new Date(subscription.expiresAt)
+      : null;
+  const renewalDate = subscription.renewalDate instanceof Date
+    ? subscription.renewalDate
+    : typeof subscription.renewalDate === 'string'
+      ? new Date(subscription.renewalDate)
+      : null;
+  const resolvedExpiresAt = expiresAt ?? addDays(startedAt, getBillingCycleDays(billingCycle));
+  const resolvedRenewalDate = renewalDate ?? resolvedExpiresAt;
+  const now = new Date();
+  const daysRemaining = Math.ceil(
+    (resolvedExpiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+  );
+  const warningDaysRemaining = Math.min(Math.max(Math.floor(getBillingCycleDays(billingCycle) * 0.25), 7), 30);
+  const warningAt = addDays(resolvedExpiresAt, -warningDaysRemaining);
+  return {
+    renewalDate: resolvedRenewalDate,
+    expiresAt: resolvedExpiresAt,
+    daysRemaining,
+    warningDaysRemaining,
+    isExpiringSoon: now >= warningAt && now < resolvedExpiresAt,
+    isExpired: now >= resolvedExpiresAt,
+    nextChargeDate: resolvedExpiresAt,
+  } satisfies SubscriptionLifecycle;
+}
+
+function formatRelativeSubscriptionDate(date: Date) {
+  return date.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
 }
 
 function parseInfinitePaySubscriptionEvent(
@@ -627,30 +940,67 @@ function normalizeAmountCents(value: number | string | undefined) {
 
 function getInfinitePayHandle() {
   const handle = process.env.INFINITEPAY_HANDLE?.trim().replace(/^\$/, '');
-  if (!handle) {
-    throw new BadRequestException('INFINITEPAY_HANDLE is required');
-  }
-  return handle;
+  return handle || 'meetpoint';
 }
 
-function requireUrl(candidate: string | undefined, label: string) {
-  if (!candidate) {
-    throw new BadRequestException(`${label} is required`);
+function assertPositiveIntegerCents(amountCents: number) {
+  if (!Number.isInteger(amountCents) || amountCents <= 0) {
+    throw new BadRequestException(
+      `InfinitePay checkout amount must be a positive integer in cents. Received: ${amountCents}`,
+    );
   }
+}
+
+function optionalUrl(candidate: string | undefined) {
+  if (!candidate) return undefined;
   try {
     const parsed = new URL(candidate);
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      throw new BadRequestException(`${label} must use http or https`);
-    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return undefined;
     return parsed.toString();
   } catch {
-    throw new BadRequestException(`${label} must be a valid URL`);
+    return undefined;
   }
+}
+
+function getInfinitePaySuccessUrl() {
+  return (
+    optionalUrl(process.env.INFINITEPAY_SUCCESS_URL) ??
+    optionalUrl(
+      process.env.FRONTEND_PUBLIC_URL ??
+        process.env.PUBLIC_FRONTEND_URL ??
+        process.env.APP_PUBLIC_URL,
+    ) ??
+    'https://novalab.me/meetpoint/?page=profile&payment=success'
+  );
+}
+
+function getInfinitePaySubscriptionWebhookUrl() {
+  const explicitWebhook = optionalUrl(process.env.INFINITEPAY_SUBSCRIPTION_WEBHOOK_URL);
+  if (explicitWebhook) return explicitWebhook;
+
+  const legacyWebhook = optionalUrl(process.env.INFINITEPAY_WEBHOOK_URL);
+  if (legacyWebhook) {
+    return legacyWebhook.replace(
+      '/webhooks/infinitepay',
+      '/subscriptions/infinitepay-webhook',
+    );
+  }
+
+  const apiBaseUrl = optionalUrl(
+    process.env.API_PUBLIC_URL ??
+      process.env.PUBLIC_API_URL ??
+      process.env.BACKEND_PUBLIC_URL,
+  );
+  if (apiBaseUrl) {
+    return new URL('/subscriptions/infinitepay-webhook', apiBaseUrl).toString();
+  }
+
+  return 'https://meetpoint-api-y46s.onrender.com/subscriptions/infinitepay-webhook';
 }
 
 function buildDirectInfinitePayCheckoutUrl(params: {
   handle: string;
-  items: Array<{ quantity: number; price: number; description: string }>;
+  items: InfinitePayCheckoutItem[];
   orderNsu: string;
   redirectUrl: string;
   webhookUrl: string;
@@ -663,6 +1013,49 @@ function buildDirectInfinitePayCheckoutUrl(params: {
   checkoutUrl.searchParams.set('redirect_url', params.redirectUrl);
   checkoutUrl.searchParams.set('webhook_url', params.webhookUrl);
   return checkoutUrl.toString();
+}
+
+function normalizeIntegrationError(error: unknown) {
+  if (error && typeof error === 'object') {
+    const candidate = error as {
+      message?: unknown;
+      response?: {
+        status?: unknown;
+        statusText?: unknown;
+        data?: unknown;
+      };
+      cause?: unknown;
+    };
+    return {
+      message: typeof candidate.message === 'string' ? candidate.message : String(error),
+      response: candidate.response
+        ? {
+            status: candidate.response.status,
+            statusText: candidate.response.statusText,
+            data: candidate.response.data,
+          }
+        : undefined,
+      cause:
+        candidate.cause instanceof Error
+          ? candidate.cause.message
+          : candidate.cause
+            ? String(candidate.cause)
+            : undefined,
+    };
+  }
+
+  return { message: String(error) };
+}
+
+function getPublicIntegrationErrorDetails(error: unknown) {
+  const normalized = normalizeIntegrationError(error);
+  if (process.env.NODE_ENV === 'production') {
+    return {
+      message: normalized.message,
+      responseStatus: normalized.response?.status,
+    };
+  }
+  return normalized;
 }
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {

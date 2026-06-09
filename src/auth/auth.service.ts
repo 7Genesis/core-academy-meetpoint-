@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { JwtPayload } from './jwt.strategy';
 import { JwtKeyService } from './jwt-key.service';
 import { TokenRevocationService } from './token-revocation.service';
@@ -33,6 +34,7 @@ export class AuthService {
     private readonly jwtKeyService: JwtKeyService,
     private readonly tokenRevocationService: TokenRevocationService,
     private readonly prisma: PrismaService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   async register(dto: RegisterDto, consentMetadata: ConsentMetadata = {}) {
@@ -138,13 +140,18 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    if (!isLoginAllowedStatus(user.status)) {
+    const platformStaff = await this.findActivePlatformStaff(normalizedEmail);
+    const subscriptionState = await this.subscriptionsService.getCurrentSubscription(user.id);
+    const refreshedUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+    });
+
+    if (!refreshedUser || !isLoginAllowedStatus(refreshedUser.status)) {
       throw new ForbiddenException('Account is not active');
     }
 
-    const platformStaff = await this.findActivePlatformStaff(normalizedEmail);
     const profile = {
-      ...this.toPublicUser(user),
+      ...this.toPublicUser(refreshedUser),
       ...(platformStaff ? { platformRole: platformStaff.role } : {}),
     };
 
@@ -170,7 +177,15 @@ export class AuthService {
           jwtid: randomUUID(),
         },
       ),
-      user: profile,
+      user: {
+        ...profile,
+        subscription: subscriptionState.subscription,
+        subscriptionActive: subscriptionState.active,
+        subscriptionStatus: subscriptionState.status,
+        subscriptionWarning: subscriptionState.warning,
+        subscriptionShouldBlockAccount: subscriptionState.shouldBlockAccount,
+        subscriptionLifecycle: subscriptionState.lifecycle,
+      },
       termsConsent,
       privacyConsent,
     };
@@ -181,14 +196,29 @@ export class AuthService {
       where: { id: payload.sub },
     });
 
-    if (!user || !isLoginAllowedStatus(user.status)) {
+    if (!user) {
+      throw new UnauthorizedException('Authenticated user is not active');
+    }
+
+    const subscriptionState = await this.subscriptionsService.getCurrentSubscription(user.id);
+    const refreshedUser = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
+
+    if (!refreshedUser || !isLoginAllowedStatus(refreshedUser.status)) {
       throw new UnauthorizedException('Authenticated user is not active');
     }
 
     return {
       user: {
-        ...this.toPublicUser(user),
+        ...this.toPublicUser(refreshedUser),
         ...(payload.platformRole ? { platformRole: payload.platformRole } : {}),
+        subscription: subscriptionState.subscription,
+        subscriptionActive: subscriptionState.active,
+        subscriptionStatus: subscriptionState.status,
+        subscriptionWarning: subscriptionState.warning,
+        subscriptionShouldBlockAccount: subscriptionState.shouldBlockAccount,
+        subscriptionLifecycle: subscriptionState.lifecycle,
       },
     };
   }
