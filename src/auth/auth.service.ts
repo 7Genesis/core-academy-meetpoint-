@@ -164,19 +164,7 @@ export class AuthService {
     const privacyConsent = await this.recordPrivacyConsent(user.id, dto, consentMetadata);
 
     return {
-      accessToken: this.jwtService.sign(
-        {
-          sub: profile.sub,
-          email: profile.email,
-          role: profile.role,
-          tenantId: profile.tenantId,
-          ...(profile.platformRole ? { platformRole: profile.platformRole } : {}),
-        },
-        {
-          ...this.jwtKeyService.getSignOptions(),
-          jwtid: randomUUID(),
-        },
-      ),
+      accessToken: this.issueAccessToken(profile),
       user: {
         ...profile,
         subscription: subscriptionState.subscription,
@@ -210,6 +198,10 @@ export class AuthService {
     }
 
     return {
+      accessToken: this.issueAccessToken({
+        ...this.toPublicUser(refreshedUser),
+        ...(payload.platformRole ? { platformRole: payload.platformRole } : {}),
+      }),
       user: {
         ...this.toPublicUser(refreshedUser),
         ...(payload.platformRole ? { platformRole: payload.platformRole } : {}),
@@ -221,6 +213,28 @@ export class AuthService {
         subscriptionLifecycle: subscriptionState.lifecycle,
       },
     };
+  }
+
+  private issueAccessToken(profile: {
+    sub: string;
+    email: string;
+    role: 'ADMIN' | 'USER';
+    tenantId?: string;
+    platformRole?: 'OWNER' | 'SUPPORT' | 'OPERATIONS' | 'MAINTENANCE';
+  }) {
+    return this.jwtService.sign(
+      {
+        sub: profile.sub,
+        email: profile.email,
+        role: profile.role,
+        tenantId: profile.tenantId,
+        ...(profile.platformRole ? { platformRole: profile.platformRole } : {}),
+      },
+      {
+        ...this.jwtKeyService.getSignOptions(),
+        jwtid: randomUUID(),
+      },
+    );
   }
 
   private toPublicUser(user: {

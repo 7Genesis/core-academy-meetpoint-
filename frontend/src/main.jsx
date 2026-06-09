@@ -1233,14 +1233,23 @@ function calculatePlatformSplit(price) {
   };
 }
 
+function isValidSessionAuthToken(token = '') {
+  return typeof token === 'string' && token.split('.').length === 3;
+}
+
 function readSessionAuthToken() {
   if (typeof sessionStorage === 'undefined') return '';
-  return sessionStorage.getItem(AUTH_SESSION_TOKEN_KEY) || '';
+  const token = sessionStorage.getItem(AUTH_SESSION_TOKEN_KEY) || '';
+  if (token && !isValidSessionAuthToken(token)) {
+    sessionStorage.removeItem(AUTH_SESSION_TOKEN_KEY);
+    return '';
+  }
+  return token;
 }
 
 function writeSessionAuthToken(token = '') {
   if (typeof sessionStorage === 'undefined') return;
-  if (token) {
+  if (isValidSessionAuthToken(token)) {
     sessionStorage.setItem(AUTH_SESSION_TOKEN_KEY, token);
   } else {
     sessionStorage.removeItem(AUTH_SESSION_TOKEN_KEY);
@@ -1249,7 +1258,7 @@ function writeSessionAuthToken(token = '') {
 
 async function apiRequest(path, options = {}) {
   const { token, headers, ...requestOptions } = options;
-  const bearerToken = token || readSessionAuthToken();
+  const bearerToken = isValidSessionAuthToken(token) ? token : readSessionAuthToken();
   const requestConfig = {
     ...requestOptions,
     credentials: 'include',
@@ -2093,7 +2102,10 @@ function App() {
       try {
         const result = await authenticatedUserRequest();
         if (cancelled) return;
-        activateUserSession(mapBackendUserToAccount(result.user), readSessionAuthToken() || 'cookie-session');
+        activateUserSession(
+          mapBackendUserToAccount(result.user),
+          result.accessToken || readSessionAuthToken() || 'cookie-session',
+        );
       } catch {
         if (cancelled) return;
         setAuthToken('');
@@ -2898,8 +2910,8 @@ function App() {
     }
 
     setCurrentUser(account);
-    const sessionToken = token || readSessionAuthToken();
-    if (token) writeSessionAuthToken(token);
+    const sessionToken = isValidSessionAuthToken(token) ? token : readSessionAuthToken();
+    writeSessionAuthToken(sessionToken);
     setAuthToken(sessionToken || 'cookie-session');
     localStorage.removeItem('currentUser');
     applyWorkspaceSnapshot(nextWorkspace, account);
@@ -9697,11 +9709,10 @@ function SubscriptionCheckoutView({
       return;
     }
 
-    const checkoutAuthToken =
-      typeof authToken === 'string' && authToken.split('.').length === 3
-        ? authToken
-        : readSessionAuthToken();
-    if (!checkoutAuthToken || checkoutAuthToken.split('.').length !== 3) {
+    const checkoutAuthToken = isValidSessionAuthToken(authToken)
+      ? authToken
+      : readSessionAuthToken();
+    if (!isValidSessionAuthToken(checkoutAuthToken)) {
       setPaymentNotice(
         'Sua sessão de pagamento não possui autenticação válida. Saia da conta, entre novamente e tente pagar.',
       );

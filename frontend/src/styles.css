@@ -27889,18 +27889,23 @@ html body .payment-card .billing-options > button :is(strong, small) {
     max-width: none !important;
     height: 44px !important;
     padding: 4px 8px !important;
-    justify-content: flex-start !important;
+    display: grid !important;
+    grid-template-columns: 32px minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 7px !important;
+    justify-content: stretch !important;
     overflow: hidden !important;
   }
 
   html body header.topbar.topbar > .account-actions.signed-in-actions > .account-button.account-button .account-name {
     display: block !important;
     min-width: 0 !important;
-    max-width: min(34vw, 132px) !important;
+    max-width: none !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
     font-size: 0.92rem !important;
+    text-align: left !important;
   }
 
   html body header.topbar.topbar > .account-actions.signed-in-actions > .account-button.account-button .points-inline-badge {
@@ -27923,7 +27928,25 @@ html body .payment-card .billing-options > button :is(strong, small) {
     max-width: 150px !important;
   }
 
-  html body header.topbar.topbar > .account-actions.signed-in-actions > .account-button.account-button .account-name {
-    max-width: 92px !important;
+  html body header.topbar.topbar > .account-actions.signed-in-actions {
+    grid-template-columns: 40px minmax(0, 1fr) 64px !important;
+    gap: 6px !important;
+  }
+
+  html body header.topbar.topbar > .account-actions.signed-in-actions > .account-button.account-button {
+    grid-template-columns: 30px minmax(0, 1fr) auto !important;
+    gap: 5px !important;
+    padding-inline: 6px !important;
+  }
+
+  html body header.topbar.topbar > .account-actions.signed-in-actions > .account-button.account-button .points-inline-badge {
+    min-width: 48px !important;
+    padding-inline: 6px !important;
+    font-size: 0.76rem !important;
+  }
+
+  html body header.topbar.topbar > .account-actions.signed-in-actions > .logout-button.logout-button {
+    min-width: 64px !important;
+    padding-inline: 10px !important;
   }
 }
