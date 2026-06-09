@@ -1355,6 +1355,13 @@ function registerRequest(payload = {}) {
   });
 }
 
+function requestEmailVerificationCodeRequest(payload = {}) {
+  return apiRequest('/auth/email-verification-code', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 function authenticatedUserRequest() {
   return apiRequest('/auth/me');
 }
@@ -1414,6 +1421,7 @@ function mapBackendUserToAccount(user = {}, extra = {}) {
     segment,
     label: getAccountTypeLabel(segment),
     tenantId: user.tenantId,
+    companyLinks: Array.isArray(user.companyLinks) ? user.companyLinks : [],
     city: user.city ?? '',
     state: user.state ?? '',
     bio: user.bio ?? '',
@@ -14446,6 +14454,9 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
   });
   const [signupNotice, setSignupNotice] = useState('');
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
+  const [isSendingEmailCode, setIsSendingEmailCode] = useState(false);
+  const [emailCodeNotice, setEmailCodeNotice] = useState('');
+  const [emailCodeRequested, setEmailCodeRequested] = useState(false);
   const [rgVerification, setRgVerification] = useState({
     status: 'idle',
     fileName: '',
@@ -14508,6 +14519,10 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
     setForm((current) => ({ ...current, [field]: value }));
     if (field === 'rg') {
       setRgVerification({ status: 'idle', fileName: '', notice: '' });
+    }
+    if (field === 'email') {
+      setEmailCodeRequested(false);
+      setEmailCodeNotice('');
     }
   }
 
@@ -14623,7 +14638,35 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
     if (isPfSignup && !rgHasAcceptedStructure) return 'RG inválido.';
     if (isPfSignup && !rgIsAcceptedForSignup) return 'Envie uma foto ou PDF do RG/CNH para continuar.';
     if ((isPjSignup || isCompanySignup) && !validateCnpj(normalizedCnpj)) return 'Informe um CNPJ válido.';
+    if (!form.confirmationCode.trim()) return 'Confirme o email com o código enviado pela MeetPoint.';
     return '';
+  }
+
+  async function sendEmailVerificationCode() {
+    if (!isValidRealContactEmail(contactEmail)) {
+      setEmailCodeNotice('Informe um email válido para enviar o código.');
+      return;
+    }
+
+    setIsSendingEmailCode(true);
+    setEmailCodeNotice('');
+
+    try {
+      const result = await requestEmailVerificationCodeRequest({
+        email: contactEmail,
+        name: (form.displayName || form.tradeName || form.legalName).trim(),
+      });
+      setEmailCodeRequested(true);
+      setEmailCodeNotice(
+        result.sent
+          ? 'Código enviado por email com a identidade MeetPoint.'
+          : `Código gerado para teste local: ${result.developmentCode ?? ''}`.trim(),
+      );
+    } catch (error) {
+      setEmailCodeNotice(getSignupFailureMessage(String(error?.message ?? ''), error));
+    } finally {
+      setIsSendingEmailCode(false);
+    }
   }
 
   async function continueToPayment(event) {
@@ -14652,6 +14695,7 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
         acceptedPrivacyPolicy: form.privacyAccepted && form.dataProcessingAccepted,
         termsVersion: TERMS_VERSION,
         privacyVersion: PRIVACY_VERSION,
+        emailVerificationCode: form.confirmationCode.trim(),
       });
       localStorage.setItem(LAST_SIGNUP_LOGIN_KEY, contactEmail);
       localStorage.setItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY, contactEmail);
@@ -14953,8 +14997,32 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
             <div className="signup-email-summary">
               <strong>{contactEmail ? maskEmail(contactEmail) : 'Informe um email válido'}</strong>
               <small>
-                A conta será criada com este email ao finalizar o cadastro. Esta tela não envia código por email.
+                A conta será criada com este email ao finalizar o cadastro. O código precisa ser validado antes.
               </small>
+            </div>
+            <div className="signup-email-verification-box">
+              <label>
+                Código enviado por email
+                <input
+                  value={form.confirmationCode}
+                  onChange={(event) => update('confirmationCode', event.target.value)}
+                  placeholder="Digite o código de 6 dígitos"
+                  maxLength="6"
+                />
+              </label>
+              <div className="button-row">
+                <button type="button" className="light" onClick={sendEmailVerificationCode} disabled={isSendingEmailCode}>
+                  {isSendingEmailCode ? 'Enviando...' : 'Enviar código'}
+                </button>
+                <button type="button" className="light" onClick={sendEmailVerificationCode}>
+                  Reenviar
+                </button>
+              </div>
+              {emailCodeNotice && (
+                <p className={emailCodeNotice.toLowerCase().includes('enviado') ? 'valid-note' : 'invalid-note'}>
+                  {emailCodeNotice}
+                </p>
+              )}
             </div>
             <div className="signup-privacy-consent-box">
               <strong>Termos e privacidade obrigatórios</strong>
@@ -15000,7 +15068,7 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
                 {signupNotice}
               </p>
             )}
-            <button type="submit" disabled={isCreatingAccount}>
+            <button type="submit" disabled={isCreatingAccount || !emailCodeRequested}>
               {isCreatingAccount ? 'Criando conta...' : 'Continuar para pagamento'}
             </button>
           </section>
@@ -15499,6 +15567,7 @@ function PlatformProfile({
     state: '',
     password: '',
     companyName: '',
+    linkedPeopleText: '',
     grantFreeAccess: true,
     reason: '',
   });
@@ -15672,6 +15741,7 @@ function PlatformProfile({
       state: accountProvision.state.trim().toUpperCase(),
       password: accountProvision.password.trim(),
       companyName: accountProvision.companyName.trim(),
+      linkedPeopleText: accountProvision.linkedPeopleText.trim(),
       reason: accountProvision.reason.trim(),
     };
     if (!provision.name || !provision.email || !provision.city || !provision.state || !provision.password) {
@@ -15701,6 +15771,7 @@ function PlatformProfile({
       companyName: provision.companyName || provision.name,
       reason: provision.reason,
       grantFreeAccess: provision.grantFreeAccess,
+      linkedPeople: parseLinkedPeopleProvision(provision.linkedPeopleText),
     };
 
     try {
@@ -15714,6 +15785,7 @@ function PlatformProfile({
           ...created,
           segment: created.accountSegment ?? provision.segment,
           email: created.email ?? provision.email,
+          linkedPeople: created.linkedPeople ?? accountPayload.linkedPeople,
         };
         setProvisionedAccounts((current) => [nextAccount, ...current]);
         setNotice(
@@ -15765,9 +15837,23 @@ function PlatformProfile({
       state: '',
       password: '',
       companyName: '',
+      linkedPeopleText: '',
       grantFreeAccess: true,
       reason: '',
     });
+  }
+
+  function parseLinkedPeopleProvision(value = '') {
+    if (accountProvision.segment !== 'company') return [];
+    return value
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [name = '', email = '', password = ''] = line.split('|').map((part) => part.trim());
+        return { name, email, password };
+      })
+      .filter((person) => person.name && person.email && person.password);
   }
 
   function publishBenefit() {
@@ -16445,6 +16531,20 @@ function PlatformProfile({
                     />
                   </label>
                 </div>
+                {accountProvision.segment === 'company' && (
+                  <label>
+                    Pessoas vinculadas
+                    <textarea
+                      className="platform-textarea"
+                      value={accountProvision.linkedPeopleText}
+                      onChange={(event) => updateAccountProvision('linkedPeopleText', event.target.value)}
+                      placeholder={'Nome completo | email@dominio.com | senha forte\nOutro nome | outro@email.com | outraSenha123'}
+                    />
+                    <small>
+                      Uma pessoa por linha. Formato: nome | email | senha. Esses acessos ficam vinculados à empresa criada.
+                    </small>
+                  </label>
+                )}
                 <label>
                   Motivo da cortesia ou vínculo
                   <textarea
@@ -16505,6 +16605,9 @@ function PlatformProfile({
                     <strong>{account.name}</strong>
                     <small>{getAccountTypeLabel(account.segment)} - {account.email}</small>
                     <small>{account.status} {account.companyName ? `- ${account.companyName}` : ''}</small>
+                    {account.linkedPeople?.length > 0 && (
+                      <small>{account.linkedPeople.length} pessoa(s) vinculada(s)</small>
+                    )}
                     <small>{account.permissions.join(', ')}</small>
                   </div>
                   <button type="button" onClick={() => setNotice(`${account.name}: ${account.status}.`)}>

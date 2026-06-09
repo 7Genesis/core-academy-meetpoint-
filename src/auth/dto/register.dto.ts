@@ -54,4 +54,8 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   privacyVersion?: string;
+
+  @IsString()
+  @MinLength(6)
+  emailVerificationCode!: string;
 }

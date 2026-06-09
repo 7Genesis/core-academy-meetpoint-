@@ -120,6 +120,13 @@ export class PlatformAdminService {
     const normalizedState = dto.state.trim().toUpperCase();
     const normalizedCompanyName = dto.companyName?.trim() ?? '';
     const normalizedReason = dto.reason?.trim() ?? '';
+    const linkedPeople = (dto.linkedPeople ?? [])
+      .map((person) => ({
+        name: person.name.trim(),
+        email: person.email.trim().toLowerCase(),
+        password: person.password.trim(),
+      }))
+      .filter((person) => person.name && person.email && person.password);
 
     if (!normalizedName || !normalizedEmail || !normalizedCity || !normalizedState) {
       throw new BadRequestException('Nome, email, cidade e estado sao obrigatorios');
@@ -132,7 +139,10 @@ export class PlatformAdminService {
       segment === 'company'
         ? await this.createCompanyTenant(normalizedCompanyName || normalizedName)
         : await this.resolveDefaultTenant();
-    const passwordHash = await hash(dto.password, 12);
+    const [passwordHash, linkedPasswordHashes] = await Promise.all([
+      hash(dto.password, 12),
+      Promise.all(linkedPeople.map((person) => hash(person.password, 12))),
+    ]);
     const bio = this.decorateAccountBio(
       [
         normalizedReason ? `Origem administrativa: ${normalizedReason}` : '',
@@ -142,8 +152,8 @@ export class PlatformAdminService {
       segment,
     );
 
-    const user = await this.prisma.withPlatformAdmin(async (tx) =>
-      tx.user.create({
+    const result = await this.prisma.withPlatformAdmin(async (tx) => {
+      const user = await tx.user.create({
         data: {
           tenantId: tenant.id,
           email: normalizedEmail,
@@ -174,11 +184,42 @@ export class PlatformAdminService {
           lastLoginAt: true,
           tenant: { select: { id: true, name: true, subdomain: true } },
         },
-      }),
-    );
+      });
 
-    await this.prisma.withPlatformAdmin((tx) =>
-      this.audit(tx, {
+      const linkedUsers = await Promise.all(
+        linkedPeople.map((person, index) =>
+          tx.user.create({
+            data: {
+              tenantId: tenant.id,
+              email: person.email,
+              contactEmailVerifiedAt: new Date(),
+              password: linkedPasswordHashes[index],
+              passwordHash: linkedPasswordHashes[index],
+              role: 'USER',
+              status: AccountStatus.ACTIVE,
+              name: person.name,
+              city: normalizedCity,
+              state: normalizedState,
+              bio: this.decorateLinkedPersonBio(
+                `Vinculado a ${normalizedCompanyName || normalizedName}.`,
+                normalizedCompanyName || normalizedName,
+              ),
+              acceptedTerms: true,
+              acceptedPrivacyPolicy: true,
+            },
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              status: true,
+              tenantId: true,
+              createdAt: true,
+            },
+          }),
+        ),
+      );
+
+      await this.audit(tx, {
         actorStaffId,
         action: 'MANAGED_ACCOUNT_CREATED',
         targetType: 'User',
@@ -188,14 +229,21 @@ export class PlatformAdminService {
           email: this.dataMasking.maskEmail(normalizedEmail),
           companyName: normalizedCompanyName,
           grantFreeAccess: Boolean(dto.grantFreeAccess),
+          linkedPeopleCount: linkedUsers.length,
         },
-      }),
-    );
+      });
+
+      return { user, linkedUsers };
+    });
 
     return {
-      ...user,
-      email: this.dataMasking.maskEmail(user.email),
+      ...result.user,
+      email: this.dataMasking.maskEmail(result.user.email),
       accountSegment: segment,
+      linkedPeople: result.linkedUsers.map((person) => ({
+        ...person,
+        email: this.dataMasking.maskEmail(person.email),
+      })),
     };
   }
 
@@ -603,6 +651,12 @@ export class PlatformAdminService {
     const cleanedBio = bio.trim();
     if (!cleanedBio) return marker;
     return cleanedBio.includes(marker) ? cleanedBio : `${cleanedBio} ${marker}`.trim();
+  }
+
+  private decorateLinkedPersonBio(bio: string, companyName: string) {
+    const segmentMarker = '[[account-segment:student]]';
+    const companyMarker = `[[company-link:${companyName.replace(/\]/g, '')}]]`;
+    return `${bio.trim()} ${segmentMarker} ${companyMarker}`.trim();
   }
 
   private async listUsers(

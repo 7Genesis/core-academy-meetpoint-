@@ -424,6 +424,22 @@ model Certificate {
   @@map("certificates")
 }
 
+model EmailVerificationCode {
+  id         String    @id @default(uuid()) @db.Uuid
+  email      String
+  codeHash   String
+  purpose    String    @default("registration")
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
+  @@index([purpose])
+  @@index([expiresAt])
+  @@map("email_verification_codes")
+}
+
 model PlatformStaff {
   id        String       @id @default(uuid()) @db.Uuid
   name      String

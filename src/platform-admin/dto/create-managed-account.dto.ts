@@ -1,4 +1,15 @@
-import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 
 const ManagedAccountSegment = {
   student: 'student',
@@ -9,6 +20,20 @@ const ManagedAccountSegment = {
 } as const;
 
 export type ManagedAccountSegment = keyof typeof ManagedAccountSegment;
+
+export class CreateManagedLinkedPersonDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  name!: string;
+
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  @MinLength(8)
+  password!: string;
+}
 
 export class CreateManagedAccountDto {
   @IsEnum(ManagedAccountSegment)
@@ -49,4 +74,10 @@ export class CreateManagedAccountDto {
   @IsBoolean()
   @IsOptional()
   grantFreeAccess?: boolean;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateManagedLinkedPersonDto)
+  @IsOptional()
+  linkedPeople?: CreateManagedLinkedPersonDto[];
 }

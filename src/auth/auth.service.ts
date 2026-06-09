@@ -16,6 +16,7 @@ import { TokenRevocationService } from './token-revocation.service';
 import { LoginDto } from './dto/login.dto';
 import { PrivacyConsentDto } from './dto/privacy-consent.dto';
 import { RegisterDto } from './dto/register.dto';
+import { EmailVerificationService } from './email-verification.service';
 
 type ConsentMetadata = {
   ip?: string;
@@ -35,6 +36,7 @@ export class AuthService {
     private readonly tokenRevocationService: TokenRevocationService,
     private readonly prisma: PrismaService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly emailVerificationService: EmailVerificationService,
   ) {}
 
   async register(dto: RegisterDto, consentMetadata: ConsentMetadata = {}) {
@@ -68,6 +70,10 @@ export class AuthService {
     if (existing) {
       throw new ConflictException('Email is already registered');
     }
+    await this.emailVerificationService.consumeRegistrationCode(
+      normalizedEmail,
+      dto.emailVerificationCode,
+    );
 
     const passwordHash = await hash(dto.password, BCRYPT_ROUNDS);
     const user = await this.prisma.user.create({
@@ -261,11 +267,12 @@ export class AuthService {
       tenantId: user.tenantId,
       status: user.status,
       accountSegment: parseAccountSegmentFromBio(user.bio),
+      companyLinks: parseCompanyLinksFromBio(user.bio),
       name: user.name ?? '',
       city: user.city ?? '',
       state: user.state ?? '',
       profileImage: user.profileImage ?? '',
-      bio: user.bio ?? '',
+      bio: stripAccountMetadata(user.bio),
       acceptedTerms: Boolean(user.acceptedTerms),
       acceptedPrivacyPolicy: Boolean(user.acceptedPrivacyPolicy),
       createdAt: user.createdAt,
@@ -406,6 +413,19 @@ function parseAccountSegmentFromBio(bio: string | null | undefined) {
     return value;
   }
   return 'student';
+}
+
+function parseCompanyLinksFromBio(bio: string | null | undefined) {
+  const matches = [...(bio?.matchAll(/\[\[company-link:([^\]]+)\]\]/gi) ?? [])];
+  return [...new Set(matches.map((match) => match[1]?.trim()).filter(Boolean))];
+}
+
+function stripAccountMetadata(bio: string | null | undefined) {
+  return (bio ?? '')
+    .replace(/\s*\[\[account-segment:[^\]]+\]\]\s*/gi, ' ')
+    .replace(/\s*\[\[company-link:[^\]]+\]\]\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function isLoginAllowedStatus(status: string) {
