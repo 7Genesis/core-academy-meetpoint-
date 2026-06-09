@@ -62,8 +62,4 @@ export class RegisterDto {
   @IsString()
   @MinLength(6)
   emailVerificationCode!: string;
-
-  @IsString()
-  @MinLength(6)
-  phoneVerificationCode!: string;
 }

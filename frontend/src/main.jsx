@@ -1362,13 +1362,6 @@ function requestEmailVerificationCodeRequest(payload = {}) {
   });
 }
 
-function requestPhoneVerificationCodeRequest(payload = {}) {
-  return apiRequest('/auth/phone-verification-code', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
 function authenticatedUserRequest() {
   return apiRequest('/auth/me');
 }
@@ -14460,7 +14453,6 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
     password: '',
     passwordConfirm: '',
     confirmationCode: '',
-    phoneConfirmationCode: '',
     city: '',
     state: '',
     bio: '',
@@ -14477,9 +14469,6 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
   const [isSendingEmailCode, setIsSendingEmailCode] = useState(false);
   const [emailCodeNotice, setEmailCodeNotice] = useState('');
   const [emailCodeRequested, setEmailCodeRequested] = useState(false);
-  const [isSendingPhoneCode, setIsSendingPhoneCode] = useState(false);
-  const [phoneCodeNotice, setPhoneCodeNotice] = useState('');
-  const [phoneCodeRequested, setPhoneCodeRequested] = useState(false);
   const [rgVerification, setRgVerification] = useState({
     status: 'idle',
     fileName: '',
@@ -14542,9 +14531,7 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
 
   function update(field, value) {
     if (field === 'phone') {
-      setForm((current) => ({ ...current, phone: value, phoneConfirmationCode: '' }));
-      setPhoneCodeRequested(false);
-      setPhoneCodeNotice('');
+      setForm((current) => ({ ...current, phone: value }));
       return;
     }
 
@@ -14672,7 +14659,6 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
     if (isPfSignup && !rgIsAcceptedForSignup) return 'Envie uma foto ou PDF do RG/CNH para continuar.';
     if ((isPjSignup || isCompanySignup) && !validateCnpj(normalizedCnpj)) return 'Informe um CNPJ válido.';
     if (!form.confirmationCode.trim()) return 'Confirme o email com o código enviado pela MeetPoint.';
-    if (!form.phoneConfirmationCode.trim()) return 'Confirme o WhatsApp com o código enviado pela MeetPoint.';
     return '';
   }
 
@@ -14700,33 +14686,6 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
       setEmailCodeNotice(getSignupFailureMessage(String(error?.message ?? ''), error));
     } finally {
       setIsSendingEmailCode(false);
-    }
-  }
-
-  async function sendPhoneVerificationCode() {
-    if (!isValidSignupPhone(form.phone)) {
-      setPhoneCodeNotice('Informe um WhatsApp válido com DDD para enviar o código.');
-      return;
-    }
-
-    setIsSendingPhoneCode(true);
-    setPhoneCodeNotice('');
-
-    try {
-      const result = await requestPhoneVerificationCodeRequest({
-        phone: normalizedPhone,
-        name: (form.displayName || form.tradeName || form.legalName).trim(),
-      });
-      setPhoneCodeRequested(true);
-      setPhoneCodeNotice(
-        result.sent
-          ? `Código enviado por WhatsApp para ${result.phone}.`
-          : `Código gerado para teste local: ${result.developmentCode ?? ''}`.trim(),
-      );
-    } catch (error) {
-      setPhoneCodeNotice(getSignupFailureMessage(String(error?.message ?? ''), error));
-    } finally {
-      setIsSendingPhoneCode(false);
     }
   }
 
@@ -14758,7 +14717,6 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
         privacyVersion: PRIVACY_VERSION,
         emailVerificationCode: form.confirmationCode.trim(),
         phone: normalizedPhone,
-        phoneVerificationCode: form.phoneConfirmationCode.trim(),
       });
       localStorage.setItem(LAST_SIGNUP_LOGIN_KEY, contactEmail);
       localStorage.setItem(LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY, contactEmail);
@@ -14784,12 +14742,6 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
   function getSignupFailureMessage(message, error) {
     if (message.includes('Phone is already registered')) return 'Este WhatsApp já está cadastrado.';
     if (message.includes('already registered')) return 'Este email já está cadastrado.';
-    if (message.includes('WhatsApp verification service is not configured')) {
-      return 'O envio por WhatsApp ainda não está configurado no servidor.';
-    }
-    if (message.includes('Phone verification') || message.includes('phone verification')) {
-      return 'Código de WhatsApp inválido, expirado ou bloqueado.';
-    }
     if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
       return 'Não foi possível conectar à API de cadastro. Verifique se o backend está ativo no cPanel e se a URL da API aponta para /meetpoint.';
     }
@@ -15070,7 +15022,7 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
             <div className="signup-email-summary">
               <strong>{contactEmail ? maskEmail(contactEmail) : 'Informe um email válido'}</strong>
               <small>
-                A conta será criada com este email ao finalizar o cadastro. O código precisa ser validado antes.
+                A conta será criada com este email ao finalizar o cadastro. O código de email precisa ser validado antes.
               </small>
             </div>
             <div className="signup-email-verification-box">
@@ -15097,30 +15049,11 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
                 </p>
               )}
             </div>
-            <div className="signup-email-verification-box">
-              <label>
-                Código enviado por WhatsApp
-                <input
-                  value={form.phoneConfirmationCode}
-                  onChange={(event) => update('phoneConfirmationCode', event.target.value)}
-                  placeholder="Digite o código de 6 dígitos"
-                  maxLength="6"
-                  inputMode="numeric"
-                />
-              </label>
-              <div className="button-row">
-                <button type="button" className="light" onClick={sendPhoneVerificationCode} disabled={isSendingPhoneCode}>
-                  {isSendingPhoneCode ? 'Enviando...' : 'Enviar WhatsApp'}
-                </button>
-                <button type="button" className="light" onClick={sendPhoneVerificationCode}>
-                  Reenviar
-                </button>
-              </div>
-              {phoneCodeNotice && (
-                <p className={phoneCodeNotice.toLowerCase().includes('enviado') ? 'valid-note' : 'invalid-note'}>
-                  {phoneCodeNotice}
-                </p>
-              )}
+            <div className="signup-email-summary">
+              <strong>{normalizedPhone || 'Informe um WhatsApp válido'}</strong>
+              <small>
+                O WhatsApp será usado para avisos operacionais, suporte e notificações da conta. Ele não exige código nesta etapa.
+              </small>
             </div>
             <div className="signup-privacy-consent-box">
               <strong>Termos e privacidade obrigatórios</strong>
@@ -15166,7 +15099,7 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
                 {signupNotice}
               </p>
             )}
-            <button type="submit" disabled={isCreatingAccount || !emailCodeRequested || !phoneCodeRequested}>
+            <button type="submit" disabled={isCreatingAccount || !emailCodeRequested}>
               {isCreatingAccount ? 'Criando conta...' : 'Continuar para pagamento'}
             </button>
           </section>

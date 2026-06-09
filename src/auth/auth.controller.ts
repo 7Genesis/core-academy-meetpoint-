@@ -7,9 +7,7 @@ import { LoginDto } from './dto/login.dto';
 import { PrivacyConsentDto } from './dto/privacy-consent.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RequestEmailVerificationDto } from './dto/request-email-verification.dto';
-import { RequestPhoneVerificationDto } from './dto/request-phone-verification.dto';
 import { EmailVerificationService } from './email-verification.service';
-import { PhoneVerificationService } from './phone-verification.service';
 import { JwtPayload } from './jwt.strategy';
 
 const ACCESS_TOKEN_COOKIE = 'access_token';
@@ -21,7 +19,6 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly emailVerificationService: EmailVerificationService,
-    private readonly phoneVerificationService: PhoneVerificationService,
   ) {}
 
   @Public()
@@ -29,13 +26,6 @@ export class AuthController {
   @Post('email-verification-code')
   requestEmailVerificationCode(@Body() dto: RequestEmailVerificationDto) {
     return this.emailVerificationService.requestRegistrationCode(dto.email, dto.name);
-  }
-
-  @Public()
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
-  @Post('phone-verification-code')
-  requestPhoneVerificationCode(@Body() dto: RequestPhoneVerificationDto) {
-    return this.phoneVerificationService.requestRegistrationCode(dto.phone, dto.name);
   }
 
   @Public()

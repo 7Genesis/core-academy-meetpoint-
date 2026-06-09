@@ -446,22 +446,6 @@ model EmailVerificationCode {
   @@map("email_verification_codes")
 }
 
-model PhoneVerificationCode {
-  id         String    @id @default(uuid()) @db.Uuid
-  phone      String
-  codeHash   String
-  purpose    String    @default("registration")
-  attempts   Int       @default(0)
-  expiresAt  DateTime
-  consumedAt DateTime?
-  createdAt  DateTime  @default(now())
-
-  @@index([phone])
-  @@index([purpose])
-  @@index([expiresAt])
-  @@map("phone_verification_codes")
-}
-
 model PlatformStaff {
   id        String       @id @default(uuid()) @db.Uuid
   name      String

@@ -17,8 +17,8 @@ import { TokenRevocationService } from './token-revocation.service';
 import { LoginDto } from './dto/login.dto';
 import { PrivacyConsentDto } from './dto/privacy-consent.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ContactNotificationService } from './contact-notification.service';
 import { EmailVerificationService } from './email-verification.service';
-import { PhoneVerificationService } from './phone-verification.service';
 
 type ConsentMetadata = {
   ip?: string;
@@ -38,8 +38,8 @@ export class AuthService {
     private readonly tokenRevocationService: TokenRevocationService,
     private readonly prisma: PrismaService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly contactNotificationService: ContactNotificationService,
     private readonly emailVerificationService: EmailVerificationService,
-    private readonly phoneVerificationService: PhoneVerificationService,
     private readonly fieldEncryptionService: FieldEncryptionService,
   ) {}
 
@@ -74,10 +74,7 @@ export class AuthService {
     if (existing) {
       throw new ConflictException('Email is already registered');
     }
-    const normalizedPhone = await this.phoneVerificationService.consumeRegistrationCode(
-      dto.phone,
-      dto.phoneVerificationCode,
-    );
+    const normalizedPhone = normalizePhone(dto.phone);
     const phoneHash = this.fieldEncryptionService.hashForLookup(normalizedPhone, 'phone');
     const existingPhone = phoneHash
       ? await this.prisma.user.findFirst({
@@ -103,7 +100,6 @@ export class AuthService {
         contactEmailVerifiedAt: new Date(),
         contactPhoneHash: phoneHash,
         contactPhoneEncrypted: this.fieldEncryptionService.encryptString(normalizedPhone),
-        contactPhoneVerifiedAt: new Date(),
         password: passwordHash,
         passwordHash,
         role: 'USER',
@@ -132,6 +128,12 @@ export class AuthService {
       },
       consentMetadata,
     );
+
+    await this.contactNotificationService.notifyRegistrationPendingPayment({
+      email: normalizedEmail,
+      name: normalizedName,
+      phone: normalizedPhone,
+    });
 
     return {
       user: this.toPublicUser(user),
@@ -443,6 +445,25 @@ function parseAccountSegmentFromBio(bio: string | null | undefined) {
 function parseCompanyLinksFromBio(bio: string | null | undefined) {
   const matches = [...(bio?.matchAll(/\[\[company-link:([^\]]+)\]\]/gi) ?? [])];
   return [...new Set(matches.map((match) => match[1]?.trim()).filter(Boolean))];
+}
+
+function normalizePhone(phone: string) {
+  const digits = phone.replace(/\D/g, '');
+  let normalized = '';
+
+  if (digits.length === 10 || digits.length === 11) {
+    normalized = `+55${digits}`;
+  } else if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+    normalized = `+${digits}`;
+  } else if (digits.length >= 10 && digits.length <= 15) {
+    normalized = `+${digits}`;
+  }
+
+  if (!/^\+\d{10,15}$/.test(normalized)) {
+    throw new BadRequestException('Valid WhatsApp phone is required');
+  }
+
+  return normalized;
 }
 
 function stripAccountMetadata(bio: string | null | undefined) {
