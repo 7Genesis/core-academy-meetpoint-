@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { CookieOptions, Request, Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
@@ -64,6 +64,18 @@ export class AuthController {
     }
 
     return this.authService.getAuthenticatedUser(request.user);
+  }
+
+  @Get('people')
+  people(
+    @Req() request: Request & { user?: JwtPayload },
+    @Query('search') search = '',
+  ) {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Authenticated user is required');
+    }
+
+    return this.authService.searchPeople(request.user, search);
   }
 
   @Post('logout')

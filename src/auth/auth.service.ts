@@ -8,6 +8,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
+import { AccountStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { FieldEncryptionService } from '../common/security/field-encryption.service';
@@ -25,8 +26,13 @@ type ConsentMetadata = {
   userAgent?: string;
 };
 
-const ACTIVE_ACCOUNT_STATUS = 'ACTIVE';
-const PENDING_PAYMENT_ACCOUNT_STATUS = 'PENDING_PAYMENT';
+const ACTIVE_ACCOUNT_STATUS = AccountStatus.ACTIVE;
+const PENDING_PAYMENT_ACCOUNT_STATUS = AccountStatus.PENDING_PAYMENT;
+const DISCOVERABLE_ACCOUNT_STATUSES = [
+  ACTIVE_ACCOUNT_STATUS,
+  PENDING_PAYMENT_ACCOUNT_STATUS,
+  AccountStatus.PAYMENT_PROCESSING,
+];
 const DUMMY_BCRYPT_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8rLOHWfQ2PqR4QEc9Rtv1P3J9G/6nW';
 const BCRYPT_ROUNDS = 12;
 
@@ -244,6 +250,64 @@ export class AuthService {
         subscriptionLifecycle: subscriptionState.lifecycle,
       },
     };
+  }
+
+  async searchPeople(payload: JwtPayload, search = '') {
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { tenantId: true },
+    });
+    const tenantId = payload.tenantId ?? currentUser?.tenantId;
+
+    if (!tenantId) {
+      throw new UnauthorizedException('Authenticated user tenant is required');
+    }
+
+    const query = search.trim().slice(0, 80);
+    const users = await this.prisma.withTenant(tenantId, async (tx) =>
+      tx.user.findMany({
+        where: {
+          tenantId,
+          id: { not: payload.sub },
+          status: { in: DISCOVERABLE_ACCOUNT_STATUSES },
+          ...(query
+            ? {
+                OR: [
+                  { name: { contains: query, mode: 'insensitive' as const } },
+                  { email: { contains: query, mode: 'insensitive' as const } },
+                  { city: { contains: query, mode: 'insensitive' as const } },
+                  { state: { contains: query, mode: 'insensitive' as const } },
+                  { bio: { contains: query, mode: 'insensitive' as const } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+        take: query ? 20 : 12,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          city: true,
+          state: true,
+          profileImage: true,
+          bio: true,
+          createdAt: true,
+        },
+      }),
+    );
+
+    return users.map((user) => ({
+      id: user.id,
+      name: user.name || 'Perfil MeetPoint',
+      handle: buildPublicHandle(user.name, user.email, user.id),
+      initials: buildInitials(user.name || user.email),
+      city: [user.city, user.state].filter(Boolean).join(', ') || 'MeetPoint',
+      bio: stripAccountMetadata(user.bio) || 'Perfil cadastrado na plataforma.',
+      photo: user.profileImage ?? '',
+      accountSegment: parseAccountSegmentFromBio(user.bio),
+      createdAt: user.createdAt,
+    }));
   }
 
   private issueAccessToken(profile: {
@@ -486,6 +550,27 @@ function stripAccountMetadata(bio: string | null | undefined) {
     .replace(/\s*\[\[company-link:[^\]]+\]\]\s*/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function buildPublicHandle(name: string | null | undefined, email: string, id: string) {
+  const source = name?.trim() || email.split('@')[0] || 'perfil';
+  const slug = source
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 24);
+  return `@${slug || 'perfil'}${id.slice(0, 4)}`;
+}
+
+function buildInitials(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'MP';
 }
 
 function isLoginAllowedStatus(status: string) {

@@ -19,7 +19,7 @@ const navigation = [
 ];
 const primaryMobilePageIds = ['feed', 'opportunities', 'benefits', 'events'];
 const loggedInPrimaryMobilePageIds = ['feed', 'opportunities', 'benefits', 'events'];
-const publicReadPageIds = ['home', 'feed', 'opportunities', 'events', 'benefits', 'profile'];
+const publicReadPageIds = ['home', 'feed', 'courses', 'communities', 'opportunities', 'events', 'benefits', 'rewards', 'partners', 'profile'];
 const subscriptionPendingPageIds = ['profile', 'partners', 'subscription-checkout'];
 const guestPrimaryMobilePageIds = ['feed', 'opportunities', 'events', 'benefits'];
 const TERMS_VERSION = 'meetpoint-lgpd-2026-06-03';
@@ -1365,6 +1365,12 @@ function authenticatedUserRequest() {
   return apiRequest('/auth/me');
 }
 
+function peopleDiscoveryRequest(search = '') {
+  const query = search.trim();
+  const suffix = query ? `?search=${encodeURIComponent(query)}` : '';
+  return apiRequest(`/auth/people${suffix}`);
+}
+
 function privacyConsentRequest(consent = {}) {
   return apiRequest('/auth/privacy-consent', {
     method: 'POST',
@@ -2081,9 +2087,8 @@ function App() {
   // Estado central da aplicação: páginas, autenticação, dados locais e ações do usuário.
   const initialRoute = useMemo(() => getCurrentRouteState(), []);
   
-  // Rotas com dados privados ou alteração de estado. Feed, oportunidades, eventos e benefícios são leitura pública.
-  const protectedRoutes = ['courses', 'communities', 'rewards', 'private-chat', 'course-create', 'course-builder', 'checkout', 'community-create', 'event-create'];
-  const subscriptionRequiredRoutes = ['courses', 'communities', 'rewards', 'private-chat', 'course-create', 'course-builder', 'checkout', 'community-create', 'event-create'];
+  // Rotas de leitura ficam públicas; assinatura é exigida nas ações que alteram estado.
+  const protectedRoutes = ['private-chat', 'course-create', 'course-builder', 'checkout', 'community-create', 'event-create', 'subscription-checkout'];
   
   // Autenticação real: a sessão persistente fica no cookie HttpOnly do backend.
   const [currentUser, setCurrentUser] = useState(null);
@@ -2093,14 +2098,6 @@ function App() {
     if (user && pageId === 'home' && hasActivePlatformSubscription(user)) return 'feed';
     if (user && ['platform', 'employee'].includes(user.segment) && pageId === 'private-chat') return 'profile';
     if (!user && protectedRoutes.includes(pageId)) return 'profile';
-    if (
-      user &&
-      !hasActivePlatformSubscription(user) &&
-      !publicReadPageIds.includes(pageId) &&
-      subscriptionRequiredRoutes.includes(pageId)
-    ) {
-      return 'subscription-checkout';
-    }
     return pageId;
   }
   
@@ -3011,7 +3008,12 @@ function App() {
       return;
     }
 
-    if (currentUser && !hasActivePlatformSubscription(currentUser) && !subscriptionPendingPageIds.includes(targetPageId)) {
+    if (
+      currentUser &&
+      !hasActivePlatformSubscription(currentUser) &&
+      !publicReadPageIds.includes(targetPageId) &&
+      !subscriptionPendingPageIds.includes(targetPageId)
+    ) {
       requestSubscriptionActivation(`acessar ${getPageLabel(targetPageId)}`);
       setLockedRoute('subscription-checkout');
       setPreviousPage(activePage);
@@ -6512,6 +6514,23 @@ function scrollToFeedTarget(selector, block = 'center') {
   }, 90);
 }
 
+function mapBackendPersonToSocialProfile(person = {}) {
+  const name = person.name || 'Perfil MeetPoint';
+  return {
+    id: person.id ?? person.handle ?? name,
+    name,
+    handle: person.handle ?? getUserHandle({ name }),
+    initials: person.initials ?? getInitials(name),
+    city: person.city ?? 'MeetPoint',
+    bio: person.bio ?? 'Perfil cadastrado na plataforma.',
+    interests: [],
+    followers: 0,
+    posts: 0,
+    photo: person.photo ?? person.profileImage ?? '',
+    accountSegment: person.accountSegment ?? 'student',
+  };
+}
+
 // Tela Feed: cria posts, filtra conteudos, busca pessoas e conecta cards sociais.
 function FeedView({
   posts,
@@ -6550,6 +6569,8 @@ function FeedView({
   const [selectedHashtag, setSelectedHashtag] = useState('');
   const [postCategory, setPostCategory] = useState('Atualização');
   const [peopleQuery, setPeopleQuery] = useState('');
+  const [remotePeople, setRemotePeople] = useState([]);
+  const [peopleStatus, setPeopleStatus] = useState('');
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [showFeedRefreshHint, setShowFeedRefreshHint] = useState(false);
   const followingHandles = socialGraph.followingHandles;
@@ -6563,6 +6584,34 @@ function FeedView({
 
     return () => window.clearTimeout(refreshTimer);
   }, []);
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setRemotePeople([]);
+      setPeopleStatus('');
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      peopleDiscoveryRequest(peopleQuery)
+        .then((items) => {
+          if (cancelled) return;
+          setRemotePeople(Array.isArray(items) ? items.map(mapBackendPersonToSocialProfile) : []);
+          setPeopleStatus('');
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setRemotePeople([]);
+          setPeopleStatus(error.message || 'Não foi possível carregar pessoas da API.');
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [currentUser?.id, peopleQuery]);
 
   const feedFilters = ['Tudo', 'Seguindo', 'Recomendados', 'Minha cidade', 'Eventos', 'Vagas'];
   const totalComments = posts.reduce((total, post) => total + (post.comments?.length ?? 0), 0);
@@ -6602,12 +6651,14 @@ function FeedView({
       return true;
     })
     .sort(compareFeedItemsByNewest);
-  const peopleResults = socialProfiles.filter((profile) => {
+  const sourcePeople = remotePeople.length || peopleQuery.trim() ? remotePeople : socialProfiles;
+  const peopleResults = sourcePeople.filter((profile) => {
     const query = peopleQuery.trim().toLowerCase();
     if (!query) return true;
     return (
       profile.name.toLowerCase().includes(query) ||
-      profile.handle.toLowerCase().includes(query)
+      profile.handle.toLowerCase().includes(query) ||
+      (profile.city ?? '').toLowerCase().includes(query)
     );
   });
 
@@ -6819,6 +6870,7 @@ function FeedView({
               peopleQuery={peopleQuery}
               setPeopleQuery={setPeopleQuery}
               peopleResults={peopleResults}
+              peopleStatus={peopleStatus}
               followingHandles={followingHandles}
               friendRequests={friendRequests}
               followProfile={followProfile}
@@ -6851,6 +6903,7 @@ function FeedView({
               peopleQuery={peopleQuery}
               setPeopleQuery={setPeopleQuery}
               peopleResults={peopleResults}
+              peopleStatus={peopleStatus}
               followingHandles={followingHandles}
               friendRequests={friendRequests}
               followProfile={followProfile}
@@ -7267,6 +7320,7 @@ function PeopleDiscovery({
   peopleQuery,
   setPeopleQuery,
   peopleResults,
+  peopleStatus = '',
   followingHandles,
   friendRequests,
   followProfile,
@@ -7338,7 +7392,9 @@ function PeopleDiscovery({
             )}
           </div>
           <div className="people-result-list">
-            {peopleResults.length === 0 ? (
+            {peopleStatus ? (
+              <p className="empty-state">{peopleStatus}</p>
+            ) : peopleResults.length === 0 ? (
               <p className="empty-state">Nenhuma pessoa encontrada ainda.</p>
             ) : peopleResults.slice(0, 4).map((profile) => {
               const isFollowing = followingHandles.includes(profile.handle);
