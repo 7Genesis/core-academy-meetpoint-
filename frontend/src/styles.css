@@ -24093,8 +24093,16 @@ html[data-theme] body .modern-profile-main.modern-profile-main {
   margin-top: clamp(-68px, -5vw, -48px) !important;
   padding-inline: clamp(12px, 2vw, 28px) !important;
   grid-template-columns: auto minmax(0, 1fr) auto !important;
-  align-items: end !important;
+  align-items: start !important;
   gap: clamp(18px, 2vw, 28px) !important;
+}
+
+html[data-theme] body .modern-profile-copy.modern-profile-copy {
+  padding-top: clamp(64px, 5vw, 88px) !important;
+}
+
+html[data-theme] body .profile-owner-actions.profile-owner-actions {
+  padding-top: clamp(70px, 5.4vw, 96px) !important;
 }
 
 html[data-theme] body .profile-avatar-upload.profile-avatar-upload {
@@ -24454,10 +24462,12 @@ html[data-theme] body .image-crop-modal .crop-canvas-frame.crop-canvas-frame.cov
 
   html[data-theme] body .modern-profile-copy.modern-profile-copy {
     justify-items: center !important;
+    padding-top: 8px !important;
   }
 
   html[data-theme] body .profile-owner-actions.profile-owner-actions {
     width: 100% !important;
+    padding-top: 0 !important;
   }
 
   html[data-theme] body .modern-profile-hero .profile-cover-band.profile-cover-band {

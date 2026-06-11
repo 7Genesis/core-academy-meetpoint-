@@ -1428,6 +1428,7 @@ function mapBackendUserToAccount(user = {}, extra = {}) {
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
     platformRole: user.platformRole,
+    adminGrantedAccess: Boolean(user.adminGrantedAccess),
     accountStatus: user.status,
     subscriptionActive: user.subscriptionActive ?? user.subscription?.status === 'ACTIVE',
     subscription: user.subscription ?? null,
@@ -1497,6 +1498,7 @@ function createPendingSubscriptionRecord(planId = '') {
 function hasActivePlatformSubscription(user) {
   if (!user) return false;
   if (user.segment === 'platform' || user.platformRole) return true;
+  if (user.adminGrantedAccess || user.backendUser?.adminGrantedAccess) return true;
   if (user.subscriptionActive) return true;
   const subscription = user.subscription;
   if (subscription?.status !== 'ACTIVE') return false;

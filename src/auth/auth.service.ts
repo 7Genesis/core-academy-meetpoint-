@@ -293,6 +293,7 @@ export class AuthService {
       tenantId: user.tenantId,
       status: user.status,
       accountSegment: parseAccountSegmentFromBio(user.bio),
+      adminGrantedAccess: hasManagedAccountAccess(user.bio),
       companyLinks: parseCompanyLinksFromBio(user.bio),
       name: user.name ?? '',
       city: user.city ?? '',
@@ -434,12 +435,18 @@ function buildAccountSegmentMarker(segment: string) {
 }
 
 function parseAccountSegmentFromBio(bio: string | null | undefined) {
-  const match = bio?.match(/\[\[account-segment:([a-z-]+)\]\]/i);
+  const match =
+    bio?.match(/\[\[managed-account-segment:([a-z-]+)\]\]/i) ??
+    bio?.match(/\[\[account-segment:([a-z-]+)\]\]/i);
   const value = match?.[1]?.toLowerCase?.() ?? '';
   if (['student', 'teacher', 'company', 'sponsor', 'ambassador', 'platform', 'employee'].includes(value)) {
     return value;
   }
   return 'student';
+}
+
+function hasManagedAccountAccess(bio: string | null | undefined) {
+  return /\[\[managed-account:(main|linked)\]\]/i.test(bio ?? '');
 }
 
 function parseCompanyLinksFromBio(bio: string | null | undefined) {
@@ -468,6 +475,13 @@ function normalizePhone(phone: string) {
 
 function stripAccountMetadata(bio: string | null | undefined) {
   return (bio ?? '')
+    .replace(/\s*Origem administrativa:\s*[^.]+\.?/gi, ' ')
+    .replace(/\s*Organizacao:\s*[^.]+\.?/gi, ' ')
+    .replace(/\s*Conta criada pelo admin com cortesia administrativa\.?/gi, ' ')
+    .replace(/\s*\[\[managed-account:(main|linked)\]\]\s*/gi, ' ')
+    .replace(/\s*\[\[managed-account-segment:[^\]]+\]\]\s*/gi, ' ')
+    .replace(/\s*\[\[managed-account-company:[^\]]+\]\]\s*/gi, ' ')
+    .replace(/\s*\[\[managed-account-parent:[^\]]+\]\]\s*/gi, ' ')
     .replace(/\s*\[\[account-segment:[^\]]+\]\]\s*/gi, ' ')
     .replace(/\s*\[\[company-link:[^\]]+\]\]\s*/gi, ' ')
     .replace(/\s+/g, ' ')
