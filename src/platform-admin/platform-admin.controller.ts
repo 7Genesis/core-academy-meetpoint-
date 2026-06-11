@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -71,6 +72,12 @@ export class PlatformAdminController {
     return this.platformAdminService.listPlatformFeePayouts();
   }
 
+  @Get('accounts')
+  @PlatformPermissions(PlatformPermission.USERS_WRITE)
+  listManagedAccounts(@Query('search') search = '') {
+    return this.platformAdminService.listManagedAccounts(search);
+  }
+
   @Post('platform-fee-payouts')
   @PlatformPermissions(PlatformPermission.MAINTENANCE_WRITE)
   createPlatformFeePayout(
@@ -93,6 +100,24 @@ export class PlatformAdminController {
   @PlatformPermissions(PlatformPermission.COMPANIES_WRITE)
   createAccount(@Req() request: PlatformRequest, @Body() dto: CreateManagedAccountDto) {
     return this.platformAdminService.createManagedAccount(dto, getActorStaffId(request));
+  }
+
+  @Post('accounts/:id/resend-access')
+  @PlatformPermissions(PlatformPermission.COMPANIES_WRITE)
+  resendManagedAccountAccess(@Req() request: PlatformRequest, @Param('id') id: string) {
+    return this.platformAdminService.resendManagedAccountAccess(id, getActorStaffId(request));
+  }
+
+  @Delete('accounts/:id')
+  @PlatformPermissions(PlatformPermission.COMPANIES_WRITE)
+  deleteManagedAccount(@Req() request: PlatformRequest, @Param('id') id: string) {
+    return this.platformAdminService.deleteManagedAccount(id, getActorStaffId(request));
+  }
+
+  @Delete('companies/:id')
+  @PlatformPermissions(PlatformPermission.COMPANIES_WRITE)
+  deleteCompany(@Req() request: PlatformRequest, @Param('id') id: string) {
+    return this.platformAdminService.deleteCompanyTenant(id, getActorStaffId(request));
   }
 
   @Patch('staff/:id/permissions')
@@ -169,6 +194,12 @@ export class PlatformAdminController {
   @PlatformPermissions(PlatformPermission.USERS_WRITE)
   unblockUser(@Req() request: PlatformRequest, @Param('id') id: string) {
     return this.platformAdminService.unblockUser(id, getActorStaffId(request));
+  }
+
+  @Delete('users/:id')
+  @PlatformPermissions(PlatformPermission.USERS_WRITE)
+  deleteUser(@Req() request: PlatformRequest, @Param('id') id: string) {
+    return this.platformAdminService.deleteUser(id, getActorStaffId(request));
   }
 }
 

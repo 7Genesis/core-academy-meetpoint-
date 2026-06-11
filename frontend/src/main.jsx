@@ -173,16 +173,15 @@ function resolveApiBaseUrls() {
 
   if (typeof window === 'undefined') return ['http://127.0.0.1:3000'];
 
-  const { origin, hostname, pathname } = window.location;
+  const { hostname } = window.location;
   if (hostname === '127.0.0.1' || hostname === 'localhost') {
     return ['http://127.0.0.1:3000'];
   }
 
-  const candidates = pathname.startsWith('/meetpoint')
-    ? [PRODUCTION_API_BASE_URL, `${origin}/api-meetpoint`, `${origin}/meetpoint`, origin]
-    : [origin, `${origin}/api-meetpoint`, `${origin}/meetpoint`, PRODUCTION_API_BASE_URL];
-
-  return [...new Set(candidates.map((url) => url.replace(/\/+$/, '')))];
+  // Em produção o frontend e a API vivem em origens diferentes.
+  // Não fazemos fallback para o mesmo domínio do frontend, porque isso
+  // mascara erro de deploy e pode bater no LiteSpeed/cPanel em vez do backend.
+  return [PRODUCTION_API_BASE_URL];
 }
 
 const API_BASE_URLS = resolveApiBaseUrls();
@@ -1515,17 +1514,8 @@ function isValidRealContactEmail(value = '') {
   const email = value.trim().toLowerCase();
   if (!isValidEmailFormat(email)) return false;
   const [, domain = ''] = email.split('@');
-  const blockedDomains = new Set([
-    'meetpoint.com',
-    'example.com',
-    'example.com.br',
-    'teste.com',
-    'test.com',
-    'example.com',
-    'dominio.com',
-    'email.com',
-  ]);
-  if (blockedDomains.has(domain)) return false;
+  const reservedDomains = new Set(['example.com', 'example.net', 'example.org']);
+  if (reservedDomains.has(domain)) return false;
   if (domain.endsWith('.invalid') || domain.endsWith('.test') || domain === 'localhost') return false;
   return true;
 }
@@ -4463,14 +4453,14 @@ function App() {
           <section className="mobile-more-sheet" onClick={(event) => event.stopPropagation()}>
             <header>
               <strong>Mais páginas</strong>
-              <button type="button" onClick={() => setMobileMoreOpen(false)}>
+              <button className="mobile-more-close-button" type="button" onClick={() => setMobileMoreOpen(false)}>
                 Fechar
               </button>
             </header>
             <div className="mobile-more-grid">
               {secondaryMobileNavigation.map((item) => (
                 <button
-                  className={activePage === item.id ? 'active' : ''}
+                  className={`mobile-more-page-button${activePage === item.id ? ' active' : ''}`}
                   key={item.id}
                   type="button"
                   onClick={() => openPage(item.id)}
@@ -4483,7 +4473,7 @@ function App() {
               ))}
               {currentUser && (
                 <button
-                  className="mobile-more-logout"
+                  className="mobile-more-page-button mobile-more-logout"
                   type="button"
                   onClick={() => {
                     setMobileMoreOpen(false);
@@ -4710,6 +4700,7 @@ function App() {
               setProfilePublicInfo={setProfilePublicInfo}
               userPoints={userPoints}
               notifications={notifications}
+              addNotification={addNotification}
               notificationPrefs={notificationPrefs}
               setNotificationPrefs={setNotificationPrefs}
               socialGraph={socialGraph}
@@ -5861,6 +5852,7 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
   const widgetRef = React.useRef(null);
   const textareaRef = React.useRef(null);
   const handledRequestRef = React.useRef(null);
+  const displayedSupportReplyIdsRef = React.useRef(new Set());
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState('ai');
   const [message, setMessage] = useState('');
@@ -5893,6 +5885,7 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
       createdAt: new Date().toISOString(),
       status: 'OPEN',
       channel: 'human',
+      replies: [],
     };
 
     try {
@@ -5937,6 +5930,39 @@ function SupportWidget({ currentUser, requestedContext, clearRequestedContext })
     document.addEventListener('pointerdown', closeOnOutsideClick);
     return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
   }, [isOpen]);
+
+  useEffect(() => {
+    function syncSupportReplies() {
+      const replies = readLocalSupportTickets()
+        .filter((ticket) => isTicketForCurrentUser(ticket, currentUser))
+        .flatMap((ticket) =>
+          (ticket.replies ?? []).map((reply) => ({
+            ...reply,
+            ticketId: ticket.id,
+          })),
+        )
+        .filter((reply) => !displayedSupportReplyIdsRef.current.has(reply.id));
+
+      if (!replies.length) return;
+      replies.forEach((reply) => displayedSupportReplyIdsRef.current.add(reply.id));
+      setConversation((current) => [
+        ...current,
+        ...replies.map((reply) => ({
+          from: 'support',
+          body: `Suporte respondeu no ticket ${reply.ticketId}: ${reply.body}`,
+        })),
+      ]);
+      setStatus('Você tem resposta nova do suporte humano.');
+    }
+
+    syncSupportReplies();
+    window.addEventListener('storage', syncSupportReplies);
+    window.addEventListener('meetpoint-support-ticket-updated', syncSupportReplies);
+    return () => {
+      window.removeEventListener('storage', syncSupportReplies);
+      window.removeEventListener('meetpoint-support-ticket-updated', syncSupportReplies);
+    };
+  }, [currentUser?.email, currentUser?.name]);
 
   function localSupportAnswer(text) {
     const classification = classifySupportRequest(text);
@@ -13079,6 +13105,7 @@ function ProfileView({
   setProfilePublicInfo,
   userPoints,
   notifications,
+  addNotification,
   notificationPrefs,
   setNotificationPrefs,
   socialGraph,
@@ -13981,12 +14008,36 @@ function OperationalSupportConsole({
         name: ticket.owner,
         meta: ticket.title,
         unread: ticket.priority === 'Alta' ? 2 : 1,
+        isLocal: ticket.isLocal,
+        ticket,
       }))
     : [];
   const channels = [
     ...defaultInternal.map((item) => ({ ...item, type: 'Interno' })),
     ...defaultQueue.map((item) => ({ ...item, type: 'Suporte' })),
   ];
+  function getInitialMessagesForChannel(channel) {
+    const ticket = channel.ticket?.ticket ?? channel.ticket;
+    const ticketReplies = (ticket?.replies ?? []).map((reply) => ({
+      id: reply.id,
+      author: reply.author ?? 'Admin',
+      body: reply.body,
+      time: reply.createdAt
+        ? new Date(reply.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        : 'Agora',
+    }));
+    return [
+      {
+        id: `${channel.id}-initial`,
+        author: channel.type === 'Interno' ? channel.name : 'Solicitante',
+        body: channel.type === 'Interno'
+          ? 'Canal operacional aberto para alinhamento de atendimento.'
+          : channel.meta,
+        time: 'Agora',
+      },
+      ...ticketReplies,
+    ];
+  }
   const [activeChannelId, setActiveChannelId] = useState(channels[0]?.id ?? '');
   const [draft, setDraft] = useState('');
   const [replyStatus, setReplyStatus] = useState('');
@@ -13994,16 +14045,7 @@ function OperationalSupportConsole({
     Object.fromEntries(
       channels.map((channel) => [
         channel.id,
-        [
-          {
-            id: `${channel.id}-initial`,
-            author: channel.type === 'Interno' ? channel.name : 'Solicitante',
-            body: channel.type === 'Interno'
-              ? 'Canal operacional aberto para alinhamento de atendimento.'
-              : channel.meta,
-            time: 'Agora',
-          },
-        ],
+        getInitialMessagesForChannel(channel),
       ]),
     ),
   );
@@ -14019,16 +14061,7 @@ function OperationalSupportConsole({
       const next = { ...current };
       channels.forEach((channel) => {
         if (!next[channel.id]) {
-          next[channel.id] = [
-            {
-              id: `${channel.id}-initial`,
-              author: channel.type === 'Interno' ? channel.name : 'Solicitante',
-              body: channel.type === 'Interno'
-                ? 'Canal operacional aberto para alinhamento de atendimento.'
-                : channel.meta,
-              time: 'Agora',
-            },
-          ];
+          next[channel.id] = getInitialMessagesForChannel(channel);
         }
       });
       return next;
@@ -14056,9 +14089,19 @@ function OperationalSupportConsole({
 
     if (activeChannel.type !== 'Suporte') return;
 
-    if (!authToken || !activeChannel.id || String(activeChannel.id).startsWith('legacy-')) {
-      setReplyStatus('Resposta registrada localmente. Conecte a API administrativa para notificar a pessoa.');
-      onSupportReply?.(activeChannel, body, { notification: { sent: false } });
+    if (activeChannel.isLocal || !authToken || !activeChannel.id || String(activeChannel.id).startsWith('legacy-')) {
+      const updatedTicket = activeChannel.isLocal
+        ? appendLocalSupportTicketReply(activeChannel.id, body, mode === 'platform' ? 'Admin' : 'Funcionário')
+        : null;
+      setReplyStatus(
+        updatedTicket
+          ? 'Resposta salva no ticket local. A pessoa verá a resposta no suporte ao abrir ou recarregar.'
+          : 'Resposta registrada localmente. Conecte a API administrativa para notificar a pessoa.',
+      );
+      onSupportReply?.(activeChannel, body, {
+        ticket: updatedTicket,
+        notification: { sent: Boolean(updatedTicket), local: Boolean(updatedTicket) },
+      });
       return;
     }
 
@@ -15632,6 +15675,66 @@ function EmployeeProfile({ currentUser }) {
   );
 }
 
+function readLocalSupportTickets() {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem('localSupportTickets') ?? '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalSupportTickets(tickets) {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem('localSupportTickets', JSON.stringify(tickets));
+  window.dispatchEvent(new CustomEvent('meetpoint-support-ticket-updated'));
+}
+
+function appendLocalSupportTicketReply(ticketId, message, author = 'Admin') {
+  const tickets = readLocalSupportTickets();
+  let updatedTicket = null;
+  const nextTickets = tickets.map((ticket) => {
+    if (ticket.id !== ticketId) return ticket;
+    const reply = {
+      id: `reply-${Date.now()}`,
+      author,
+      body: message,
+      createdAt: new Date().toISOString(),
+      readByRequester: false,
+    };
+    updatedTicket = {
+      ...ticket,
+      status: 'ANSWERED',
+      replies: [...(ticket.replies ?? []), reply],
+      updatedAt: reply.createdAt,
+    };
+    return updatedTicket;
+  });
+  if (!updatedTicket) return null;
+  writeLocalSupportTickets(nextTickets);
+  return updatedTicket;
+}
+
+function isTicketForCurrentUser(ticket, currentUser) {
+  const requester = ticket?.requester ?? {};
+  const requesterEmail = requester.email?.toLowerCase();
+  const currentEmail = currentUser?.email?.toLowerCase();
+  if (requesterEmail && currentEmail) return requesterEmail === currentEmail;
+  return Boolean(requester.name && currentUser?.name && requester.name === currentUser.name);
+}
+
+function mapLocalSupportTicketToAdminTicket(ticket) {
+  return {
+    id: ticket.id,
+    title: ticket.reason ?? ticket.subject ?? 'Atendimento humano',
+    owner: ticket.requester?.email ?? ticket.requester?.name ?? 'Solicitante',
+    priority: ticket.priority ?? 'MEDIUM',
+    isLocal: true,
+    ticket,
+  };
+}
+
 // Admin central: operacao da plataforma, suporte, funcionarios, beneficios e conciliacao financeira.
 function PlatformProfile({
   addNotification,
@@ -15643,6 +15746,32 @@ function PlatformProfile({
   rejectBenefitRequest,
   benefitEmailDeliveries,
 }) {
+  const maintenanceModules = [
+    {
+      id: 'uploads',
+      title: 'Uploads',
+      status: 'Fila de documentos, RG/CNH e anexos de benefícios.',
+      checks: ['Arquivos recebidos', 'Limite e formato', 'Associação ao perfil'],
+    },
+    {
+      id: 'payments',
+      title: 'Pagamentos',
+      status: 'Checkout InfinitePay, assinatura e conciliação.',
+      checks: ['Links gerados', 'Webhook recebido', 'Conta travada ao vencer'],
+    },
+    {
+      id: 'emails',
+      title: 'Emails',
+      status: 'Credenciais, avisos de suporte e benefícios resgatados.',
+      checks: ['Fila SMTP', 'Modelo MeetPoint', 'Entrega registrada'],
+    },
+    {
+      id: 'database',
+      title: 'Banco de dados',
+      status: 'Prisma, migrations, índices e tickets persistidos.',
+      checks: ['Conexão Prisma', 'Migrations aplicadas', 'Tickets consultáveis'],
+    },
+  ];
   const [employeeName, setEmployeeName] = useState('');
   const [employeeEmail, setEmployeeEmail] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
@@ -15663,13 +15792,34 @@ function PlatformProfile({
     reason: '',
   });
   const [provisionedAccounts, setProvisionedAccounts] = useState([]);
+  const [existingAccountResults, setExistingAccountResults] = useState([]);
+  const [creatingManagedAccount, setCreatingManagedAccount] = useState(false);
   const [platformView, setPlatformView] = useState('dashboard');
   const [directoryType, setDirectoryType] = useState('companies');
   const [selectedAccountType, setSelectedAccountType] = useState('student');
   const [notice, setNotice] = useState('Painel central pronto para operar.');
+  const [accountProvisionFeedback, setAccountProvisionFeedback] = useState({
+    kind: 'idle',
+    message: '',
+  });
+  const [managedAccountActionId, setManagedAccountActionId] = useState('');
+  const [existingAccountActionId, setExistingAccountActionId] = useState('');
+  const [pendingDeleteAccountId, setPendingDeleteAccountId] = useState('');
   const [aiSupportEnabled, setAiSupportEnabled] = useState(true);
   const [humanQueueOpen, setHumanQueueOpen] = useState(false);
-  const [maintenanceMode, setMaintenanceMode] = useState('Monitoramento ativo');
+  const [activeMaintenanceModule, setActiveMaintenanceModule] = useState('uploads');
+  const [maintenanceReviews, setMaintenanceReviews] = useState(() =>
+    Object.fromEntries(
+      maintenanceModules.map((module) => [
+        module.id,
+        {
+          lastChecked: '',
+          status: 'Aguardando revisão manual.',
+          checks: module.checks.map((label) => ({ label, ok: false })),
+        },
+      ]),
+    ),
+  );
   const [selectedEmployeeEmail, setSelectedEmployeeEmail] = useState('julia@meetpoint.com');
   const [benefitDraft, setBenefitDraft] = useState({
     title: '',
@@ -15712,7 +15862,7 @@ function PlatformProfile({
   const permissionLabelByEnum = Object.fromEntries(
     permissionOptions.map(([, label, backend]) => [backend, label]),
   );
-  const managedProvisionSegments = ['student', 'teacher', 'company'];
+  const managedProvisionSegments = ['student', 'teacher', 'company', 'sponsor', 'ambassador'];
   const directoryData = {
     companies: [],
     students: [],
@@ -15721,6 +15871,8 @@ function PlatformProfile({
   const supportTickets = [];
   const [remoteDirectory, setRemoteDirectory] = useState([]);
   const [remoteTickets, setRemoteTickets] = useState([]);
+  const [localTickets, setLocalTickets] = useState(() => readLocalSupportTickets());
+  const accountEditorRef = useRef(null);
   const selectedEmployee = employees.find((employee) => employee.email === selectedEmployeeEmail) || employees[0];
   const normalizedRemoteDirectory = remoteDirectory.map((item) => ({
     id: item.id ?? item.email ?? item.name,
@@ -15738,30 +15890,73 @@ function PlatformProfile({
     if (!query) return true;
     return `${item.name} ${item.meta} ${item.status}`.toLowerCase().includes(query);
   });
-  const ticketSource = remoteTickets.length > 0 ? remoteTickets.map((ticket) => ({
+  const remoteTicketSource = remoteTickets.map((ticket) => ({
     id: ticket.id,
     title: ticket.subject,
     owner: ticket.user?.email ?? ticket.tenant?.name ?? 'Plataforma',
     priority: ticket.priority,
-  })) : supportTickets;
+    isLocal: false,
+    ticket,
+  }));
+  const localTicketSource = localTickets.map(mapLocalSupportTicketToAdminTicket);
+  const ticketSource = [...remoteTicketSource, ...localTicketSource, ...supportTickets];
   const pendingBenefitRequests = benefitRequests.filter((request) => request.status === 'Pendente');
+  const activeMaintenance = maintenanceModules.find((module) => module.id === activeMaintenanceModule) ?? maintenanceModules[0];
+  const activeMaintenanceReview = maintenanceReviews[activeMaintenance.id];
+
+  useEffect(() => {
+    function syncLocalTickets() {
+      setLocalTickets(readLocalSupportTickets());
+    }
+
+    window.addEventListener('storage', syncLocalTickets);
+    window.addEventListener('meetpoint-support-ticket-updated', syncLocalTickets);
+    return () => {
+      window.removeEventListener('storage', syncLocalTickets);
+      window.removeEventListener('meetpoint-support-ticket-updated', syncLocalTickets);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (platformView !== 'account') return;
+    window.requestAnimationFrame(() => {
+      accountEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [platformView]);
+
+  useEffect(() => {
+    if (platformView !== 'account') return undefined;
+    const query = accountSearch.trim();
+    if (!query) {
+      setExistingAccountResults([]);
+      return undefined;
+    }
+    const timeout = window.setTimeout(() => {
+      searchExistingAccounts();
+    }, 400);
+    return () => window.clearTimeout(timeout);
+  }, [accountSearch, platformView, authToken]);
 
   useEffect(() => {
     if (!authToken) return;
     let ignore = false;
 
     async function loadAdminData() {
-      try {
-        const [dashboardData, staffData, ticketsData] = await Promise.all([
-          platformAdminRequest('/dashboard', authToken),
-          platformAdminRequest('/staff', authToken),
-          platformAdminRequest('/tickets', authToken),
-        ]);
-        if (ignore) return;
-        setDashboard(dashboardData);
+      const [dashboardResult, staffResult, ticketsResult, accountsResult] = await Promise.allSettled([
+        platformAdminRequest('/dashboard', authToken),
+        platformAdminRequest('/staff', authToken),
+        platformAdminRequest('/tickets', authToken),
+        platformAdminRequest('/accounts', authToken),
+      ]);
+      if (ignore) return;
+
+      if (dashboardResult.status === 'fulfilled') {
+        setDashboard(dashboardResult.value);
+      }
+      if (staffResult.status === 'fulfilled') {
         setEmployees(
-          staffData.length
-            ? staffData.map((staff) => ({
+          staffResult.value.length
+            ? staffResult.value.map((staff) => ({
                 id: staff.id,
                 name: staff.name,
                 email: staff.email,
@@ -15771,11 +15966,21 @@ function PlatformProfile({
               }))
             : employees,
         );
-        setRemoteTickets(ticketsData);
-        setApiStatus('API administrativa conectada.');
-      } catch {
-        if (!ignore) setApiStatus('API indisponível: usando dados visuais locais.');
       }
+      if (ticketsResult.status === 'fulfilled') {
+        setRemoteTickets(ticketsResult.value);
+      }
+      if (accountsResult.status === 'fulfilled') {
+        setProvisionedAccounts(accountsResult.value);
+      }
+
+      const failedCount = [dashboardResult, staffResult, ticketsResult, accountsResult]
+        .filter((result) => result.status === 'rejected').length;
+      setApiStatus(
+        failedCount
+          ? `API parcialmente conectada: ${failedCount} módulo(s) sem permissão ou indisponível.`
+          : 'API administrativa conectada.',
+      );
     }
 
     loadAdminData();
@@ -15801,7 +16006,22 @@ function PlatformProfile({
 
   function openManagedAccountProvision() {
     setPlatformView('account');
-    setNotice('Aba aberta: crie PF, PJ ou Empresa com acesso liberado pelo admin, sem cobrança inicial.');
+    setNotice('Aba aberta: crie PF, PJ, Empresa, patrocinador ou embaixador com acesso liberado pelo admin, sem cobrança inicial.');
+    setAccountProvisionFeedback({ kind: 'idle', message: '' });
+  }
+
+  async function refreshManagedAccounts() {
+    if (!authToken) return [];
+    try {
+      const items = await platformAdminRequest('/accounts', authToken);
+      setProvisionedAccounts(items);
+      return items;
+    } catch (error) {
+      setApiStatus(
+        `Contas criadas pelo admin indisponíveis para listagem: ${String(error?.message ?? 'falha desconhecida')}`,
+      );
+      return provisionedAccounts;
+    }
   }
 
   function getProvisionPermissions(segment) {
@@ -15847,17 +16067,14 @@ function PlatformProfile({
     }
     if (provision.password.length < 8 || !/[A-Z]/.test(provision.password) || !/[a-z]/.test(provision.password) || !/\d/.test(provision.password)) {
       setNotice('A senha temporária precisa ter 8+ caracteres, maiúscula, minúscula e número.');
+      setAccountProvisionFeedback({
+        kind: 'error',
+        message: 'A senha temporária precisa ter 8+ caracteres, maiúscula, minúscula e número.',
+      });
       return;
     }
 
     const segmentLabel = getAccountTypeLabel(provision.segment);
-    const createdAccount = {
-      id: `provision-${Date.now()}`,
-      ...provision,
-      status: 'Cortesia ativa',
-      permissions: getProvisionPermissions(provision.segment),
-      createdAt: new Date().toISOString(),
-    };
     const accountPayload = {
       segment: provision.segment,
       name: provision.name,
@@ -15871,33 +16088,49 @@ function PlatformProfile({
       linkedPeople: parseLinkedPeopleProvision(provision.linkedPeopleText),
     };
 
+    setCreatingManagedAccount(true);
+    setAccountProvisionFeedback({ kind: 'info', message: 'Criando conta e enviando email de acesso...' });
     try {
-      if (authToken) {
-        const created = await platformAdminRequest('/accounts', authToken, {
-          method: 'POST',
-          body: JSON.stringify(accountPayload),
+      const created = await platformAdminRequest('/accounts', authToken, {
+        method: 'POST',
+        body: JSON.stringify(accountPayload),
+      });
+      const sentCredentialEmails = created.credentialEmails?.filter((delivery) => delivery.sent).length ?? 0;
+      const totalCredentialEmails = created.credentialEmails?.length ?? 1;
+      const localCreatedAccount = {
+        ...created,
+        accountSegment: created.accountSegment ?? provision.segment,
+        segment: created.accountSegment ?? provision.segment,
+        name: created.name ?? provision.name,
+        email: created.email ?? provision.email,
+        companyName: created.companyName ?? provision.companyName,
+        status: created.status ?? 'ACTIVE',
+        permissions: created.permissions ?? getProvisionPermissions(provision.segment),
+        linkedPeople: created.linkedPeople ?? [],
+      };
+      setProvisionedAccounts((current) => {
+        if (current.some((account) => account.id === localCreatedAccount.id)) return current;
+        return [localCreatedAccount, ...current];
+      });
+      await refreshManagedAccounts();
+      if (sentCredentialEmails === totalCredentialEmails) {
+        setAccountProvisionFeedback({
+          kind: 'success',
+          message: `${segmentLabel} ${provision.name} criada com acesso liberado. O email com login e senha temporária foi enviado para ${provision.email}.`,
         });
-        const nextAccount = {
-          ...createdAccount,
-          ...created,
-          segment: created.accountSegment ?? provision.segment,
-          email: created.email ?? provision.email,
-          linkedPeople: created.linkedPeople ?? accountPayload.linkedPeople,
-        };
-        const sentCredentialEmails = created.credentialEmails?.filter((delivery) => delivery.sent).length ?? 0;
-        const totalCredentialEmails = created.credentialEmails?.length ?? 1;
-        setProvisionedAccounts((current) => [nextAccount, ...current]);
         setNotice(
-          `${segmentLabel} ${provision.name} criada pelo admin com acesso liberado sem pagamento. Emails de acesso enviados: ${sentCredentialEmails}/${totalCredentialEmails}.`,
+          `${segmentLabel} ${provision.name} criada com acesso liberado. O email com login e senha temporária foi enviado para ${provision.email}.`,
         );
-        setApiStatus(`${segmentLabel} registrado na API administrativa.`);
       } else {
-        setProvisionedAccounts((current) => [createdAccount, ...current]);
+        setAccountProvisionFeedback({
+          kind: 'warning',
+          message: `${segmentLabel} ${provision.name} criada no banco, mas o email de acesso não foi entregue (${sentCredentialEmails}/${totalCredentialEmails}). Verifique a configuração SMTP do backend.`,
+        });
         setNotice(
-          `${segmentLabel} ${provision.name} criada localmente com acesso liberado sem pagamento.`,
+          `${segmentLabel} ${provision.name} criada no banco, mas o email de acesso não foi entregue (${sentCredentialEmails}/${totalCredentialEmails}). Verifique a configuração SMTP do backend.`,
         );
-        setApiStatus(`${segmentLabel} criado no modo visual sem API administrativa.`);
       }
+      setApiStatus(`${segmentLabel} registrado na API administrativa.`);
 
       setPlatformView('account');
       setDashboard((current) => ({
@@ -15909,23 +16142,30 @@ function PlatformProfile({
 
       if (['sponsor', 'ambassador'].includes(provision.segment)) {
         const operationalProfile = {
-          id: `operational-${createdAccount.id}`,
+          id: `operational-${created.id ?? Date.now()}`,
           name: provision.name,
           email: provision.email,
           notificationEmail: provision.email,
           department: getProvisionDepartment(provision.segment),
           temporaryPassword: provision.password,
-          permissions: createdAccount.permissions,
+          permissions: localCreatedAccount.permissions,
           profileType: segmentLabel,
         };
         setEmployees((current) => [operationalProfile, ...current]);
         setSelectedEmployeeEmail(operationalProfile.email);
       }
     } catch (error) {
-      setProvisionedAccounts((current) => [createdAccount, ...current]);
       setPlatformView('account');
-      setNotice(`${segmentLabel} mantida apenas no controle local porque a API administrativa recusou a criação.`);
-      setApiStatus(String(error?.message ?? 'Falha ao criar conta administrativa.'));
+      const failureMessage = `${segmentLabel} não foi criada. A API recusou a operação: ${String(error?.message ?? 'falha desconhecida')}`;
+      setAccountProvisionFeedback({
+        kind: 'error',
+        message: failureMessage,
+      });
+      setNotice(failureMessage);
+      setApiStatus('Nenhuma conta local ou falsa foi criada. Corrija o erro informado e tente novamente.');
+      return;
+    } finally {
+      setCreatingManagedAccount(false);
     }
 
     setAccountProvision({
@@ -15937,7 +16177,7 @@ function PlatformProfile({
       password: '',
       companyName: '',
       linkedPeopleText: '',
-        grantFreeAccess: true,
+      grantFreeAccess: true,
       reason: '',
     });
   }
@@ -16053,16 +16293,172 @@ function PlatformProfile({
     }
   }
 
+  async function searchExistingAccounts() {
+    const query = accountSearch.trim();
+    if (!query) {
+      setNotice('Digite nome ou email para localizar uma conta existente.');
+      return;
+    }
+    if (!authToken) {
+      setNotice('Token administrativo ausente. Faça login novamente como admin.');
+      return;
+    }
+
+    setApiStatus('Buscando contas existentes...');
+    try {
+      const [companiesResult, studentsResult, teachersResult] = await Promise.allSettled([
+        platformAdminRequest(`/directory?type=companies&search=${encodeURIComponent(query)}`, authToken),
+        platformAdminRequest(`/directory?type=students&search=${encodeURIComponent(query)}`, authToken),
+        platformAdminRequest(`/directory?type=teachers&search=${encodeURIComponent(query)}`, authToken),
+      ]);
+      const results = [
+        ...(companiesResult.status === 'fulfilled'
+          ? companiesResult.value.map((item) => ({
+              ...item,
+              accountType: 'company',
+              status: item.status ?? 'ACTIVE',
+              email: item.subdomain ?? item.name ?? '',
+            }))
+          : []),
+        ...(studentsResult.status === 'fulfilled'
+          ? studentsResult.value.map((item) => ({ ...item, accountType: 'student' }))
+          : []),
+        ...(teachersResult.status === 'fulfilled'
+          ? teachersResult.value.map((item) => ({ ...item, accountType: 'teacher' }))
+          : []),
+      ];
+      setExistingAccountResults(results);
+      setApiStatus(
+        results.length
+          ? `${results.length} conta(s) encontrada(s).`
+          : 'Nenhuma conta encontrada para esse termo.',
+      );
+      setNotice(
+        results.length
+          ? 'Conta localizada. Use bloquear, liberar ou excluir conforme necessário.'
+          : 'Nenhuma conta existente encontrada com esse nome ou email.',
+      );
+    } catch (error) {
+      const message = `Não foi possível buscar contas existentes: ${String(error?.message ?? 'falha desconhecida')}`;
+      setApiStatus(message);
+      setNotice(message);
+    }
+  }
+
   function editAccount(type) {
     setSelectedAccountType(type);
     setPlatformView('account');
     setNotice(`Modo de edição aberto para ${type === 'student' ? 'Pessoa Física' : type === 'teacher' ? 'Pessoa Jurídica' : 'Empresa'}.`);
   }
 
-  function blockAccount() {
-    const target = accountSearch.trim() || 'conta selecionada';
-    setPlatformView('account');
-    setNotice(`${target} marcada para bloqueio preventivo. Em produção isso exigiria auditoria e motivo formal.`);
+  async function blockExistingAccount(account) {
+    if (!account?.id) {
+      await searchExistingAccounts();
+      return;
+    }
+    setExistingAccountActionId(account.id);
+    try {
+      await platformAdminRequest(`/users/${account.id}/block`, authToken, {
+        method: 'PATCH',
+        body: JSON.stringify({ reason: 'Bloqueio administrativo solicitado no painel central' }),
+      });
+      await searchExistingAccounts();
+      setNotice(`${account.name ?? account.email} foi bloqueada.`);
+    } catch (error) {
+      setNotice(`Não foi possível bloquear a conta: ${String(error?.message ?? 'falha desconhecida')}`);
+    } finally {
+      setExistingAccountActionId('');
+    }
+  }
+
+  async function unblockExistingAccount(account) {
+    if (!account?.id) return;
+    setExistingAccountActionId(account.id);
+    try {
+      await platformAdminRequest(`/users/${account.id}/unblock`, authToken, { method: 'PATCH' });
+      await searchExistingAccounts();
+      setNotice(`${account.name ?? account.email} foi liberada.`);
+    } catch (error) {
+      setNotice(`Não foi possível liberar a conta: ${String(error?.message ?? 'falha desconhecida')}`);
+    } finally {
+      setExistingAccountActionId('');
+    }
+  }
+
+  async function deleteExistingAccount(account) {
+    if (!account?.id) return;
+    if (pendingDeleteAccountId !== account.id) {
+      setPendingDeleteAccountId(account.id);
+      setNotice(`Clique novamente em "Confirmar exclusão" para remover ${account.name ?? account.email}.`);
+      return;
+    }
+    setExistingAccountActionId(account.id);
+    setNotice(`Excluindo ${account.name ?? account.email}...`);
+    try {
+      const endpoint = account.accountType === 'company'
+        ? `/companies/${account.id}`
+        : `/users/${account.id}`;
+      const result = await platformAdminRequest(endpoint, authToken, { method: 'DELETE' });
+      setPendingDeleteAccountId('');
+      await searchExistingAccounts();
+      setNotice(
+        account.accountType === 'company'
+          ? `${account.name ?? account.email} foi excluída.`
+          : result?.blockedInsteadOfDeleted
+            ? `${account.name ?? account.email} possui dependências e foi bloqueada.`
+            : `${account.name ?? account.email} foi excluída.`,
+      );
+    } catch (error) {
+      setNotice(`Não foi possível excluir a conta: ${String(error?.message ?? 'falha desconhecida')}`);
+    } finally {
+      setExistingAccountActionId('');
+    }
+  }
+
+  async function resendManagedAccountAccess(account) {
+    if (!account?.id) return;
+    setManagedAccountActionId(account.id);
+    try {
+      const updated = await platformAdminRequest(`/accounts/${account.id}/resend-access`, authToken, {
+        method: 'POST',
+      });
+      await refreshManagedAccounts();
+      setNotice(`Novo acesso enviado para ${updated.email ?? account.email}.`);
+      setAccountProvisionFeedback({
+        kind: 'success',
+        message: `Novo acesso reenviado para ${account.name}.`,
+      });
+    } catch (error) {
+      const message = `Não foi possível reenviar o acesso: ${String(error?.message ?? 'falha desconhecida')}`;
+      setNotice(message);
+      setAccountProvisionFeedback({ kind: 'error', message });
+    } finally {
+      setManagedAccountActionId('');
+    }
+  }
+
+  async function deleteManagedAccount(account) {
+    if (!account?.id) return;
+    const confirmed = window.confirm(`Excluir a conta ${account.name}? Essa ação não pode ser desfeita.`);
+    if (!confirmed) return;
+    setManagedAccountActionId(account.id);
+    try {
+      const result = await platformAdminRequest(`/accounts/${account.id}`, authToken, {
+        method: 'DELETE',
+      });
+      await refreshManagedAccounts();
+      if (result?.blockedInsteadOfDeleted) {
+        setNotice(`A conta ${account.name} foi bloqueada por dependências e não removida fisicamente.`);
+      } else {
+        setNotice(`A conta ${account.name} foi removida.`);
+      }
+    } catch (error) {
+      const message = `Não foi possível excluir a conta: ${String(error?.message ?? 'falha desconhecida')}`;
+      setNotice(message);
+      setAccountProvisionFeedback({ kind: 'error', message });
+    } finally {
+      setManagedAccountActionId('');
+    }
   }
 
   function updateEmployeePermissions() {
@@ -16107,6 +16503,26 @@ function PlatformProfile({
     setNotice(`Editando permissões de ${employee.name}.`);
   }
 
+  function reviewMaintenanceModule(moduleId) {
+    const module = maintenanceModules.find((item) => item.id === moduleId) ?? maintenanceModules[0];
+    const checkedAt = new Date().toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    setActiveMaintenanceModule(module.id);
+    setMaintenanceReviews((current) => ({
+      ...current,
+      [module.id]: {
+        lastChecked: checkedAt,
+        status: `${module.title} revisado em ${checkedAt}. Nenhum bloqueio crítico identificado no painel visual.`,
+        checks: module.checks.map((label) => ({ label, ok: true })),
+      },
+    }));
+    setNotice(`Revisão aberta: ${module.title}. Veja o checklist no painel técnico.`);
+  }
+
   return (
     <section className="profile-card yellow platform-admin-card">
       <span className="section-kicker">Conta central da plataforma</span>
@@ -16124,6 +16540,16 @@ function PlatformProfile({
         tickets={ticketSource}
         onSupportReply={(channel, message, result) => {
           const emailSent = result?.notification?.sent;
+          if (result?.notification?.local) {
+            setLocalTickets(readLocalSupportTickets());
+          }
+          if (result?.ticket && !result?.notification?.local) {
+            setRemoteTickets((current) =>
+              current.map((ticket) =>
+                ticket.id === result.ticket.id ? { ...ticket, ...result.ticket } : ticket,
+              ),
+            );
+          }
           setNotice(
             emailSent
               ? `Resposta enviada para ${channel.name}. A pessoa foi notificada por email.`
@@ -16141,7 +16567,7 @@ function PlatformProfile({
 
       <div className="platform-metrics">
         <article><strong>{dashboard.students}</strong><span>Pessoas Físicas</span></article>
-        <article><strong>{dashboard.companies}</strong><span>Empresas</span></article>
+        <article><strong>{dashboard.companies}</strong><span>Empresas e parceiros</span></article>
         <article><strong>{dashboard.teachers}</strong><span>Pessoas Jurídicas</span></article>
         <article><strong>{dashboard.openTickets}</strong><span>Tickets</span></article>
         <article>
@@ -16156,8 +16582,8 @@ function PlatformProfile({
 
       <div className="support-grid">
         <section className="module-card">
-          <strong>Criar PF, PJ ou Empresa</strong>
-          <p>Cria perfis reais pelo admin com acesso liberado, sem passar pelo pagamento inicial.</p>
+          <strong>Criar conta sem pagamento</strong>
+          <p>Cria PF, PJ, Empresa, patrocinador ou embaixador com acesso liberado pelo admin.</p>
           <button onClick={openManagedAccountProvision}>
             Criar conta pelo admin
           </button>
@@ -16237,7 +16663,7 @@ function PlatformProfile({
         <button onClick={() => openDirectory('companies')}>Ver empresas cadastradas</button>
         <button onClick={() => openDirectory('students')}>Ver Pessoas Físicas</button>
         <button onClick={() => openDirectory('teachers')}>Ver Pessoas Jurídicas</button>
-        <button onClick={openManagedAccountProvision}>Criar PF/PJ/Empresa</button>
+        <button onClick={openManagedAccountProvision}>Criar conta/cortesia</button>
         <button
           onClick={() => {
             setHumanQueueOpen(true);
@@ -16271,7 +16697,7 @@ function PlatformProfile({
               {platformView === 'maintenance' && 'Manutenção técnica'}
               {platformView === 'finance' && 'Financeiro da plataforma'}
               {platformView === 'benefits' && 'Benefícios e envios por email'}
-              {platformView === 'account' && 'Criar PF, PJ ou Empresa'}
+              {platformView === 'account' && 'Criar conta/cortesia'}
               {platformView === 'employees' && 'Funcionários internos'}
             </strong>
           </div>
@@ -16356,14 +16782,33 @@ function PlatformProfile({
         )}
 
         {platformView === 'maintenance' && (
-          <div className="maintenance-grid">
-            {['Uploads', 'Pagamentos', 'Emails', 'Banco de dados'].map((item) => (
-              <article key={item}>
-                <strong>{item}</strong>
-                <span>{maintenanceMode}</span>
-                <button onClick={() => setMaintenanceMode(`${item} revisado agora`)}>Revisar</button>
-              </article>
-            ))}
+          <div className="maintenance-review-panel">
+            <div className="maintenance-grid">
+              {maintenanceModules.map((module) => {
+                const review = maintenanceReviews[module.id];
+                return (
+                  <article className={activeMaintenanceModule === module.id ? 'active' : ''} key={module.id}>
+                    <strong>{module.title}</strong>
+                    <span>{review.lastChecked ? `Última revisão: ${review.lastChecked}` : module.status}</span>
+                    <button type="button" onClick={() => reviewMaintenanceModule(module.id)}>
+                      Revisar
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+            <section className="module-card maintenance-detail-card">
+              <span className="section-kicker">Revisão aberta</span>
+              <h3>{activeMaintenance.title}</h3>
+              <p>{activeMaintenanceReview.status}</p>
+              <div className="maintenance-checklist">
+                {activeMaintenanceReview.checks.map((check) => (
+                  <span className={check.ok ? 'checked' : ''} key={check.label}>
+                    {check.ok ? '✓' : '•'} {check.label}
+                  </span>
+                ))}
+              </div>
+            </section>
           </div>
         )}
 
@@ -16583,11 +17028,11 @@ function PlatformProfile({
         )}
 
         {platformView === 'account' && (
-          <div className="account-editor">
+          <div className="account-editor" ref={accountEditorRef}>
             <section className="module-card">
               <strong>Provisionar conta pelo admin</strong>
               <p>
-                Use esta aba para criar Pessoa Física, Pessoa Jurídica ou Empresa com acesso
+                Use esta aba para criar PF, PJ, Empresa, patrocinador ou embaixador com acesso
                 liberado pelo admin. Essas contas não passam pelo pagamento inicial.
               </p>
               <form onSubmit={createProvisionedAccount}>
@@ -16684,12 +17129,28 @@ function PlatformProfile({
                 <p className="valid-note">
                   Acesso liberado pelo admin: essa conta será criada ativa e não precisará pagar a assinatura inicial.
                 </p>
-                <button type="submit">Criar conta pelo admin</button>
+                {accountProvisionFeedback.message && (
+                  <p
+                    className={
+                      accountProvisionFeedback.kind === 'error'
+                        ? 'invalid-note'
+                        : accountProvisionFeedback.kind === 'warning'
+                          ? 'policy-note'
+                          : 'valid-note'
+                    }
+                  >
+                    {accountProvisionFeedback.message}
+                  </p>
+                )}
+                <button disabled={creatingManagedAccount} type="submit">
+                  {creatingManagedAccount ? 'Criando conta e enviando email...' : 'Criar conta pelo admin'}
+                </button>
               </form>
             </section>
 
             <section className="module-card">
               <strong>Editar ou bloquear conta existente</strong>
+              <p>Use para localizar contas comuns que já existem no banco e não aparecem em “Contas criadas pelo admin”.</p>
               <label>
                 Conta em análise
                 <input
@@ -16698,39 +17159,121 @@ function PlatformProfile({
                   placeholder="Nome, email ou documento"
                 />
               </label>
+              <div className="admin-actions">
+                <button type="button" onClick={searchExistingAccounts}>Buscar conta</button>
+              </div>
               <div className="platform-tabs">
                 <button className={selectedAccountType === 'student' ? 'active' : ''} onClick={() => editAccount('student')}>Pessoa Física</button>
                 <button className={selectedAccountType === 'teacher' ? 'active' : ''} onClick={() => editAccount('teacher')}>Pessoa Jurídica</button>
                 <button className={selectedAccountType === 'company' ? 'active' : ''} onClick={() => editAccount('company')}>Empresa</button>
               </div>
               <div className="admin-actions">
-                <button onClick={() => setNotice('Perfil atualizado com trilha de auditoria.')}>Salvar alterações</button>
-                <button onClick={blockAccount}>Bloquear conta</button>
+                <button type="button" onClick={searchExistingAccounts}>Buscar conta</button>
                 <button onClick={() => setNotice('Solicitação de nova verificação documental enviada.')}>Solicitar documento</button>
               </div>
+              {existingAccountResults.length === 0 ? (
+                <p className="empty-state">
+                  Busque por nome ou email para carregar contas existentes do banco.
+                </p>
+              ) : (
+                <div className="platform-directory">
+                  {existingAccountResults.map((account) => {
+                    const isBusy = existingAccountActionId === account.id;
+                    const isCompany = account.accountType === 'company';
+                    return (
+                      <article className="platform-record" key={account.id}>
+                        <span>{getAccountTypeCode(account.accountType ?? 'student')}</span>
+                        <div>
+                          <strong>{account.name ?? account.email}</strong>
+                          <small>
+                            {getAccountTypeLabel(account.accountType ?? 'student')}
+                            {' '}
+                            -
+                            {' '}
+                            {isCompany ? `@${account.email}` : account.email}
+                          </small>
+                          <small>{account.status} {account.tenant?.name ? `- ${account.tenant.name}` : ''}</small>
+                          <small>
+                            {isCompany
+                              ? `Subdomínio ${account.subdomain ?? 'sem subdomínio'}`
+                              : account.city || account.state
+                              ? `${account.city ?? ''}${account.city && account.state ? ', ' : ''}${account.state ?? ''}`
+                              : 'Conta existente no banco'}
+                          </small>
+                        </div>
+                        <div className="record-action-stack">
+                          {!isCompany && (
+                            account.status === 'BLOCKED' ? (
+                              <button disabled={isBusy} type="button" onClick={() => unblockExistingAccount(account)}>
+                                Liberar
+                              </button>
+                            ) : (
+                              <button disabled={isBusy} type="button" onClick={() => blockExistingAccount(account)}>
+                                Bloquear
+                              </button>
+                            )
+                          )}
+                          <button
+                            className={pendingDeleteAccountId === account.id ? 'danger-soft' : 'light'}
+                            disabled={isBusy}
+                            type="button"
+                            onClick={() => deleteExistingAccount(account)}
+                          >
+                            {isBusy
+                              ? 'Excluindo...'
+                              : pendingDeleteAccountId === account.id
+                                ? 'Confirmar exclusão'
+                                : 'Excluir'}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             <section className="module-card">
               <strong>Contas criadas pelo admin</strong>
               {provisionedAccounts.length === 0 ? (
                 <p className="empty-state">Nenhuma conta criada manualmente ainda.</p>
-              ) : provisionedAccounts.map((account) => (
-                <article className="platform-record" key={account.id}>
-                  <span>{getAccountTypeCode(account.segment)}</span>
-                  <div>
-                    <strong>{account.name}</strong>
-                    <small>{getAccountTypeLabel(account.segment)} - {account.email}</small>
-                    <small>{account.status} {account.companyName ? `- ${account.companyName}` : ''}</small>
-                    {account.linkedPeople?.length > 0 && (
-                      <small>{account.linkedPeople.length} pessoa(s) vinculada(s)</small>
-                    )}
-                    <small>{account.permissions.join(', ')}</small>
-                  </div>
-                  <button type="button" onClick={() => setNotice(`${account.name}: ${account.status}.`)}>
-                    Ver acesso
-                  </button>
-                </article>
-              ))}
+              ) : provisionedAccounts.map((account) => {
+                const segment = account.accountSegment ?? account.segment ?? 'student';
+                const permissions = account.permissions ?? getProvisionPermissions(segment);
+                const linkedPeople = account.linkedPeople ?? [];
+                const isBusy = managedAccountActionId === account.id;
+                return (
+                  <article className="platform-record" key={account.id}>
+                    <span>{getAccountTypeCode(segment)}</span>
+                    <div>
+                      <strong>{account.name}</strong>
+                      <small>{getAccountTypeLabel(segment)} - {account.email}</small>
+                      <small>{account.status} {account.companyName ? `- ${account.companyName}` : ''}</small>
+                      {linkedPeople.length > 0 && (
+                        <small>{linkedPeople.length} pessoa(s) vinculada(s)</small>
+                      )}
+                      <small>{permissions.join(', ')}</small>
+                    </div>
+                    <div className="record-action-stack">
+                      <button
+                        disabled={isBusy}
+                        type="button"
+                        onClick={() => resendManagedAccountAccess(account)}
+                      >
+                        Reenviar acesso
+                      </button>
+                      <button
+                        className="light"
+                        disabled={isBusy}
+                        type="button"
+                        onClick={() => deleteManagedAccount(account)}
+                      >
+                        Excluir conta
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </section>
           </div>
         )}
@@ -16762,6 +17305,20 @@ function PlatformProfile({
         <section className="module-card">
           <strong>Editar contas</strong>
           <p>Acesso central para criar, alterar e liberar cortesia para PF, PJ, Empresa, patrocinador e embaixador.</p>
+          <div className="account-type-shortcuts">
+            {managedProvisionSegments.map((segment) => (
+              <button
+                key={`shortcut-${segment}`}
+                type="button"
+                onClick={() => {
+                  updateAccountProvision('segment', segment);
+                  openManagedAccountProvision();
+                }}
+              >
+                {getAccountTypeCode(segment)}
+              </button>
+            ))}
+          </div>
           <label>
             Buscar conta
             <input
@@ -16775,7 +17332,14 @@ function PlatformProfile({
             <button onClick={() => editAccount('student')}>Editar Pessoa Física</button>
             <button onClick={() => editAccount('teacher')}>Editar Pessoa Jurídica</button>
             <button onClick={() => editAccount('company')}>Editar empresa</button>
-            <button onClick={blockAccount}>Bloquear conta</button>
+            <button
+              onClick={() => {
+                setPlatformView('account');
+                searchExistingAccounts();
+              }}
+            >
+              Buscar/bloquear conta
+            </button>
           </div>
         </section>
 

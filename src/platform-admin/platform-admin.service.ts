@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import {
   SupportTicketStatus,
 } from '@prisma/client';
 import { hash } from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 import * as nodemailer from 'nodemailer';
 import { DataMaskingService } from '../common/security/data-masking.service';
 import { FieldEncryptionService } from '../common/security/field-encryption.service';
@@ -24,6 +26,13 @@ import { UpdatePlatformStaffPermissionsDto } from './dto/update-platform-staff-p
 import { UpdateSupportTicketStatusDto } from './dto/update-support-ticket-status.dto';
 
 type DirectoryType = 'companies' | 'students' | 'teachers';
+const MANAGED_ACCOUNT_MAIN_MARKER = '[[managed-account:main]]';
+const MANAGED_ACCOUNT_LINKED_MARKER = '[[managed-account:linked]]';
+const MANAGED_ACCOUNT_SEGMENT_PREFIX = '[[managed-account-segment:';
+const MANAGED_ACCOUNT_COMPANY_PREFIX = '[[managed-account-company:';
+const MANAGED_ACCOUNT_PARENT_PREFIX = '[[managed-account-parent:';
+const LEGACY_ACCOUNT_SEGMENT_PREFIX = '[[account-segment:';
+const LEGACY_COMPANY_LINK_PREFIX = '[[company-link:';
 
 @Injectable()
 export class PlatformAdminService {
@@ -115,68 +124,230 @@ export class PlatformAdminService {
   }
 
   async createManagedAccount(dto: CreateManagedAccountDto, actorStaffId?: string) {
-    const segment = dto.segment;
-    const normalizedEmail = dto.email.trim().toLowerCase();
-    const normalizedName = dto.name.trim();
-    const normalizedCity = dto.city.trim();
-    const normalizedState = dto.state.trim().toUpperCase();
-    const normalizedCompanyName = dto.companyName?.trim() ?? '';
-    const normalizedReason = dto.reason?.trim() ?? '';
-    const linkedPeople = (dto.linkedPeople ?? [])
-      .map((person) => ({
-        name: person.name.trim(),
-        email: person.email.trim().toLowerCase(),
-        password: person.password.trim(),
-      }))
-      .filter((person) => person.name && person.email && person.password);
+    try {
+      const segment = dto.segment;
+      const normalizedEmail = dto.email.trim().toLowerCase();
+      const normalizedName = dto.name.trim();
+      const normalizedCity = dto.city.trim();
+      const normalizedState = dto.state.trim().toUpperCase();
+      const normalizedCompanyName = dto.companyName?.trim() ?? '';
+      const normalizedReason = dto.reason?.trim() ?? '';
+      const linkedPeople = (dto.linkedPeople ?? [])
+        .map((person) => ({
+          name: person.name.trim(),
+          email: person.email.trim().toLowerCase(),
+          password: person.password.trim(),
+        }))
+        .filter((person) => person.name && person.email && person.password);
 
-    if (!normalizedName || !normalizedEmail || !normalizedCity || !normalizedState) {
-      throw new BadRequestException('Nome, email, cidade e estado sao obrigatorios');
-    }
-    if (segment === 'company' && !normalizedCompanyName) {
-      throw new BadRequestException('Empresa exige nome da organizacao');
-    }
+      if (!normalizedName || !normalizedEmail || !normalizedCity || !normalizedState) {
+        throw new BadRequestException('Nome, email, cidade e estado sao obrigatorios');
+      }
+      if (segment === 'company' && !normalizedCompanyName) {
+        throw new BadRequestException('Empresa exige nome da organizacao');
+      }
 
-    const tenant =
-      segment === 'company'
-        ? await this.createCompanyTenant(normalizedCompanyName || normalizedName)
-        : await this.resolveDefaultTenant();
-    const [passwordHash, linkedPasswordHashes] = await Promise.all([
-      hash(dto.password, 12),
-      Promise.all(linkedPeople.map((person) => hash(person.password, 12))),
-    ]);
-    const bio = this.decorateAccountBio(
-      [
-        normalizedReason ? `Origem administrativa: ${normalizedReason}` : '',
-        normalizedCompanyName ? `Organizacao: ${normalizedCompanyName}` : '',
-        'Conta criada pelo admin com cortesia administrativa.',
-      ].filter(Boolean).join(' '),
-      segment,
-    );
-
-    const result = await this.prisma.withPlatformAdmin(async (tx) => {
-      const user = await tx.user.create({
-        data: {
+      const tenant =
+        segment === 'company'
+          ? await this.createCompanyTenant(normalizedCompanyName || normalizedName)
+          : await this.resolveDefaultTenant();
+      const requestedEmails = [normalizedEmail, ...linkedPeople.map((person) => person.email)];
+      const duplicatedPayloadEmail = requestedEmails.find(
+        (email, index) => requestedEmails.indexOf(email) !== index,
+      );
+      if (duplicatedPayloadEmail) {
+        throw new ConflictException(
+          `O email ${duplicatedPayloadEmail} foi informado mais de uma vez`,
+        );
+      }
+      const existingUser = await this.prisma.user.findFirst({
+        where: {
           tenantId: tenant.id,
-          email: normalizedEmail,
-          contactEmailVerifiedAt: new Date(),
-          password: passwordHash,
-          passwordHash,
-          role: segment === 'company' ? 'USER' : 'USER',
-          status: AccountStatus.ACTIVE,
-          name: normalizedName,
-          city: normalizedCity,
-          state: normalizedState,
-          bio,
-          acceptedTerms: true,
-          acceptedPrivacyPolicy: true,
+          email: { in: requestedEmails },
         },
+        select: { email: true, bio: true },
+      });
+      if (existingUser) {
+        const accountOrigin = this.isManagedAccount(existingUser.bio)
+          ? 'criada pelo admin'
+          : 'já existente';
+        throw new ConflictException(
+          `O email ${existingUser.email} já está cadastrado como conta ${accountOrigin}. Use outro email ou edite a conta existente.`,
+        );
+      }
+      const [passwordHash, linkedPasswordHashes] = await Promise.all([
+        hash(dto.password, 12),
+        Promise.all(linkedPeople.map((person) => hash(person.password, 12))),
+      ]);
+      const bio = this.decorateManagedAccountBio(
+        [
+          normalizedReason ? `Origem administrativa: ${normalizedReason}` : '',
+          normalizedCompanyName ? `Organizacao: ${normalizedCompanyName}` : '',
+          'Conta criada pelo admin com cortesia administrativa.',
+        ].filter(Boolean).join(' '),
+        segment,
+        normalizedCompanyName,
+      );
+
+      const result = await this.prisma.withPlatformAdmin(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            tenantId: tenant.id,
+            email: normalizedEmail,
+            contactEmailVerifiedAt: new Date(),
+            password: passwordHash,
+            passwordHash,
+            role: 'USER',
+            status: AccountStatus.ACTIVE,
+            name: normalizedName,
+            city: normalizedCity,
+            state: normalizedState,
+            bio,
+            acceptedTerms: true,
+            acceptedPrivacyPolicy: true,
+          },
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            tenantId: true,
+            status: true,
+            name: true,
+            city: true,
+            state: true,
+            bio: true,
+            createdAt: true,
+            updatedAt: true,
+            lastLoginAt: true,
+            tenant: { select: { id: true, name: true, subdomain: true } },
+          },
+        });
+
+        const linkedUsers = await Promise.all(
+          linkedPeople.map((person, index) =>
+            tx.user.create({
+              data: {
+                tenantId: tenant.id,
+                email: person.email,
+                contactEmailVerifiedAt: new Date(),
+                password: linkedPasswordHashes[index],
+                passwordHash: linkedPasswordHashes[index],
+                role: 'USER',
+                status: AccountStatus.ACTIVE,
+                name: person.name,
+                city: normalizedCity,
+                state: normalizedState,
+                bio: this.decorateManagedLinkedBio(
+                  `Vinculado a ${normalizedCompanyName || normalizedName}.`,
+                  normalizedCompanyName || normalizedName,
+                  user.id,
+                ),
+                acceptedTerms: true,
+                acceptedPrivacyPolicy: true,
+              },
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                status: true,
+                tenantId: true,
+                bio: true,
+                createdAt: true,
+              },
+            }),
+          ),
+        );
+
+        await this.audit(tx, {
+          actorStaffId,
+          action: 'MANAGED_ACCOUNT_CREATED',
+          targetType: 'User',
+          targetId: user.id,
+          metadata: {
+            segment,
+            email: this.dataMasking.maskEmail(normalizedEmail),
+            companyName: normalizedCompanyName,
+            grantFreeAccess: true,
+            linkedPeopleCount: linkedUsers.length,
+          },
+        });
+
+        return { user, linkedUsers };
+      });
+
+      const credentialEmails = await this.sendManagedAccountCredentialEmails([
+        {
+          email: normalizedEmail,
+          name: normalizedName,
+          password: dto.password,
+          segment,
+        },
+        ...linkedPeople.map((person) => ({
+          email: person.email,
+          name: person.name,
+          password: person.password,
+          segment: 'employee' as const,
+          companyName: normalizedCompanyName || normalizedName,
+        })),
+      ]);
+
+      return {
+        ...result.user,
+        email: this.dataMasking.maskEmail(result.user.email),
+        accountSegment: segment,
+        credentialEmails,
+        linkedPeople: result.linkedUsers.map((person) => ({
+          ...person,
+          email: this.dataMasking.maskEmail(person.email),
+        })),
+      };
+    } catch (error) {
+      if (isPrismaKnownRequestError(error, 'P2002')) {
+        const target = Array.isArray(error.meta?.target)
+          ? error.meta.target.join(', ')
+          : 'campo único';
+        throw new ConflictException(
+          `Já existe uma conta com esses dados (${target}). Use outro email ou edite a conta existente.`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async listManagedAccounts(search = '') {
+    const query = search.trim();
+
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const managedAccounts = await tx.user.findMany({
+        where: {
+          AND: [
+            {
+              OR: [
+                { bio: { contains: MANAGED_ACCOUNT_MAIN_MARKER } },
+                { bio: { contains: LEGACY_ACCOUNT_SEGMENT_PREFIX } },
+              ],
+            },
+            ...(query
+              ? [{
+                  OR: [
+                    { name: { contains: query, mode: 'insensitive' as const } },
+                    { email: { contains: query, mode: 'insensitive' as const } },
+                    { city: { contains: query, mode: 'insensitive' as const } },
+                    { state: { contains: query, mode: 'insensitive' as const } },
+                    { bio: { contains: query, mode: 'insensitive' as const } },
+                    { tenant: { name: { contains: query, mode: 'insensitive' as const } } },
+                  ],
+                }]
+              : []),
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
         select: {
           id: true,
           email: true,
           role: true,
-          tenantId: true,
           status: true,
+          tenantId: true,
           name: true,
           city: true,
           state: true,
@@ -188,82 +359,249 @@ export class PlatformAdminService {
         },
       });
 
-      const linkedUsers = await Promise.all(
-        linkedPeople.map((person, index) =>
-          tx.user.create({
-            data: {
-              tenantId: tenant.id,
-              email: person.email,
-              contactEmailVerifiedAt: new Date(),
-              password: linkedPasswordHashes[index],
-              passwordHash: linkedPasswordHashes[index],
-              role: 'USER',
-              status: AccountStatus.ACTIVE,
-              name: person.name,
-              city: normalizedCity,
-              state: normalizedState,
-              bio: this.decorateLinkedPersonBio(
-                `Vinculado a ${normalizedCompanyName || normalizedName}.`,
-                normalizedCompanyName || normalizedName,
-              ),
-              acceptedTerms: true,
-              acceptedPrivacyPolicy: true,
+      const managedLinkedUsers = await tx.user.findMany({
+        where: {
+          AND: [
+            {
+              OR: [
+                { bio: { contains: MANAGED_ACCOUNT_LINKED_MARKER } },
+                { bio: { contains: LEGACY_COMPANY_LINK_PREFIX } },
+              ],
             },
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              status: true,
-              tenantId: true,
-              createdAt: true,
-            },
-          }),
-        ),
-      );
-
-      await this.audit(tx, {
-        actorStaffId,
-        action: 'MANAGED_ACCOUNT_CREATED',
-        targetType: 'User',
-        targetId: user.id,
-        metadata: {
-          segment,
-          email: this.dataMasking.maskEmail(normalizedEmail),
-          companyName: normalizedCompanyName,
-          grantFreeAccess: true,
-          linkedPeopleCount: linkedUsers.length,
+            ...(query
+              ? [{
+                  OR: [
+                    { name: { contains: query, mode: 'insensitive' as const } },
+                    { email: { contains: query, mode: 'insensitive' as const } },
+                    { city: { contains: query, mode: 'insensitive' as const } },
+                    { state: { contains: query, mode: 'insensitive' as const } },
+                    { bio: { contains: query, mode: 'insensitive' as const } },
+                    { tenant: { name: { contains: query, mode: 'insensitive' as const } } },
+                  ],
+                }]
+              : []),
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          status: true,
+          tenantId: true,
+          name: true,
+          city: true,
+          state: true,
+          bio: true,
+          createdAt: true,
+          updatedAt: true,
+          lastLoginAt: true,
+          tenant: { select: { id: true, name: true, subdomain: true } },
         },
       });
 
-      return { user, linkedUsers };
+      const mainAccounts = managedAccounts
+        .filter((user) => this.isManagedMainAccount(user.bio))
+        .map((user) => {
+        const accountSegment = this.parseManagedAccountSegment(user.bio) ?? 'student';
+        const companyName = this.parseManagedAccountCompanyName(user.bio) ?? '';
+        const linkedPeople = managedLinkedUsers.filter((linkedUser) => {
+          const parentId = this.parseManagedAccountParentId(linkedUser.bio);
+          if (parentId === user.id) return true;
+          return Boolean(
+            companyName &&
+              linkedUser.bio?.includes(
+                `${LEGACY_COMPANY_LINK_PREFIX}${companyName}]]`,
+              ),
+          );
+        });
+
+        return {
+          ...user,
+          email: this.dataMasking.maskEmail(user.email),
+          accountSegment,
+          companyName,
+          linkedPeopleCount: linkedPeople.length,
+          linkedPeople: linkedPeople.map((person) => ({
+            id: person.id,
+            name: person.name,
+            email: this.dataMasking.maskEmail(person.email),
+            status: person.status,
+            createdAt: person.createdAt,
+          })),
+          permissions: this.getManagedAccountPermissions(accountSegment),
+        };
+      });
+
+      return mainAccounts;
     });
+  }
 
-    const credentialEmails = await this.sendManagedAccountCredentialEmails([
-      {
-        email: normalizedEmail,
-        name: normalizedName,
-        password: dto.password,
-        segment,
-      },
-      ...linkedPeople.map((person) => ({
-        email: person.email,
-        name: person.name,
-        password: person.password,
-        segment: 'employee' as const,
-        companyName: normalizedCompanyName || normalizedName,
-      })),
-    ]);
+  async resendManagedAccountAccess(userId: string, actorStaffId?: string) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          tenantId: true,
+          status: true,
+          bio: true,
+          tenant: { select: { id: true, name: true, subdomain: true } },
+        },
+      });
 
-    return {
-      ...result.user,
-      email: this.dataMasking.maskEmail(result.user.email),
-      accountSegment: segment,
-      credentialEmails,
-      linkedPeople: result.linkedUsers.map((person) => ({
-        ...person,
-        email: this.dataMasking.maskEmail(person.email),
-      })),
-    };
+      if (!user || !this.isManagedAccount(user.bio)) {
+        throw new NotFoundException('Managed account not found');
+      }
+
+      const password = this.generateTemporaryPassword();
+      const passwordHash = await hash(password, 12);
+
+      const updated = await tx.user.update({
+        where: { id: user.id },
+        data: {
+          password: passwordHash,
+          passwordHash,
+          status: AccountStatus.ACTIVE,
+          contactEmailVerifiedAt: new Date(),
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          tenantId: true,
+          status: true,
+          bio: true,
+          createdAt: true,
+          updatedAt: true,
+          tenant: { select: { id: true, name: true, subdomain: true } },
+        },
+      });
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'MANAGED_ACCOUNT_ACCESS_RESENT',
+        targetType: 'User',
+        targetId: updated.id,
+        metadata: {
+          email: this.dataMasking.maskEmail(updated.email),
+          accountSegment: this.parseManagedAccountSegment(updated.bio),
+        },
+      });
+
+      await this.sendManagedAccountCredentialEmail({
+        email: updated.email,
+        name: updated.name,
+        password,
+        segment: this.parseManagedAccountSegment(updated.bio) ?? 'student',
+        companyName: this.parseManagedAccountCompanyName(updated.bio) ?? undefined,
+      });
+
+      return {
+        ...updated,
+        email: this.dataMasking.maskEmail(updated.email),
+        accountSegment: this.parseManagedAccountSegment(updated.bio) ?? 'student',
+      };
+    });
+  }
+
+  async deleteManagedAccount(userId: string, actorStaffId?: string) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true, email: true, name: true, bio: true, tenantId: true },
+      });
+
+      if (!user || !this.isManagedAccount(user.bio)) {
+        throw new NotFoundException('Managed account not found');
+      }
+
+      const companyName = this.parseManagedAccountCompanyName(user.bio);
+      const linkedUsers = await tx.user.findMany({
+        where: {
+          OR: [
+            { bio: { contains: `[[managed-account-parent:${user.id}]]` } },
+            ...(companyName
+              ? [{ bio: { contains: `${LEGACY_COMPANY_LINK_PREFIX}${companyName}]]` } }]
+              : []),
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (linkedUsers.length > 0) {
+        await tx.user.deleteMany({
+          where: { id: { in: linkedUsers.map((person) => person.id) } },
+        });
+      }
+
+      await this.deleteUserCascade(tx, user.id);
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'MANAGED_ACCOUNT_DELETED',
+        targetType: 'User',
+        targetId: user.id,
+        metadata: {
+          email: this.dataMasking.maskEmail(user.email),
+          linkedPeopleDeleted: linkedUsers.length,
+        },
+      });
+
+      return {
+        deleted: true,
+        id: user.id,
+        email: this.dataMasking.maskEmail(user.email),
+        linkedPeopleDeleted: linkedUsers.length,
+      };
+    });
+  }
+
+  async deleteCompanyTenant(tenantId: string, actorStaffId?: string) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const tenant = await tx.tenant.findUnique({
+        where: { id: tenantId },
+        select: { id: true, name: true, subdomain: true, createdAt: true },
+      });
+
+      if (!tenant) {
+        throw new NotFoundException('Company not found');
+      }
+
+      const tenantUsers = await tx.user.findMany({
+        where: { tenantId },
+        select: { id: true },
+      });
+      for (const tenantUser of tenantUsers) {
+        await this.deleteUserCascade(tx, tenantUser.id);
+      }
+
+      await tx.tenant.delete({
+        where: { id: tenantId },
+      });
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'COMPANY_DELETED',
+        targetType: 'Tenant',
+        targetId: tenantId,
+        metadata: {
+          name: tenant.name,
+          subdomain: tenant.subdomain,
+        },
+      });
+
+      return {
+        deleted: true,
+        id: tenant.id,
+        name: tenant.name,
+        subdomain: tenant.subdomain,
+      };
+    });
   }
 
   async createPlatformFeePayout(
@@ -684,6 +1022,53 @@ export class PlatformAdminService {
     });
   }
 
+  async deleteUser(userId: string, actorStaffId?: string) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true, email: true, tenantId: true, role: true },
+      });
+      if (!user) throw new NotFoundException('User not found');
+
+      await this.deleteUserCascade(tx, userId);
+
+      await this.audit(tx, {
+        actorStaffId,
+        action: 'USER_DELETED',
+        targetType: 'User',
+        targetId: userId,
+        metadata: {
+          email: this.dataMasking.maskEmail(user.email),
+          tenantId: user.tenantId,
+          role: user.role,
+        },
+      });
+
+      return {
+        deleted: true,
+        id: userId,
+        email: this.dataMasking.maskEmail(user.email),
+      };
+    });
+  }
+
+  private async deleteUserCascade(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ) {
+    await tx.subscriptionAuditLog.deleteMany({ where: { userId } });
+    await tx.subscription.deleteMany({ where: { userId } });
+    await tx.paymentWebhookEvent.deleteMany({ where: { userId } });
+    await tx.paymentCheckout.deleteMany({ where: { userId } });
+    await tx.courseSale.deleteMany({ where: { userId } });
+    await tx.certificate.deleteMany({ where: { userId } });
+    await tx.lessonProgress.deleteMany({ where: { userId } });
+    await tx.enrollment.deleteMany({ where: { userId } });
+    await tx.userPrivacyConsent.deleteMany({ where: { userId } });
+    await tx.termsConsent.deleteMany({ where: { userId } });
+    await tx.user.delete({ where: { id: userId } });
+  }
+
   private listCompanies(tx: Prisma.TransactionClient, search: string) {
     return tx.tenant.findMany({
       where: search
@@ -691,6 +1076,18 @@ export class PlatformAdminService {
             OR: [
               { name: { contains: search, mode: 'insensitive' } },
               { subdomain: { contains: search, mode: 'insensitive' } },
+              {
+                users: {
+                  some: {
+                    OR: [
+                      { name: { contains: search, mode: 'insensitive' } },
+                      { email: { contains: search, mode: 'insensitive' } },
+                      { city: { contains: search, mode: 'insensitive' } },
+                      { state: { contains: search, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+              },
             ],
           }
         : undefined,
@@ -750,17 +1147,116 @@ export class PlatformAdminService {
       .slice(0, 40);
   }
 
-  private decorateAccountBio(bio: string, segment: ManagedAccountSegment) {
-    const marker = `[[account-segment:${segment}]]`;
+  private decorateManagedAccountBio(
+    bio: string,
+    segment: ManagedAccountSegment,
+    companyName = '',
+  ) {
     const cleanedBio = bio.trim();
-    if (!cleanedBio) return marker;
-    return cleanedBio.includes(marker) ? cleanedBio : `${cleanedBio} ${marker}`.trim();
+    const markers = [
+      MANAGED_ACCOUNT_MAIN_MARKER,
+      `${MANAGED_ACCOUNT_SEGMENT_PREFIX}${segment}]]`,
+      companyName
+        ? `${MANAGED_ACCOUNT_COMPANY_PREFIX}${this.normalizeManagedAccountMarkerValue(companyName)}]]`
+        : '',
+    ].filter(Boolean);
+
+    return `${cleanedBio} ${markers.join(' ')}`.trim();
   }
 
-  private decorateLinkedPersonBio(bio: string, companyName: string) {
-    const segmentMarker = '[[account-segment:student]]';
-    const companyMarker = `[[company-link:${companyName.replace(/\]/g, '')}]]`;
-    return `${bio.trim()} ${segmentMarker} ${companyMarker}`.trim();
+  private decorateManagedLinkedBio(
+    bio: string,
+    companyName: string,
+    parentUserId: string,
+  ) {
+    const cleanedBio = bio.trim();
+    const markers = [
+      MANAGED_ACCOUNT_LINKED_MARKER,
+      `${MANAGED_ACCOUNT_SEGMENT_PREFIX}student]]`,
+      `${MANAGED_ACCOUNT_COMPANY_PREFIX}${this.normalizeManagedAccountMarkerValue(companyName)}]]`,
+      `${MANAGED_ACCOUNT_PARENT_PREFIX}${parentUserId}]]`,
+    ];
+
+    return `${cleanedBio} ${markers.join(' ')}`.trim();
+  }
+
+  private isManagedAccount(bio: string | null | undefined) {
+    return Boolean(
+      bio?.includes(MANAGED_ACCOUNT_MAIN_MARKER) ||
+        bio?.includes(MANAGED_ACCOUNT_LINKED_MARKER) ||
+        bio?.includes(LEGACY_ACCOUNT_SEGMENT_PREFIX),
+    );
+  }
+
+  private isManagedMainAccount(bio: string | null | undefined) {
+    if (!bio) return false;
+    if (bio.includes(MANAGED_ACCOUNT_MAIN_MARKER)) return true;
+    return (
+      bio.includes(LEGACY_ACCOUNT_SEGMENT_PREFIX) &&
+      !bio.includes(LEGACY_COMPANY_LINK_PREFIX)
+    );
+  }
+
+  private parseManagedAccountSegment(
+    bio: string | null | undefined,
+  ): ManagedAccountSegment | null {
+    const match =
+      bio?.match(/\[\[managed-account-segment:([^\]]+)\]\]/) ??
+      bio?.match(/\[\[account-segment:([^\]]+)\]\]/);
+    const segment = match?.[1];
+    if (
+      segment === 'student' ||
+      segment === 'teacher' ||
+      segment === 'company' ||
+      segment === 'sponsor' ||
+      segment === 'ambassador'
+    ) {
+      return segment;
+    }
+    return null;
+  }
+
+  private parseManagedAccountCompanyName(bio: string | null | undefined) {
+    const match =
+      bio?.match(/\[\[managed-account-company:([^\]]+)\]\]/) ??
+      bio?.match(/\[\[company-link:([^\]]+)\]\]/);
+    if (match?.[1]) return match[1].trim();
+
+    const legacyTextMatch = bio?.match(/Organizacao:\s*([^.[\]]+)/i);
+    return legacyTextMatch?.[1]?.trim() ?? null;
+  }
+
+  private parseManagedAccountParentId(bio: string | null | undefined) {
+    const match = bio?.match(/\[\[managed-account-parent:([^\]]+)\]\]/);
+    return match?.[1]?.trim() ?? null;
+  }
+
+  private normalizeManagedAccountMarkerValue(value: string) {
+    return value.replace(/\]\]/g, '').replace(/\[/g, '').trim();
+  }
+
+  private generateTemporaryPassword() {
+    const token = randomBytes(9)
+      .toString('base64url')
+      .replace(/[^A-Za-z0-9]/g, '')
+      .slice(0, 12);
+    return `Mp${token}7!`;
+  }
+
+  private getManagedAccountPermissions(segment: ManagedAccountSegment) {
+    if (segment === 'sponsor') {
+      return ['Divulgar benefícios', 'Patrocínios', 'Relacionamento comercial'];
+    }
+    if (segment === 'ambassador') {
+      return ['Divulgar MeetPoint', 'Indicações', 'Comunidades e eventos'];
+    }
+    if (segment === 'company') {
+      return ['Conta empresa', 'Publicar vagas', 'Solicitar benefícios'];
+    }
+    if (segment === 'teacher') {
+      return ['Conta PJ', 'Publicar cursos', 'Publicar eventos'];
+    }
+    return ['Conta PF', 'Acesso de cortesia'];
   }
 
   private async listUsers(
@@ -774,7 +1270,10 @@ export class PlatformAdminService {
         ...(search
           ? {
               OR: [
+                { name: { contains: search, mode: 'insensitive' } },
                 { email: { contains: search, mode: 'insensitive' } },
+                { city: { contains: search, mode: 'insensitive' } },
+                { state: { contains: search, mode: 'insensitive' } },
                 { tenant: { name: { contains: search, mode: 'insensitive' } } },
               ],
             }
@@ -784,6 +1283,9 @@ export class PlatformAdminService {
       select: {
         id: true,
         email: true,
+        name: true,
+        city: true,
+        state: true,
         role: true,
         status: true,
         tenantId: true,
@@ -1086,4 +1588,17 @@ function escapeHtml(value: string) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function isPrismaKnownRequestError(
+  error: unknown,
+  code: string,
+): error is Prisma.PrismaClientKnownRequestError {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError ||
+    (typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      'clientVersion' in error)
+  ) && (error as { code?: string }).code === code;
 }
