@@ -1,0 +1,1 @@
+ALTER TYPE "ContentVisibility" ADD VALUE IF NOT EXISTS 'PRIVATE';

@@ -1466,6 +1466,7 @@ function mapBackendPostToFeedPost(post = {}) {
     youtubeId: youtube?.id ?? '',
     mediaEmbedUrl: youtube?.embedUrl ?? '',
     mediaThumbnailUrl: youtube?.thumbnailUrl ?? '',
+    syncStatus: 'synced',
   };
 }
 
@@ -2446,7 +2447,13 @@ function App() {
       if (cancelled) return;
 
       if (postsResult.status === 'fulfilled') {
-        setFeedPosts(unwrapApiList(postsResult.value).map(mapBackendPostToFeedPost));
+        const remotePosts = unwrapApiList(postsResult.value).map(mapBackendPostToFeedPost);
+        setFeedPosts((current) =>
+          mergeById(
+            remotePosts,
+            current.filter((post) => post.syncStatus === 'syncing'),
+          ),
+        );
       }
       if (coursesResult.status === 'fulfilled') {
         setPublicCourses(unwrapApiList(coursesResult.value).map(mapBackendCourseToCourse));
@@ -2468,9 +2475,15 @@ function App() {
     }
 
     loadGlobalPublicContent();
+    const pollingId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadGlobalPublicContent();
+      }
+    }, 15000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(pollingId);
     };
   }, []);
   const canPublishCourses = ['student', 'teacher', 'company', 'platform'].includes(
@@ -4012,7 +4025,7 @@ function App() {
   }
 
   // Feed: cria publicacao com texto/midia, cidade, autor e pontuacao.
-  function createFeedPost({ body, media, city, tag }) {
+  async function createFeedPost({ body, media, city, tag }) {
     if (!requireAuthenticatedAction('publicar no feed')) return null;
     const content = body.trim();
     if (!content && !media) return null;
@@ -4039,47 +4052,49 @@ function App() {
       youtubeId: media?.youtubeId ?? '',
       mediaEmbedUrl: media?.embedUrl ?? '',
       mediaThumbnailUrl: media?.thumbnailUrl ?? '',
+      syncStatus: 'syncing',
     };
     setFeedPosts((current) => [optimisticPost, ...current]);
-    apiRequest('/posts', {
-      method: 'POST',
-      body: JSON.stringify({
-        body: content,
-        mediaUrl: media?.url || undefined,
-        mediaType: media?.type || undefined,
-        city: city?.trim() || undefined,
-        tag: tag || undefined,
-      }),
-    })
-      .then((createdPost) => {
-        const mappedPost = mapBackendPostToFeedPost(createdPost);
-        setFeedPosts((current) =>
-          current.map((post) => (post.id === postId ? mappedPost : post)),
-        );
-      })
-      .catch(() => {
-        setNotifications((current) => [
-          {
-            id: `notice-post-sync-${Date.now()}`,
-            title: 'Publicação criada localmente, mas a API não confirmou o salvamento global.',
-            channel: 'computador',
-            read: false,
-          },
-          ...current,
-        ]);
+    try {
+      const createdPost = await apiRequest('/posts', {
+        method: 'POST',
+        body: JSON.stringify({
+          body: content,
+          mediaUrl: media?.url || undefined,
+          mediaType: media?.type || undefined,
+          city: city?.trim() || undefined,
+          tag: tag || undefined,
+        }),
       });
-    recordFeedInterest(
-      {
-        tag: tag || 'Atualização',
-        body: content,
-        city: city?.trim() || 'Regional',
-        author: currentUser?.name ?? 'Visitante',
-        role: currentUser?.label ?? 'Membro',
-      },
-      'publish',
-    );
-    awardPoints(15, 'publicação no feed');
-    return postId;
+      const mappedPost = mapBackendPostToFeedPost(createdPost);
+      setFeedPosts((current) =>
+        current.map((post) => (post.id === postId ? mappedPost : post)),
+      );
+      recordFeedInterest(
+        {
+          tag: tag || 'Atualização',
+          body: content,
+          city: city?.trim() || 'Regional',
+          author: currentUser?.name ?? 'Visitante',
+          role: currentUser?.label ?? 'Membro',
+        },
+        'publish',
+      );
+      awardPoints(15, 'publicação no feed');
+      return mappedPost.id;
+    } catch (error) {
+      setFeedPosts((current) => current.filter((post) => post.id !== postId));
+      setNotifications((current) => [
+        {
+          id: `notice-post-sync-${Date.now()}`,
+          title: `A publicação não foi salva na API: ${error.message}`,
+          channel: 'computador',
+          read: false,
+        },
+        ...current,
+      ]);
+      throw error;
+    }
   }
   // Compartilhar: republica o post no topo do feed preservando origem.
   function shareFeedPost(post) {
@@ -7099,28 +7114,38 @@ function FeedView({
     );
   });
 
-  function submitPost(event) {
+  async function submitPost(event) {
     event.preventDefault();
     if (videoLink.trim() && !getYouTubeVideo(videoLink)) {
       setLocationStatus('Cole um link válido do YouTube para publicar o vídeo.');
       return;
     }
-    const createdPostId = createFeedPost({ body: draft, media, city, tag: postCategory });
-    if (!createdPostId) {
-      setLocationStatus('Escreva uma publicação ou anexe uma mídia antes de publicar.');
-      return;
+    setLocationStatus('Sincronizando publicação com a API...');
+    try {
+      const createdPostId = await createFeedPost({
+        body: draft,
+        media,
+        city,
+        tag: postCategory,
+      });
+      if (!createdPostId) {
+        setLocationStatus('Escreva uma publicação ou anexe uma mídia antes de publicar.');
+        return;
+      }
+      setDraft('');
+      setMedia(null);
+      setVideoLink('');
+      setVideoLinkOpen(false);
+      setPostCategory('Atualização');
+      setLocationStatus(
+        city.trim()
+          ? `Publicação salva globalmente com localização: ${city.trim()}.`
+          : 'Publicação salva globalmente sem localização definida.',
+      );
+      scrollToFeedTarget(`[data-post-id="${createdPostId}"]`, 'start');
+    } catch (error) {
+      setLocationStatus(`A publicação não foi salva: ${error.message}`);
     }
-    setDraft('');
-    setMedia(null);
-    setVideoLink('');
-    setVideoLinkOpen(false);
-    setPostCategory('Atualização');
-    setLocationStatus(
-      city.trim()
-        ? `Publicação enviada com localização: ${city.trim()}.`
-        : 'Publicação enviada sem localização definida.',
-    );
-    scrollToFeedTarget(`[data-post-id="${createdPostId}"]`, 'start');
   }
 
   function handleMediaChange(event) {
@@ -8364,6 +8389,11 @@ function sharePost() {
 
           {post.createdAt && (
             <time>{post.createdAt}</time>
+          )}
+          {post.syncStatus === 'syncing' && (
+            <span className="post-sync-status" role="status">
+              Sincronizando...
+            </span>
           )}
         </button>
 

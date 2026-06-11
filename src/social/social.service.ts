@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -37,7 +38,7 @@ export class SocialService {
     return this.prisma.withTenant(tenantId, (tx) =>
       tx.post.create({
         data: {
-          ...dto,
+          ...this.sanitizePostCreate(dto),
           tenantId,
           authorId,
           visibility: ContentVisibility.PUBLIC,
@@ -47,11 +48,24 @@ export class SocialService {
     );
   }
 
-  async listPosts(query: ListPublicContentQueryDto) {
+  async listPosts(
+    query: ListPublicContentQueryDto,
+    user?: AuthenticatedUser,
+  ) {
     const { page, limit, skip } = this.pagination(query);
     const search = query.search?.trim();
     const where: Prisma.PostWhereInput = {
-      visibility: ContentVisibility.PUBLIC,
+      OR: [
+        { visibility: ContentVisibility.PUBLIC },
+        ...(user?.tenantId
+          ? [
+              {
+                visibility: ContentVisibility.PRIVATE,
+                tenantId: user.tenantId,
+              },
+            ]
+          : []),
+      ],
       ...(query.city?.trim()
         ? { city: { equals: query.city.trim(), mode: 'insensitive' } }
         : {}),
@@ -84,9 +98,22 @@ export class SocialService {
     return this.page(data, total, page, limit);
   }
 
-  async getPost(id: string) {
+  async getPost(id: string, user?: AuthenticatedUser) {
     const post = await this.prisma.post.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
+      where: {
+        id,
+        OR: [
+          { visibility: ContentVisibility.PUBLIC },
+          ...(user?.tenantId
+            ? [
+                {
+                  visibility: ContentVisibility.PRIVATE,
+                  tenantId: user.tenantId,
+                },
+              ]
+            : []),
+        ],
+      },
       include: {
         ...this.postInclude(),
         comments: {
@@ -106,7 +133,7 @@ export class SocialService {
 
     return this.prisma.post.update({
       where: { id },
-      data: dto,
+      data: this.sanitizePostUpdate(dto),
       include: this.postInclude(),
     });
   }
@@ -127,7 +154,12 @@ export class SocialService {
   ) {
     await this.ensurePublicPost(postId);
     return this.prisma.postComment.create({
-      data: { postId, tenantId, authorId, body: dto.body },
+      data: {
+        postId,
+        tenantId,
+        authorId,
+        body: this.sanitizeRequiredText(dto.body, 'body'),
+      },
       include: { author: { select: this.publicUserSelect() } },
     });
   }
@@ -578,6 +610,56 @@ export class SocialService {
       return;
     }
     throw new ForbiddenException('Only the owner or an admin can change this content');
+  }
+
+  private sanitizePostCreate(dto: CreatePostDto): Prisma.PostUncheckedCreateInput {
+    return {
+      body: this.sanitizeRequiredText(dto.body, 'body'),
+      mediaUrl: dto.mediaUrl,
+      mediaType: this.sanitizeOptionalText(dto.mediaType),
+      city: this.sanitizeOptionalText(dto.city),
+      tag: this.sanitizeOptionalText(dto.tag),
+    } as Prisma.PostUncheckedCreateInput;
+  }
+
+  private sanitizePostUpdate(dto: UpdatePostDto): Prisma.PostUpdateInput {
+    return {
+      ...(dto.body !== undefined
+        ? { body: this.sanitizeRequiredText(dto.body, 'body') }
+        : {}),
+      ...(dto.mediaUrl !== undefined ? { mediaUrl: dto.mediaUrl } : {}),
+      ...(dto.mediaType !== undefined
+        ? { mediaType: this.sanitizeOptionalText(dto.mediaType) }
+        : {}),
+      ...(dto.city !== undefined
+        ? { city: this.sanitizeOptionalText(dto.city) }
+        : {}),
+      ...(dto.tag !== undefined ? { tag: this.sanitizeOptionalText(dto.tag) } : {}),
+    };
+  }
+
+  private sanitizeRequiredText(value: string, field: string) {
+    const sanitized = this.sanitizeText(value);
+    if (!sanitized) {
+      throw new BadRequestException(`${field} must contain valid text`);
+    }
+    return sanitized;
+  }
+
+  private sanitizeOptionalText(value?: string) {
+    if (value === undefined) return undefined;
+    return this.sanitizeText(value) || undefined;
+  }
+
+  private sanitizeText(value: string) {
+    return Array.from(
+      value
+        .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+        .replace(/<[^>]*>/g, ''),
+    )
+      .filter((character) => character.charCodeAt(0) !== 0)
+      .join('')
+      .trim();
   }
 
   private async ensurePublicPost(id: string) {

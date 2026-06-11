@@ -101,6 +101,7 @@ enum EnrollmentPaymentStatus {
 
 enum ContentVisibility {
   PUBLIC
+  PRIVATE
 }
 
 model Tenant {

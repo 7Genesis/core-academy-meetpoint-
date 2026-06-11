@@ -7390,6 +7390,19 @@ html[data-theme] body .created-courses-section.created-courses-section p.empty-s
   font-weight: 800;
 }
 
+.post-sync-status {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border: 1px solid rgba(13, 15, 20, 0.24);
+  border-radius: 999px;
+  background: #fff5c7;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .post-tag-badge {
   padding: 6px 10px;
   border: 2px solid var(--ink);

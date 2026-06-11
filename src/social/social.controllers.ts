@@ -42,14 +42,20 @@ export class PostsController {
 
   @Public()
   @Get()
-  findAll(@Query() query: ListPublicContentQueryDto) {
-    return this.socialService.listPosts(query);
+  findAll(
+    @Query() query: ListPublicContentQueryDto,
+    @CurrentUser() user?: AuthenticatedUser,
+  ) {
+    return this.socialService.listPosts(query, user);
   }
 
   @Public()
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.socialService.getPost(id);
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user?: AuthenticatedUser,
+  ) {
+    return this.socialService.getPost(id, user);
   }
 
   @RequireActiveSubscription()
