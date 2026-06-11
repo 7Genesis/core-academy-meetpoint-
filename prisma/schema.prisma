@@ -99,73 +99,99 @@ enum EnrollmentPaymentStatus {
   REFUNDED
 }
 
+enum ContentVisibility {
+  PUBLIC
+}
+
 model Tenant {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
   subdomain String   @unique
   createdAt DateTime @default(now())
 
-  users           User[]
-  courses         Course[]
-  modules         Module[]
-  lessons         Lesson[]
-  enrollments     Enrollment[]
-  lessonProgress  LessonProgress[]
-  certificates    Certificate[]
-  supportTickets   SupportTicket[]
-  courseSales      CourseSale[]
-  paymentCheckouts PaymentCheckout[]
-  paymentWebhookEvents PaymentWebhookEvent[]
+  users                   User[]
+  courses                 Course[]
+  modules                 Module[]
+  lessons                 Lesson[]
+  enrollments             Enrollment[]
+  lessonProgress          LessonProgress[]
+  certificates            Certificate[]
+  supportTickets          SupportTicket[]
+  courseSales             CourseSale[]
+  paymentCheckouts        PaymentCheckout[]
+  paymentWebhookEvents    PaymentWebhookEvent[]
+  posts                   Post[]
+  postComments            PostComment[]
+  postReactions           PostReaction[]
+  communities             Community[]
+  communityMembers        CommunityMember[]
+  opportunities           Opportunity[]
+  opportunityApplications OpportunityApplication[]
+  benefits                Benefit[]
+  benefitRedemptions      BenefitRedemption[]
+  events                  Event[]
+  eventRegistrations      EventRegistration[]
 
   @@map("tenants")
 }
 
 model User {
-  id        String   @id @default(uuid()) @db.Uuid
+  id                     String        @id @default(uuid()) @db.Uuid
   /// Email interno usado para login na plataforma, por exemplo nome.gmail@meetpoint.com.
-  email     String
-  emailHash String?
-  emailEncrypted String?
+  email                  String
+  emailHash              String?
+  emailEncrypted         String?
   /// Email real verificado do usuario. Usado para notificacoes, recuperacao de senha, vagas, eventos e cursos.
-  contactEmailHash String?
-  contactEmailEncrypted String?
+  contactEmailHash       String?
+  contactEmailEncrypted  String?
   contactEmailVerifiedAt DateTime?
   /// Celular/WhatsApp real verificado. Usado para notificacoes e avisos operacionais.
-  contactPhoneHash String?
-  contactPhoneEncrypted String?
+  contactPhoneHash       String?
+  contactPhoneEncrypted  String?
   contactPhoneVerifiedAt DateTime?
-  password  String
-  passwordHash String?
-  name      String @default("")
-  city      String @default("")
-  state     String @default("")
-  profileImage String?
-  bio       String?
-  acceptedTerms Boolean @default(false)
-  acceptedPrivacyPolicy Boolean @default(false)
-  role      UserRole @default(USER)
-  status    AccountStatus @default(ACTIVE)
-  tenantId  String   @db.Uuid
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  lastLoginAt DateTime?
-  blockedAt DateTime?
-  blockedReason String?
-  lastLoginIpEncrypted String?
-  lastKnownGeoEncrypted String?
+  password               String
+  passwordHash           String?
+  name                   String        @default("")
+  city                   String        @default("")
+  state                  String        @default("")
+  profileImage           String?
+  bio                    String?
+  acceptedTerms          Boolean       @default(false)
+  acceptedPrivacyPolicy  Boolean       @default(false)
+  role                   UserRole      @default(USER)
+  status                 AccountStatus @default(ACTIVE)
+  tenantId               String        @db.Uuid
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  lastLoginAt            DateTime?
+  blockedAt              DateTime?
+  blockedReason          String?
+  lastLoginIpEncrypted   String?
+  lastKnownGeoEncrypted  String?
 
-  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  enrollments     Enrollment[]
-  lessonProgress  LessonProgress[]
-  certificates    Certificate[]
-  supportTickets  SupportTicket[]
-  courseSales      CourseSale[]
-  paymentCheckouts PaymentCheckout[]
-  paymentWebhookEvents PaymentWebhookEvent[]
-  termsConsents   TermsConsent[]
-  privacyConsents UserPrivacyConsent[]
-  subscriptions   Subscription[]
-  subscriptionAuditLogs SubscriptionAuditLog[]
+  tenant                  Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enrollments             Enrollment[]
+  lessonProgress          LessonProgress[]
+  certificates            Certificate[]
+  supportTickets          SupportTicket[]
+  courseSales             CourseSale[]
+  paymentCheckouts        PaymentCheckout[]
+  paymentWebhookEvents    PaymentWebhookEvent[]
+  termsConsents           TermsConsent[]
+  privacyConsents         UserPrivacyConsent[]
+  subscriptions           Subscription[]
+  subscriptionAuditLogs   SubscriptionAuditLog[]
+  posts                   Post[]
+  postComments            PostComment[]
+  postReactions           PostReaction[]
+  ownedCommunities        Community[]
+  communityMemberships    CommunityMember[]
+  opportunities           Opportunity[]
+  opportunityApplications OpportunityApplication[]
+  benefits                Benefit[]
+  benefitRedemptions      BenefitRedemption[]
+  events                  Event[]
+  eventRegistrations      EventRegistration[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, emailHash])
@@ -195,18 +221,18 @@ model TermsConsent {
 }
 
 model UserPrivacyConsent {
-  id             String   @id @default(uuid()) @db.Uuid
-  userId         String   @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @db.Uuid
   termsVersion   String
   privacyVersion String
   consentType    String
-  accepted       Boolean  @default(false)
+  accepted       Boolean   @default(false)
   acceptedAt     DateTime?
   ipAddress      String?
   userAgent      String?
   country        String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -272,14 +298,14 @@ model Subscription {
 }
 
 model SubscriptionAuditLog {
-  id             String   @id @default(uuid()) @db.Uuid
-  userId         String   @db.Uuid
-  subscriptionId String   @db.Uuid
-  eventType      String
-  oldStatus      String?
-  newStatus      String?
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @db.Uuid
+  subscriptionId   String   @db.Uuid
+  eventType        String
+  oldStatus        String?
+  newStatus        String?
   paymentReference String?
-  createdAt      DateTime @default(now())
+  createdAt        DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
@@ -292,33 +318,264 @@ model SubscriptionAuditLog {
 }
 
 model Course {
-  id          String   @id @default(uuid()) @db.Uuid
-  title       String
-  topic       String?
-  description String?
-  coverUrl    String?
-  instructorName String?
-  publisherType  String?
+  id                String            @id @default(uuid()) @db.Uuid
+  title             String
+  topic             String?
+  description       String?
+  coverUrl          String?
+  instructorName    String?
+  publisherType     String?
   linkedCompanyName String?
-  creatorUserId String? @db.Uuid
-  priceCents   Int      @default(0)
-  currency     String   @default("BRL")
-  platformFeeBps Int    @default(1000)
-  tenantId    String   @db.Uuid
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  creatorUserId     String?           @db.Uuid
+  priceCents        Int               @default(0)
+  currency          String            @default("BRL")
+  platformFeeBps    Int               @default(1000)
+  visibility        ContentVisibility @default(PUBLIC)
+  tenantId          String            @db.Uuid
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  modules      Module[]
-  enrollments  Enrollment[]
-  certificates Certificate[]
-  sales        CourseSale[]
-  paymentCheckouts PaymentCheckout[]
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  modules              Module[]
+  enrollments          Enrollment[]
+  certificates         Certificate[]
+  sales                CourseSale[]
+  paymentCheckouts     PaymentCheckout[]
   paymentWebhookEvents PaymentWebhookEvent[]
 
   @@index([tenantId])
   @@index([tenantId, topic])
+  @@index([visibility, createdAt])
   @@map("courses")
+}
+
+model Post {
+  id         String            @id @default(uuid()) @db.Uuid
+  tenantId   String            @db.Uuid
+  authorId   String            @db.Uuid
+  visibility ContentVisibility @default(PUBLIC)
+  body       String
+  mediaUrl   String?
+  mediaType  String?
+  city       String?
+  tag        String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  author    User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments  PostComment[]
+  reactions PostReaction[]
+
+  @@index([visibility, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([authorId, createdAt])
+  @@map("posts")
+}
+
+model PostComment {
+  id        String   @id @default(uuid()) @db.Uuid
+  postId    String   @db.Uuid
+  tenantId  String   @db.Uuid
+  authorId  String   @db.Uuid
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@index([authorId, createdAt])
+  @@map("post_comments")
+}
+
+model PostReaction {
+  id        String   @id @default(uuid()) @db.Uuid
+  postId    String   @db.Uuid
+  tenantId  String   @db.Uuid
+  userId    String   @db.Uuid
+  type      String   @default("like")
+  createdAt DateTime @default(now())
+
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, type])
+  @@index([postId])
+  @@index([userId])
+  @@map("post_reactions")
+}
+
+model Community {
+  id          String            @id @default(uuid()) @db.Uuid
+  tenantId    String            @db.Uuid
+  ownerId     String            @db.Uuid
+  visibility  ContentVisibility @default(PUBLIC)
+  name        String
+  topic       String?
+  description String?
+  city        String?
+  imageUrl    String?
+  memberCount Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members CommunityMember[]
+
+  @@index([visibility, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([ownerId, createdAt])
+  @@map("communities")
+}
+
+model CommunityMember {
+  id          String   @id @default(uuid()) @db.Uuid
+  communityId String   @db.Uuid
+  tenantId    String   @db.Uuid
+  userId      String   @db.Uuid
+  role        String   @default("MEMBER")
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+  @@index([userId])
+  @@map("community_members")
+}
+
+model Opportunity {
+  id           String            @id @default(uuid()) @db.Uuid
+  tenantId     String            @db.Uuid
+  ownerId      String            @db.Uuid
+  visibility   ContentVisibility @default(PUBLIC)
+  title        String
+  company      String
+  category     String?
+  city         String?
+  salaryLabel  String?
+  description  String?
+  contactEmail String?
+  contactPhone String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  tenant       Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner        User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  applications OpportunityApplication[]
+
+  @@index([visibility, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([ownerId, createdAt])
+  @@map("opportunities")
+}
+
+model OpportunityApplication {
+  id            String   @id @default(uuid()) @db.Uuid
+  opportunityId String   @db.Uuid
+  tenantId      String   @db.Uuid
+  userId        String   @db.Uuid
+  message       String?
+  resumeUrl     String?
+  createdAt     DateTime @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([opportunityId, userId])
+  @@index([userId])
+  @@map("opportunity_applications")
+}
+
+model Benefit {
+  id              String            @id @default(uuid()) @db.Uuid
+  tenantId        String            @db.Uuid
+  ownerId         String            @db.Uuid
+  visibility      ContentVisibility @default(PUBLIC)
+  title           String
+  partner         String
+  category        String?
+  city            String?
+  description     String?
+  pointsCost      Int               @default(0)
+  redemptionCount Int               @default(0)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner       User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  redemptions BenefitRedemption[]
+
+  @@index([visibility, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([ownerId, createdAt])
+  @@map("benefits")
+}
+
+model BenefitRedemption {
+  id        String   @id @default(uuid()) @db.Uuid
+  benefitId String   @db.Uuid
+  tenantId  String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  benefit Benefit @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([benefitId, userId])
+  @@index([userId])
+  @@map("benefit_redemptions")
+}
+
+model Event {
+  id          String            @id @default(uuid()) @db.Uuid
+  tenantId    String            @db.Uuid
+  ownerId     String            @db.Uuid
+  visibility  ContentVisibility @default(PUBLIC)
+  title       String
+  organizer   String?
+  mode        String?
+  location    String?
+  startsAt    DateTime?
+  priceCents  Int               @default(0)
+  capacity    Int?
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner         User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  registrations EventRegistration[]
+
+  @@index([visibility, startsAt])
+  @@index([visibility, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([ownerId, createdAt])
+  @@map("events")
+}
+
+model EventRegistration {
+  id        String   @id @default(uuid()) @db.Uuid
+  eventId   String   @db.Uuid
+  tenantId  String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@map("event_registrations")
 }
 
 model Module {
@@ -341,22 +598,22 @@ model Module {
 }
 
 model Lesson {
-  id            String   @id @default(uuid()) @db.Uuid
-  title         String
-  order         Int
-  videoUrl      String?
-  attachmentUrl String?
+  id                    String                      @id @default(uuid()) @db.Uuid
+  title                 String
+  order                 Int
+  videoUrl              String?
+  attachmentUrl         String?
   completionRequirement LessonCompletionRequirement @default(VIDEO_WATCHED)
-  requiredVideoPercent  Int      @default(80)
-  progressWeight        Int      @default(1)
-  moduleId      String   @db.Uuid
-  tenantId      String   @db.Uuid
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  requiredVideoPercent  Int                         @default(80)
+  progressWeight        Int                         @default(1)
+  moduleId              String                      @db.Uuid
+  tenantId              String                      @db.Uuid
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
 
-  module          Module           @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  lessonProgress  LessonProgress[]
+  module         Module           @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lessonProgress LessonProgress[]
 
   @@unique([moduleId, order])
   @@index([tenantId])
@@ -365,19 +622,19 @@ model Lesson {
 }
 
 model Enrollment {
-  id                 String   @id @default(uuid()) @db.Uuid
-  userId             String   @db.Uuid
-  courseId           String   @db.Uuid
-  tenantId           String   @db.Uuid
-  progressPercentage Int      @default(0)
-  isCompleted        Boolean  @default(false)
+  id                  String                  @id @default(uuid()) @db.Uuid
+  userId              String                  @db.Uuid
+  courseId            String                  @db.Uuid
+  tenantId            String                  @db.Uuid
+  progressPercentage  Int                     @default(0)
+  isCompleted         Boolean                 @default(false)
   paymentStatus       EnrollmentPaymentStatus @default(PENDING)
-  purchaseAmountCents Int     @default(0)
-  platformFeeCents    Int     @default(0)
-  producerNetCents    Int     @default(0)
+  purchaseAmountCents Int                     @default(0)
+  platformFeeCents    Int                     @default(0)
+  producerNetCents    Int                     @default(0)
   gatewayPaymentId    String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -391,17 +648,17 @@ model Enrollment {
 }
 
 model LessonProgress {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  lessonId  String   @db.Uuid
-  tenantId  String   @db.Uuid
-  isWatched Boolean  @default(false)
-  videoWatchedPercent Int     @default(0)
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @db.Uuid
+  lessonId            String    @db.Uuid
+  tenantId            String    @db.Uuid
+  isWatched           Boolean   @default(false)
+  videoWatchedPercent Int       @default(0)
   taskSubmittedAt     DateTime?
   evidenceUrl         String?
   completionNote      String?
   completedAt         DateTime?
-  updatedAt DateTime @updatedAt
+  updatedAt           DateTime  @updatedAt
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
@@ -447,19 +704,19 @@ model EmailVerificationCode {
 }
 
 model PlatformStaff {
-  id        String       @id @default(uuid()) @db.Uuid
-  name      String
-  email     String       @unique
-  emailHash String?      @unique
+  id             String       @id @default(uuid()) @db.Uuid
+  name           String
+  email          String       @unique
+  emailHash      String?      @unique
   emailEncrypted String?
-  role      PlatformRole @default(SUPPORT)
-  isActive  Boolean      @default(true)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  role           PlatformRole @default(SUPPORT)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  permissions PlatformStaffPermission[]
-  assignedTickets SupportTicket[] @relation("AssignedSupportTickets")
-  auditLogs PlatformAuditLog[]
+  permissions      PlatformStaffPermission[]
+  assignedTickets  SupportTicket[]           @relation("AssignedSupportTickets")
+  auditLogs        PlatformAuditLog[]
   requestedPayouts PlatformFeePayout[]
 
   @@index([role])
@@ -469,10 +726,10 @@ model PlatformStaff {
 }
 
 model PlatformStaffPermission {
-  id           String             @id @default(uuid()) @db.Uuid
-  staffId      String             @db.Uuid
-  permission   PlatformPermission
-  createdAt    DateTime           @default(now())
+  id         String             @id @default(uuid()) @db.Uuid
+  staffId    String             @db.Uuid
+  permission PlatformPermission
+  createdAt  DateTime           @default(now())
 
   staff PlatformStaff @relation(fields: [staffId], references: [id], onDelete: Cascade)
 
@@ -482,21 +739,21 @@ model PlatformStaffPermission {
 }
 
 model SupportTicket {
-  id          String                @id @default(uuid()) @db.Uuid
-  tenantId    String?               @db.Uuid
-  userId      String?               @db.Uuid
-  assignedToId String?              @db.Uuid
-  requesterEmailHash String?
+  id                      String                @id @default(uuid()) @db.Uuid
+  tenantId                String?               @db.Uuid
+  userId                  String?               @db.Uuid
+  assignedToId            String?               @db.Uuid
+  requesterEmailHash      String?
   requesterEmailEncrypted String?
-  requesterIpEncrypted String?
-  requesterGeoEncrypted String?
-  subject     String
-  description String?
-  priority    SupportTicketPriority @default(MEDIUM)
-  status      SupportTicketStatus   @default(OPEN)
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
-  resolvedAt  DateTime?
+  requesterIpEncrypted    String?
+  requesterGeoEncrypted   String?
+  subject                 String
+  description             String?
+  priority                SupportTicketPriority @default(MEDIUM)
+  status                  SupportTicketStatus   @default(OPEN)
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  resolvedAt              DateTime?
 
   tenant     Tenant?        @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   user       User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -512,14 +769,14 @@ model SupportTicket {
 }
 
 model PlatformAuditLog {
-  id          String   @id @default(uuid()) @db.Uuid
-  actorStaffId String? @db.Uuid
-  action      String
-  targetType  String
-  targetId    String?
-  metadata    Json?
+  id                String   @id @default(uuid()) @db.Uuid
+  actorStaffId      String?  @db.Uuid
+  action            String
+  targetType        String
+  targetId          String?
+  metadata          Json?
   metadataEncrypted String?
-  createdAt   DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   actorStaff PlatformStaff? @relation(fields: [actorStaffId], references: [id], onDelete: SetNull)
 
@@ -530,19 +787,19 @@ model PlatformAuditLog {
 }
 
 model CourseSale {
-  id                 String     @id @default(uuid()) @db.Uuid
-  tenantId           String     @db.Uuid
-  userId             String     @db.Uuid
-  courseId           String     @db.Uuid
-  gateway            String
-  gatewayPaymentId   String     @unique
-  grossAmountCents   Int
-  platformFeeBps     Int
-  platformFeeCents   Int
-  producerNetCents   Int
-  currency           String     @default("BRL")
-  status             SaleStatus @default(PAID)
-  createdAt          DateTime   @default(now())
+  id               String     @id @default(uuid()) @db.Uuid
+  tenantId         String     @db.Uuid
+  userId           String     @db.Uuid
+  courseId         String     @db.Uuid
+  gateway          String
+  gatewayPaymentId String     @unique
+  grossAmountCents Int
+  platformFeeBps   Int
+  platformFeeCents Int
+  producerNetCents Int
+  currency         String     @default("BRL")
+  status           SaleStatus @default(PAID)
+  createdAt        DateTime   @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)

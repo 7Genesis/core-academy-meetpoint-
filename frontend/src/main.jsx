@@ -1396,6 +1396,205 @@ function supportRequest(path, options = {}) {
   return apiRequest(`/support${path}`, options);
 }
 
+function unwrapApiList(response) {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.data)) return response.data;
+  if (Array.isArray(response?.items)) return response.items;
+  return [];
+}
+
+function mergeById(primary = [], secondary = []) {
+  const seen = new Set();
+  return [...primary, ...secondary].filter((item) => {
+    const id = item?.id;
+    if (!id) return false;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function getIsoDateParts(value) {
+  const date = value ? new Date(value) : null;
+  const fallbackDate = new Date();
+  const fallbackCreatedAt = fallbackDate.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  if (!date || Number.isNaN(date.getTime())) {
+    return { date: '2026-06-20', time: '19:00', createdAt: fallbackCreatedAt };
+  }
+
+  return {
+    date: date.toISOString().slice(0, 10),
+    time: date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    createdAt: date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  };
+}
+
+function mapBackendPostToFeedPost(post = {}) {
+  const authorName = post.author?.name ?? 'MeetPoint';
+  const youtube = post.mediaType === 'youtube' ? getYouTubeVideo(post.mediaUrl) : null;
+  return {
+    id: post.id,
+    author: authorName,
+    authorHandle: getUserHandle(post.author),
+    authorEmail: '',
+    role: 'Membro',
+    initials: getInitials(authorName || 'MP'),
+    photo: post.author?.profileImage ?? '',
+    city: post.city || post.author?.city || 'Regional',
+    tag: post.tag || 'Atualização',
+    createdAt: getIsoDateParts(post.createdAt).createdAt,
+    body: post.body ?? '',
+    likes: post._count?.reactions ?? 0,
+    reactionSummary: { like: post._count?.reactions ?? 0, love: 0, fire: 0 },
+    selectedReaction: '',
+    comments: [],
+    mediaType: post.mediaType ?? '',
+    mediaName: post.mediaType === 'youtube' ? 'Vídeo do YouTube' : '',
+    mediaUrl: post.mediaUrl ?? '',
+    youtubeId: youtube?.id ?? '',
+    mediaEmbedUrl: youtube?.embedUrl ?? '',
+    mediaThumbnailUrl: youtube?.thumbnailUrl ?? '',
+  };
+}
+
+function mapBackendCourseToCourse(course = {}) {
+  const price = Number(course.priceCents ?? 0) / 100;
+  return {
+    id: course.id,
+    title: course.title ?? 'Curso MeetPoint',
+    tag: course.topic ?? 'Conteúdo',
+    topic: course.topic ?? 'Conteúdo',
+    description: course.description ?? 'Curso publicado na plataforma.',
+    coverUrl: course.coverUrl ?? '',
+    price,
+    isFree: price <= 0,
+    platformFeePercent: PLATFORM_FEE_PERCENT,
+    progress: 0,
+    level: 'Publicado',
+    instructor: course.instructorName ?? 'MeetPoint',
+    company: course.linkedCompanyName ?? course.tenant?.name ?? 'MeetPoint',
+    publicationScope: course.publisherType ?? 'Global',
+    deliveryMode: 'internal',
+    externalCourseUrl: '',
+    externalPlatformName: '',
+    creatorSegment: 'global',
+    creatorEmail: '',
+    liveDate: '',
+    color: price <= 0 ? 'yellow' : 'blue',
+    createdAt: course.createdAt ?? new Date().toISOString(),
+    updatedAt: course.updatedAt ?? course.createdAt ?? new Date().toISOString(),
+    students: 0,
+    revenue: 0,
+    platformFeeRevenue: 0,
+    producerNetRevenue: 0,
+    published: true,
+    modules: course.modules ?? [],
+  };
+}
+
+function mapBackendCommunityToCommunity(community = {}) {
+  return {
+    id: community.id,
+    name: community.name ?? 'Comunidade MeetPoint',
+    topic: community.topic ?? 'Geral',
+    type: community.topic ?? 'Geral',
+    relatedTo: community.description ?? '',
+    photo: community.imageUrl ?? '',
+    members: community.memberCount ?? community._count?.members ?? 0,
+    unread: 0,
+    privacy: 'Público',
+    accessMode: 'public',
+    password: '',
+    joined: false,
+    isAdmin: false,
+    favorite: false,
+    color: 'yellow',
+  };
+}
+
+function mapBackendOpportunityToJob(opportunity = {}) {
+  const category = opportunity.category ?? 'Profissional';
+  return {
+    id: opportunity.id,
+    title: opportunity.title ?? 'Oportunidade MeetPoint',
+    company: opportunity.company ?? opportunity.owner?.name ?? 'MeetPoint',
+    city: opportunity.city ?? 'Regional',
+    type: category,
+    category,
+    salary: opportunity.salaryLabel ?? 'A combinar',
+    skills: [],
+    description: opportunity.description ?? 'Detalhes da oportunidade serão informados pelo responsável.',
+    requirements: 'Requisitos informados pelo responsável.',
+    benefits: 'Benefícios informados pelo responsável.',
+    rhEmail: opportunity.contactEmail ?? '',
+    whatsapp: opportunity.contactPhone ?? '',
+    contactMethods: opportunity.contactPhone ? ['whatsapp', 'email'] : ['email'],
+    creatorName: opportunity.owner?.name ?? opportunity.company ?? 'MeetPoint',
+    creatorEmail: '',
+    creatorHandle: getUserHandle(opportunity.owner),
+    creatorSegment: 'global',
+    applicants: opportunity._count?.applications ?? 0,
+  };
+}
+
+function mapBackendBenefitToBenefit(benefit = {}) {
+  return {
+    id: benefit.id,
+    title: benefit.title ?? 'Benefício MeetPoint',
+    partner: benefit.partner ?? benefit.owner?.name ?? 'MeetPoint',
+    category: benefit.category ?? 'Geral',
+    city: benefit.city ?? 'Regional',
+    pointsCost: benefit.pointsCost ?? 0,
+    redemptions: benefit.redemptionCount ?? benefit._count?.redemptions ?? 0,
+    emailSubject: `Seu benefício ${benefit.title ?? 'MeetPoint'}`,
+    emailBody: benefit.description ?? 'Benefício disponível na plataforma MeetPoint.',
+    deliveryAssetName: 'beneficio-digital.pdf',
+    deliveryCode: `MP-${String(benefit.id ?? Date.now()).slice(0, 8).toUpperCase()}`,
+    createdBy: benefit.owner?.name ?? 'MeetPoint',
+    createdAt: benefit.createdAt ?? new Date().toISOString(),
+  };
+}
+
+function mapBackendEventToEvent(event = {}) {
+  const startsAt = getIsoDateParts(event.startsAt);
+  return {
+    id: event.id,
+    title: event.title ?? 'Evento MeetPoint',
+    type: event.organizer ?? 'Evento',
+    mode: event.mode ?? 'Online',
+    owner: event.owner?.name ?? event.organizer ?? 'MeetPoint',
+    creatorName: event.owner?.name ?? event.organizer ?? 'MeetPoint',
+    creatorEmail: '',
+    creatorHandle: getUserHandle(event.owner),
+    creatorSegment: 'global',
+    location: event.location ?? 'Local a definir',
+    date: startsAt.date,
+    time: startsAt.time,
+    price: Number(event.priceCents ?? 0) / 100,
+    capacity: Number(event.capacity || 60),
+    privacy: 'Público',
+    registrationRequired: true,
+    requiredFields: ['name', 'email', 'whatsapp'],
+    yes: event._count?.registrations ?? 0,
+    no: 0,
+    participants: [],
+    source: 'global',
+    required: false,
+  };
+}
+
 const LAST_SIGNUP_LOGIN_KEY = 'lastMeetPointLoginEmail';
 const LAST_SIGNUP_REQUIRES_SUBSCRIPTION_KEY = 'lastMeetPointRequiresSubscription';
 const LAST_SIGNUP_SEGMENT_KEY = 'lastMeetPointSignupSegment';
@@ -2146,6 +2345,7 @@ function App() {
   const [eventRegistrations, setEventRegistrations] = useState({});
   const [eventCreatorAlerts, setEventCreatorAlerts] = useState([]);
   const [selectedCourseId, setSelectedCourseId] = useState('saas');
+  const [publicCourses, setPublicCourses] = useState(initialCourses);
   const [createdCourses, setCreatedCourses] = useState([]);
   const [editingCreatedCourseId, setEditingCreatedCourseId] = useState(null);
   const [checkoutCourseId, setCheckoutCourseId] = useState(null);
@@ -2214,14 +2414,65 @@ function App() {
   );
 
   const catalogCourses = useMemo(
-    () => [...initialCourses, ...createdCourses.filter((course) => course.published)],
-    [createdCourses],
+    () => mergeById(publicCourses, createdCourses.filter((course) => course.published)),
+    [createdCourses, publicCourses],
   );
 
   const selectedCourse = useMemo(
     () => catalogCourses.find((course) => course.id === selectedCourseId) ?? catalogCourses[0],
     [catalogCourses, selectedCourseId],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadGlobalPublicContent() {
+      const [
+        postsResult,
+        coursesResult,
+        communitiesResult,
+        opportunitiesResult,
+        benefitsResult,
+        eventsResult,
+      ] = await Promise.allSettled([
+        apiRequest('/posts?page=1&limit=100'),
+        apiRequest('/courses?page=1&limit=100'),
+        apiRequest('/communities?page=1&limit=100'),
+        apiRequest('/opportunities?page=1&limit=100'),
+        apiRequest('/benefits?page=1&limit=100'),
+        apiRequest('/events?page=1&limit=100'),
+      ]);
+
+      if (cancelled) return;
+
+      if (postsResult.status === 'fulfilled') {
+        setFeedPosts(unwrapApiList(postsResult.value).map(mapBackendPostToFeedPost));
+      }
+      if (coursesResult.status === 'fulfilled') {
+        setPublicCourses(unwrapApiList(coursesResult.value).map(mapBackendCourseToCourse));
+      }
+      if (communitiesResult.status === 'fulfilled') {
+        const nextCommunities = unwrapApiList(communitiesResult.value).map(mapBackendCommunityToCommunity);
+        setCommunities(nextCommunities);
+        setActiveCommunityId((current) => current || nextCommunities[0]?.id || '');
+      }
+      if (opportunitiesResult.status === 'fulfilled') {
+        setJobs(unwrapApiList(opportunitiesResult.value).map(mapBackendOpportunityToJob));
+      }
+      if (benefitsResult.status === 'fulfilled') {
+        setBenefits(unwrapApiList(benefitsResult.value).map(mapBackendBenefitToBenefit));
+      }
+      if (eventsResult.status === 'fulfilled') {
+        setCommunityEvents(unwrapApiList(eventsResult.value).map(mapBackendEventToEvent));
+      }
+    }
+
+    loadGlobalPublicContent();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const canPublishCourses = ['student', 'teacher', 'company', 'platform'].includes(
     currentUser?.segment,
   );
@@ -3131,8 +3382,9 @@ function App() {
   // Comunidades: cria grupo, seleciona automaticamente e sugere adicionar membros.
   function createCommunity(data) {
     if (!requireAuthenticatedAction('criar comunidade')) return;
+    const temporaryId = `community-${Date.now()}`;
     const community = {
-      id: `community-${Date.now()}`,
+      id: temporaryId,
       name: data.name,
       topic: data.topic,
       type: data.type,
@@ -3153,6 +3405,29 @@ function App() {
     setCommunityBubbleOpen(true);
     setShowMemberSuggestion(true);
     openPage('communities', { preserveCommunityOpen: true });
+    apiRequest('/communities', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: data.name,
+        topic: data.topic || undefined,
+        description: data.relatedTo || undefined,
+        imageUrl: normalizeExternalUrl(data.photo ?? '') || undefined,
+      }),
+    })
+      .then((createdCommunity) => {
+        const mappedCommunity = {
+          ...mapBackendCommunityToCommunity(createdCommunity),
+          joined: true,
+          isAdmin: true,
+        };
+        setCommunities((current) =>
+          current.map((item) => (item.id === temporaryId ? mappedCommunity : item)),
+        );
+        setActiveCommunityId(mappedCommunity.id);
+      })
+      .catch(() => {
+        setCommunityAccessNotice('Comunidade criada localmente, mas a API não confirmou a publicação global.');
+      });
   }
 
   function toggleFavorite(communityId) {
@@ -3350,6 +3625,7 @@ function App() {
   // Publicacao do curso: simula vendas e split da taxa operacional da plataforma.
   function publishCreatedCourse(courseId) {
     if (!requireAuthenticatedAction('publicar curso')) return;
+    const courseToPublish = createdCourses.find((course) => course.id === courseId);
     setCreatedCourses((current) =>
       current.map((course) => {
         if (course.id !== courseId) return course;
@@ -3366,6 +3642,41 @@ function App() {
         };
       }),
     );
+    if (courseToPublish && !courseToPublish.backendPublished) {
+      apiRequest('/courses', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: courseToPublish.title,
+          topic: courseToPublish.topic || courseToPublish.tag || undefined,
+          description: courseToPublish.description || undefined,
+          instructorName: courseToPublish.instructor || undefined,
+          publisherType: courseToPublish.publicationScope || undefined,
+          linkedCompanyName: courseToPublish.company || undefined,
+          priceCents: Math.round(Number(courseToPublish.price || 0) * 100),
+          currency: 'BRL',
+        }),
+      })
+        .then((createdCourse) => {
+          const mappedCourse = mapBackendCourseToCourse(createdCourse);
+          setPublicCourses((current) => mergeById([mappedCourse], current));
+          setCreatedCourses((current) =>
+            current.map((course) =>
+              course.id === courseId ? { ...course, backendPublished: true } : course,
+            ),
+          );
+        })
+        .catch(() => {
+          setNotifications((current) => [
+            {
+              id: `notice-course-sync-${Date.now()}`,
+              title: 'Curso publicado localmente, mas a API não confirmou o catálogo global.',
+              channel: 'computador',
+              read: false,
+            },
+            ...current,
+          ]);
+        });
+    }
   }
 
   function updateCreatedCourse(courseId, patch) {
@@ -3706,32 +4017,57 @@ function App() {
     const content = body.trim();
     if (!content && !media) return null;
     const postId = `post-${Date.now()}`;
-    setFeedPosts((current) => [
-      {
-        id: postId,
-        author: currentUser?.name ?? 'Visitante',
-        authorHandle: getUserHandle(currentUser),
-        authorEmail: currentUser?.email ?? '',
-        role: currentUser?.label ?? 'Membro',
-        initials: currentUser?.initials ?? 'MP',
-        photo: profilePhoto,
-        city: city?.trim() || 'Regional',
-        tag: tag || 'Atualização',
-        createdAt: getPostTimestamp(),
+    const optimisticPost = {
+      id: postId,
+      author: currentUser?.name ?? 'Visitante',
+      authorHandle: getUserHandle(currentUser),
+      authorEmail: currentUser?.email ?? '',
+      role: currentUser?.label ?? 'Membro',
+      initials: currentUser?.initials ?? 'MP',
+      photo: profilePhoto,
+      city: city?.trim() || 'Regional',
+      tag: tag || 'Atualização',
+      createdAt: getPostTimestamp(),
+      body: content,
+      likes: 0,
+      reactionSummary: { like: 0, love: 0, fire: 0 },
+      selectedReaction: '',
+      comments: [],
+      mediaType: media?.type ?? '',
+      mediaName: media?.name ?? '',
+      mediaUrl: media?.url ?? '',
+      youtubeId: media?.youtubeId ?? '',
+      mediaEmbedUrl: media?.embedUrl ?? '',
+      mediaThumbnailUrl: media?.thumbnailUrl ?? '',
+    };
+    setFeedPosts((current) => [optimisticPost, ...current]);
+    apiRequest('/posts', {
+      method: 'POST',
+      body: JSON.stringify({
         body: content,
-        likes: 0,
-        reactionSummary: { like: 0, love: 0, fire: 0 },
-        selectedReaction: '',
-        comments: [],
-        mediaType: media?.type ?? '',
-        mediaName: media?.name ?? '',
-        mediaUrl: media?.url ?? '',
-        youtubeId: media?.youtubeId ?? '',
-        mediaEmbedUrl: media?.embedUrl ?? '',
-        mediaThumbnailUrl: media?.thumbnailUrl ?? '',
-      },
-      ...current,
-    ]);
+        mediaUrl: media?.url || undefined,
+        mediaType: media?.type || undefined,
+        city: city?.trim() || undefined,
+        tag: tag || undefined,
+      }),
+    })
+      .then((createdPost) => {
+        const mappedPost = mapBackendPostToFeedPost(createdPost);
+        setFeedPosts((current) =>
+          current.map((post) => (post.id === postId ? mappedPost : post)),
+        );
+      })
+      .catch(() => {
+        setNotifications((current) => [
+          {
+            id: `notice-post-sync-${Date.now()}`,
+            title: 'Publicação criada localmente, mas a API não confirmou o salvamento global.',
+            channel: 'computador',
+            read: false,
+          },
+          ...current,
+        ]);
+      });
     recordFeedInterest(
       {
         tag: tag || 'Atualização',
@@ -3903,7 +4239,9 @@ function App() {
     const mode = eventData.mode || 'Online';
     const price = Number(eventData.price || 0);
     const capacity = Number(eventData.capacity || 60);
+    const eventId = `event-${Date.now()}`;
     const event = {
+      id: eventId,
       ...eventData,
       title: eventData.title || 'Chamada de evento',
       type: eventData.type || 'Chamada aberta',
@@ -3938,6 +4276,36 @@ function App() {
       { id: `notice-${Date.now()}`, title: `Evento publicado: ${event.title}`, channel: 'computador', read: false },
       ...current,
     ]);
+    apiRequest('/events', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: event.title,
+        organizer: event.creatorName || event.owner || undefined,
+        mode: event.mode,
+        location: event.location,
+        startsAt: eventData.startsAt || undefined,
+        priceCents: Math.round(price * 100),
+        capacity,
+        description: eventData.description || undefined,
+      }),
+    })
+      .then((createdEvent) => {
+        const mappedEvent = mapBackendEventToEvent(createdEvent);
+        setCommunityEvents((current) =>
+          current.map((item) => (item.id === eventId ? mappedEvent : item)),
+        );
+      })
+      .catch(() => {
+        setNotifications((current) => [
+          {
+            id: `notice-event-sync-${Date.now()}`,
+            title: 'Evento criado localmente, mas a API não confirmou a publicação global.',
+            channel: 'computador',
+            read: false,
+          },
+          ...current,
+        ]);
+      });
   }
 
   // Eventos: registra participante e cria alerta visível para quem publicou o evento.
@@ -4044,9 +4412,9 @@ function App() {
       contactMethods: jobData.contactMethods,
     });
 
-    setJobs((current) => [
-      {
-        id: `job-${Date.now()}`,
+    const jobId = `job-${Date.now()}`;
+    const optimisticJob = {
+        id: jobId,
         title,
         company,
         city: jobData.city.trim() || 'Remoto',
@@ -4065,13 +4433,40 @@ function App() {
         creatorHandle: getUserHandle(currentUser),
         creatorSegment: currentUser?.segment ?? 'local',
         applicants: 0,
-      },
-      ...current,
-    ]);
+    };
+    setJobs((current) => [optimisticJob, ...current]);
     setNotifications((current) => [
       { id: `notice-${Date.now()}`, title: `Nova oportunidade publicada: ${title}`, channel: 'computador', read: false },
       ...current,
     ]);
+    apiRequest('/opportunities', {
+      method: 'POST',
+      body: JSON.stringify({
+        title,
+        company,
+        category,
+        city: jobData.city.trim() || undefined,
+        salaryLabel: jobData.salary.trim() || undefined,
+        description: jobData.description?.trim() || undefined,
+        contactEmail: jobData.rhEmail?.trim() || undefined,
+        contactPhone: jobData.whatsapp?.trim() || undefined,
+      }),
+    })
+      .then((createdJob) => {
+        const mappedJob = mapBackendOpportunityToJob(createdJob);
+        setJobs((current) => current.map((item) => (item.id === jobId ? mappedJob : item)));
+      })
+      .catch(() => {
+        setNotifications((current) => [
+          {
+            id: `notice-job-sync-${Date.now()}`,
+            title: 'Oportunidade criada localmente, mas a API não confirmou a publicação global.',
+            channel: 'computador',
+            read: false,
+          },
+          ...current,
+        ]);
+      });
   }
 
   // Candidatura: envia curriculo do perfil ou arquivo importado para o RH da vaga.
@@ -4199,6 +4594,34 @@ function App() {
       },
       ...current,
     ]);
+    apiRequest('/benefits', {
+      method: 'POST',
+      body: JSON.stringify({
+        title,
+        partner,
+        category: draft.category || undefined,
+        city: draft.city.trim() || undefined,
+        description: draft.emailBody?.trim() || undefined,
+        pointsCost,
+      }),
+    })
+      .then((createdResponse) => {
+        const mappedBenefit = mapBackendBenefitToBenefit(createdResponse);
+        setBenefits((current) =>
+          current.map((item) => (item.id === createdBenefit.id ? mappedBenefit : item)),
+        );
+      })
+      .catch(() => {
+        setNotifications((current) => [
+          {
+            id: `notice-benefit-sync-${Date.now()}`,
+            title: 'Benefício criado localmente, mas a API não confirmou a publicação global.',
+            channel: 'computador',
+            read: false,
+          },
+          ...current,
+        ]);
+      });
     return createdBenefit;
   }
 

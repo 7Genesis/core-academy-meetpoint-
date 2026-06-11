@@ -18,6 +18,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RagModule } from './rag/rag.module';
+import { SocialModule } from './social/social.module';
 import { SupportModule } from './support/support.module';
 import { SubscriptionGuard } from './subscriptions/subscription.guard';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
@@ -45,6 +46,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     PaymentsModule,
     PlatformAdminModule,
     RagModule,
+    SocialModule,
     SupportModule,
     SubscriptionsModule,
     WebhooksModule,
