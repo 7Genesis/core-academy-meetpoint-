@@ -5792,7 +5792,7 @@ label + .file-upload {
 .platform-record {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   gap: 10px;
   padding: 10px;
   border: 2px solid var(--ink);
@@ -5816,6 +5816,12 @@ label + .file-upload {
 .maintenance-grid strong,
 .maintenance-grid span {
   display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.platform-record > div {
+  min-width: 0;
 }
 
 .platform-record small,
@@ -5879,9 +5885,20 @@ label + .file-upload {
 
 .account-type-shortcuts {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  align-items: stretch;
   gap: 8px;
   margin: 10px 0;
+}
+
+.account-type-shortcuts button,
+.platform-tabs button {
+  min-width: 0;
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.05;
 }
 
 .account-type-shortcuts button {

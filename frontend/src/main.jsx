@@ -16097,6 +16097,9 @@ function PlatformProfile({
       });
       const sentCredentialEmails = created.credentialEmails?.filter((delivery) => delivery.sent).length ?? 0;
       const totalCredentialEmails = created.credentialEmails?.length ?? 1;
+      const credentialEmailFailure = created.credentialEmails
+        ?.find((delivery) => !delivery.sent && delivery.failureReason)
+        ?.failureReason;
       const localCreatedAccount = {
         ...created,
         accountSegment: created.accountSegment ?? provision.segment,
@@ -16122,12 +16125,15 @@ function PlatformProfile({
           `${segmentLabel} ${provision.name} criada com acesso liberado. O email com login e senha temporária foi enviado para ${provision.email}.`,
         );
       } else {
+        const failureDetail = credentialEmailFailure
+          ? ` Motivo SMTP: ${credentialEmailFailure}.`
+          : '';
         setAccountProvisionFeedback({
           kind: 'warning',
-          message: `${segmentLabel} ${provision.name} criada no banco, mas o email de acesso não foi entregue (${sentCredentialEmails}/${totalCredentialEmails}). Verifique a configuração SMTP do backend.`,
+          message: `${segmentLabel} ${provision.name} criada no banco, mas o email de acesso não foi entregue (${sentCredentialEmails}/${totalCredentialEmails}).${failureDetail} Verifique a configuração SMTP do backend.`,
         });
         setNotice(
-          `${segmentLabel} ${provision.name} criada no banco, mas o email de acesso não foi entregue (${sentCredentialEmails}/${totalCredentialEmails}). Verifique a configuração SMTP do backend.`,
+          `${segmentLabel} ${provision.name} criada no banco, mas o email de acesso não foi entregue (${sentCredentialEmails}/${totalCredentialEmails}).${failureDetail} Verifique a configuração SMTP do backend.`,
         );
       }
       setApiStatus(`${segmentLabel} registrado na API administrativa.`);

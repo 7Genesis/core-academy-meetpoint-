@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -36,6 +37,8 @@ const LEGACY_COMPANY_LINK_PREFIX = '[[company-link:';
 
 @Injectable()
 export class PlatformAdminService {
+  private readonly logger = new Logger(PlatformAdminService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly dataMasking: DataMaskingService,
@@ -1332,10 +1335,29 @@ export class PlatformAdminService {
       recipients.map((recipient) => this.sendManagedAccountCredentialEmail(recipient)),
     );
 
-    return recipients.map((recipient, index) => ({
-      email: this.dataMasking.maskEmail(recipient.email),
-      sent: deliveries[index]?.status === 'fulfilled',
-    }));
+    return recipients.map((recipient, index) => {
+      const delivery = deliveries[index];
+      const sent = delivery?.status === 'fulfilled';
+      const failureReason =
+        delivery?.status === 'rejected'
+          ? this.getMailFailureReason(delivery.reason)
+          : undefined;
+
+      if (!sent) {
+        this.logger.error(
+          `Managed account credential email failed for ${this.dataMasking.maskEmail(recipient.email)}: ${failureReason}`,
+          delivery?.status === 'rejected' && delivery.reason instanceof Error
+            ? delivery.reason.stack
+            : undefined,
+        );
+      }
+
+      return {
+        email: this.dataMasking.maskEmail(recipient.email),
+        sent,
+        failureReason,
+      };
+    });
   }
 
   private async sendManagedAccountCredentialEmail(recipient: {
@@ -1365,38 +1387,93 @@ export class PlatformAdminService {
       recipient.segment === 'employee'
         ? `pessoa vinculada${recipient.companyName ? ` a ${recipient.companyName}` : ''}`
         : this.getManagedAccountSegmentLabel(recipient.segment);
+    const port = Number(process.env.SMTP_PORT ?? 587);
+    const secure = process.env.SMTP_SECURE?.trim().toLowerCase() === 'true';
+
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(`Invalid SMTP_PORT: ${process.env.SMTP_PORT ?? ''}`);
+    }
+    if ((port === 465 && !secure) || (port === 587 && secure)) {
+      throw new Error(
+        `Invalid SMTP encryption combination: port ${port} requires SMTP_SECURE=${port === 465 ? 'true' : 'false'}`,
+      );
+    }
+
     const transport = nodemailer.createTransport({
       host,
-      port: Number(process.env.SMTP_PORT ?? 587),
-      secure: process.env.SMTP_SECURE?.trim().toLowerCase() === 'true',
+      port,
+      secure,
+      requireTLS: process.env.SMTP_REQUIRE_TLS?.trim().toLowerCase() === 'true',
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 30_000,
       auth: { user, pass },
     });
 
-    await transport.sendMail({
-      from,
-      to: recipient.email,
-      subject: 'Seu acesso MeetPoint foi criado',
-      text: [
-        `Ola, ${recipient.name}.`,
-        '',
-        `Uma conta ${segmentLabel} foi criada para voce pela administracao da MeetPoint.`,
-        '',
-        `Acesso: ${accessUrl}`,
-        `Login: ${recipient.email}`,
-        `Senha temporaria: ${recipient.password}`,
-        '',
-        'Por seguranca, altere a senha no primeiro acesso ou solicite troca ao suporte se nao reconhecer essa criacao.',
-        '',
-        'MeetPoint',
-      ].join('\n'),
-      html: this.buildManagedAccountCredentialEmailHtml({
-        accessUrl,
-        email: recipient.email,
-        name: recipient.name,
-        password: recipient.password,
-        segmentLabel,
-      }),
-    });
+    try {
+      const result = await transport.sendMail({
+        from,
+        to: recipient.email,
+        subject: 'Seu acesso MeetPoint foi criado',
+        text: [
+          `Ola, ${recipient.name}.`,
+          '',
+          `Uma conta ${segmentLabel} foi criada para voce pela administracao da MeetPoint.`,
+          '',
+          `Acesso: ${accessUrl}`,
+          `Login: ${recipient.email}`,
+          `Senha temporaria: ${recipient.password}`,
+          '',
+          'Por seguranca, altere a senha no primeiro acesso ou solicite troca ao suporte se nao reconhecer essa criacao.',
+          '',
+          'MeetPoint',
+        ].join('\n'),
+        html: this.buildManagedAccountCredentialEmailHtml({
+          accessUrl,
+          email: recipient.email,
+          name: recipient.name,
+          password: recipient.password,
+          segmentLabel,
+        }),
+      });
+
+      if (!result.accepted?.length || result.rejected?.length) {
+        throw new Error(
+          `SMTP did not accept recipient. Accepted: ${result.accepted?.length ?? 0}; rejected: ${result.rejected?.length ?? 0}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `SMTP send failed. host=${host} port=${port} secure=${secure} user=${this.dataMasking.maskEmail(user)} from=${from} recipient=${this.dataMasking.maskEmail(recipient.email)} reason=${this.getMailFailureReason(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
+    } finally {
+      transport.close();
+    }
+  }
+
+  private getMailFailureReason(error: unknown) {
+    if (!error || typeof error !== 'object') {
+      return String(error ?? 'unknown SMTP error');
+    }
+
+    const smtpError = error as {
+      code?: string;
+      command?: string;
+      response?: string;
+      responseCode?: number;
+      message?: string;
+    };
+    return [
+      smtpError.code && `code=${smtpError.code}`,
+      smtpError.command && `command=${smtpError.command}`,
+      smtpError.responseCode && `responseCode=${smtpError.responseCode}`,
+      smtpError.response && `response=${smtpError.response}`,
+      smtpError.message && `message=${smtpError.message}`,
+    ]
+      .filter(Boolean)
+      .join(' | ') || 'unknown SMTP error';
   }
 
   private async sendSupportReplyEmail(params: {
