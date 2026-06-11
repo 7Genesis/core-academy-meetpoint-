@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { Request } from 'express';
+import { Public } from '../common/decorators/public.decorator';
 import { RequireActiveSubscription } from '../common/decorators/require-active-subscription.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateCourseDto } from './dto/create-course.dto';
+import { ListCoursesQueryDto } from './dto/list-courses-query.dto';
 import { CoursesService } from './courses.service';
 
 type TenantRequest = Request & { tenantId: string };
@@ -18,13 +20,15 @@ export class CoursesController {
     return this.coursesService.create(request.tenantId, dto);
   }
 
+  @Public()
   @Get()
-  findAll(@Req() request: TenantRequest) {
-    return this.coursesService.findAll(request.tenantId);
+  findAll(@Query() query: ListCoursesQueryDto) {
+    return this.coursesService.findAll(query);
   }
 
+  @Public()
   @Get(':id')
-  findOne(@Req() request: TenantRequest, @Param('id') id: string) {
-    return this.coursesService.findOne(request.tenantId, id);
+  findOne(@Param('id') id: string) {
+    return this.coursesService.findOne(id);
   }
 }

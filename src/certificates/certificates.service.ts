@@ -35,15 +35,16 @@ export class CertificateService {
     });
   }
 
-  async verify(tenantId: string, verificationCode: string) {
-    const certificate = await this.prisma.withTenant(tenantId, (tx) => {
-      return tx.certificate.findFirst({
-        where: { tenantId, verificationCode },
-        include: {
-          user: { select: { id: true, email: true } },
-          course: { select: { id: true, title: true } },
+  async verify(verificationCode: string) {
+    const certificate = await this.prisma.certificate.findUnique({
+      where: { verificationCode },
+      include: {
+        user: { select: { id: true, email: true } },
+        course: { select: { id: true, title: true } },
+        tenant: {
+          select: { id: true, name: true, subdomain: true },
         },
-      });
+      },
     });
 
     if (!certificate) throw new NotFoundException('Certificate not found');

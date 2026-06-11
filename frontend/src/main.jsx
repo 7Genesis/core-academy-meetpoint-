@@ -3156,6 +3156,7 @@ function App() {
   }
 
   function toggleFavorite(communityId) {
+    if (!requireAuthenticatedAction('favoritar comunidade')) return;
     setCommunities((current) =>
       current.map((community) =>
         community.id === communityId
@@ -3166,6 +3167,7 @@ function App() {
   }
 
   function removeCommunityMember(communityId) {
+    if (!requireAuthenticatedAction('remover membro da comunidade')) return;
     setCommunities((current) =>
       current.map((community) =>
         community.id === communityId
@@ -3176,6 +3178,7 @@ function App() {
   }
 
   function addCommunityMember(communityId) {
+    if (!requireAuthenticatedAction('adicionar membro à comunidade')) return;
     setCommunities((current) =>
       current.map((community) =>
         community.id === communityId
@@ -3186,6 +3189,7 @@ function App() {
   }
 
   function updateCommunityName(communityId, nextName) {
+    if (!requireAuthenticatedAction('editar comunidade')) return;
     const name = nextName.trim();
     if (!name) return;
 
@@ -3197,6 +3201,7 @@ function App() {
   }
 
   function updateCommunityPhoto(communityId, photo) {
+    if (!requireAuthenticatedAction('editar foto da comunidade')) return;
     setCommunities((current) =>
       current.map((community) =>
         community.id === communityId ? { ...community, photo } : community,
@@ -3206,6 +3211,9 @@ function App() {
 
   // Exclusao segura: comunidade so pode ser removida pelo admin quando estiver vazia.
   function deleteEmptyCommunity(communityId) {
+    if (!requireAuthenticatedAction('excluir comunidade')) {
+      return 'Assinatura ativa necessária para excluir a comunidade.';
+    }
     const community = communities.find((item) => item.id === communityId);
     if (!community?.isAdmin) {
       return 'Somente o administrador pode excluir a comunidade.';
@@ -3269,6 +3277,7 @@ function App() {
 
   // Cursos: cria rascunho com escopo correto de PF, PJ, empresa ou plataforma.
   function createCourse(courseData) {
+    if (!requireAuthenticatedAction('criar curso')) return;
     if (!canPublishCourses) {
       openPage('profile');
       return;
@@ -3333,12 +3342,14 @@ function App() {
   }
 
   function openCreatedCourse(courseId) {
+    if (!requireAuthenticatedAction('editar curso')) return;
     setEditingCreatedCourseId(courseId);
     openPage('course-builder');
   }
 
   // Publicacao do curso: simula vendas e split da taxa operacional da plataforma.
   function publishCreatedCourse(courseId) {
+    if (!requireAuthenticatedAction('publicar curso')) return;
     setCreatedCourses((current) =>
       current.map((course) => {
         if (course.id !== courseId) return course;
@@ -3358,6 +3369,7 @@ function App() {
   }
 
   function updateCreatedCourse(courseId, patch) {
+    if (!requireAuthenticatedAction('editar curso')) return;
     setCreatedCourses((current) =>
       current.map((course) =>
         course.id === courseId
@@ -3368,6 +3380,7 @@ function App() {
   }
 
   function updateCreatedCourseModules(courseId, modules) {
+    if (!requireAuthenticatedAction('editar módulos do curso')) return;
     setCreatedCourses((current) =>
       current.map((course) =>
         course.id === courseId
@@ -3929,11 +3942,12 @@ function App() {
 
   // Eventos: registra participante e cria alerta visível para quem publicou o evento.
   function registerEventAttendance(event, attendeeData) {
-    if (!currentUser) {
-      requestAuthentication('inscrever-se em evento');
+    if (!requireAuthenticatedAction('inscrever-se em evento')) {
       return {
         ok: false,
-        message: 'Entre na conta para confirmar presença neste evento.',
+        message: currentUser
+          ? 'É necessário ter uma assinatura ativa para confirmar presença.'
+          : 'Entre na conta para confirmar presença neste evento.',
       };
     }
 
