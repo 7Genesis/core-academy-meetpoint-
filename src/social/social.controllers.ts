@@ -28,6 +28,7 @@ import {
   CreatePostDto,
   CreatePostReactionDto,
   JoinCommunityDto,
+  ListPostCommentsQueryDto,
   ListCommunityMessagesQueryDto,
   ListPublicContentQueryDto,
   UpdateBenefitDto,
@@ -35,6 +36,7 @@ import {
   UpdateCommunityMessageDto,
   UpdateEventDto,
   UpdateOpportunityDto,
+  UpdatePostCommentDto,
   UpdatePostDto,
 } from './dto/social-content.dto';
 import { SocialService } from './social.service';
@@ -49,6 +51,21 @@ export class PostsController {
   @Get()
   findAll(@Query() query: ListPublicContentQueryDto) {
     return this.socialService.listPosts(query);
+  }
+
+  @Public()
+  @Get(':id/comments')
+  comments(
+    @Param('id') id: string,
+    @Query() query: ListPostCommentsQueryDto,
+  ) {
+    return this.socialService.listPostComments(id, query);
+  }
+
+  @Public()
+  @Sse(':id/comments/stream')
+  streamComments(@Param('id') id: string) {
+    return this.socialService.streamPostComments(id);
   }
 
   @Public()
@@ -92,6 +109,27 @@ export class PostsController {
     @Body() dto: CreatePostCommentDto,
   ) {
     return this.socialService.commentPost(request.tenantId, id, user.sub, dto);
+  }
+
+  @RequireActiveSubscription()
+  @Patch(':id/comments/:commentId')
+  updateComment(
+    @Param('id') id: string,
+    @Param('commentId') commentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdatePostCommentDto,
+  ) {
+    return this.socialService.updatePostComment(id, commentId, user, dto);
+  }
+
+  @RequireActiveSubscription()
+  @Delete(':id/comments/:commentId')
+  deleteComment(
+    @Param('id') id: string,
+    @Param('commentId') commentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.socialService.deletePostComment(id, commentId, user);
   }
 
   @RequireActiveSubscription()

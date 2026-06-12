@@ -105,6 +105,22 @@ export class CreatePostCommentDto {
   body: string;
 }
 
+export class UpdatePostCommentDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  body: string;
+}
+
+export class ListPostCommentsQueryDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @IsOptional()
+  limit = 100;
+}
+
 export class CreatePostReactionDto {
   @IsString()
   @MaxLength(30)

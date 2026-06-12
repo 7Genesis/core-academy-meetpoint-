@@ -1461,6 +1461,42 @@ function deleteCommunityMessageRequest(communityId, messageId) {
   );
 }
 
+function postCommentsRequest(postId) {
+  return apiRequest(`/posts/${encodeURIComponent(postId)}/comments?limit=100`);
+}
+
+function openPostCommentsStream(postId) {
+  if (typeof EventSource === 'undefined' || !API_BASE_URLS[0]) return null;
+  return new EventSource(
+    `${API_BASE_URLS[0]}/posts/${encodeURIComponent(postId)}/comments/stream`,
+    { withCredentials: true },
+  );
+}
+
+function createPostCommentRequest(postId, body) {
+  return apiRequest(`/posts/${encodeURIComponent(postId)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
+}
+
+function updatePostCommentRequest(postId, commentId, body) {
+  return apiRequest(
+    `/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ body }),
+    },
+  );
+}
+
+function deletePostCommentRequest(postId, commentId) {
+  return apiRequest(
+    `/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
+    { method: 'DELETE' },
+  );
+}
+
 function unwrapApiList(response) {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response?.data)) return response.data;
@@ -1491,6 +1527,38 @@ function upsertCommunityMessage(messages = [], nextMessage = {}) {
   return merged.sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0));
 }
 
+function upsertPostComment(comments = [], nextComment = {}) {
+  if (!nextComment?.id) return comments;
+  const exists = comments.some((comment) => comment.id === nextComment.id);
+  const merged = exists
+    ? comments.map((comment) =>
+        comment.id === nextComment.id ? { ...comment, ...nextComment } : comment,
+      )
+    : [...comments, nextComment];
+
+  return merged.sort((left, right) => {
+    const leftTime = Date.parse(left.createdAtRaw ?? '') || 0;
+    const rightTime = Date.parse(right.createdAtRaw ?? '') || 0;
+    return leftTime - rightTime;
+  });
+}
+
+function canUsePostCommentsApi(postId = '') {
+  const id = String(postId);
+  return Boolean(id && !id.startsWith('post-') && !id.startsWith('share-'));
+}
+
+function getFeedPostCommentCount(post = {}) {
+  return post.commentCount ?? post.comments?.length ?? 0;
+}
+
+function canManageFeedComment(comment = {}, currentUser = null) {
+  if (!currentUser) return false;
+  if (currentUser.segment === 'platform' || currentUser.platformRole) return true;
+  if (comment.authorId && currentUser.id) return comment.authorId === currentUser.id;
+  return Boolean(comment.author && comment.author === currentUser.name);
+}
+
 function getIsoDateParts(value) {
   const date = value ? new Date(value) : null;
   const fallbackDate = new Date();
@@ -1518,9 +1586,26 @@ function getIsoDateParts(value) {
   };
 }
 
+function mapBackendPostCommentToComment(comment = {}) {
+  const authorName = comment.author?.name ?? 'Membro';
+  return {
+    id: comment.id,
+    authorId: comment.authorId ?? comment.author?.id ?? '',
+    author: authorName,
+    initials: getInitials(authorName || 'MP'),
+    photo: comment.author?.profileImage ?? '',
+    createdAt: getIsoDateParts(comment.createdAt).createdAt,
+    createdAtRaw: comment.createdAt ?? '',
+    body: comment.body ?? '',
+    edited: Boolean(comment.updatedAt && comment.updatedAt !== comment.createdAt),
+    syncStatus: 'synced',
+  };
+}
+
 function mapBackendPostToFeedPost(post = {}) {
   const authorName = post.author?.name ?? 'MeetPoint';
   const youtube = post.mediaType === 'youtube' ? getYouTubeVideo(post.mediaUrl) : null;
+  const comments = (post.comments ?? []).map(mapBackendPostCommentToComment);
   return {
     id: post.id,
     author: authorName,
@@ -1536,7 +1621,8 @@ function mapBackendPostToFeedPost(post = {}) {
     likes: post._count?.reactions ?? 0,
     reactionSummary: { like: post._count?.reactions ?? 0, love: 0, fire: 0 },
     selectedReaction: '',
-    comments: [],
+    comments,
+    commentCount: post._count?.comments ?? comments.length,
     mediaType: post.mediaType ?? '',
     mediaName: post.mediaType === 'youtube' ? 'Vídeo do YouTube' : '',
     mediaUrl: post.mediaUrl ?? '',
@@ -1786,16 +1872,6 @@ function createPrivacyConsentRecord(userId, consentType = REQUIRED_CONSENT_TYPE)
     ipAddress: '',
     country: '',
   };
-}
-
-function hasValidPrivacyConsent(user) {
-  const consent = user?.privacyConsent;
-  return Boolean(
-    consent?.accepted
-    && consent.termsVersion === TERMS_VERSION
-    && consent.privacyVersion === PRIVACY_VERSION
-    && consent.consentType === REQUIRED_CONSENT_TYPE,
-  );
 }
 
 function createPendingSubscriptionRecord(planId = '') {
@@ -2767,10 +2843,6 @@ function App() {
 
   function requireAuthenticatedAction(actionLabel) {
     if (currentUser) {
-      if (!hasValidPrivacyConsent(currentUser)) {
-        requestPrivacyConsent(actionLabel);
-        return false;
-      }
       if (!hasActivePlatformSubscription(currentUser)) {
         requestSubscriptionActivation(actionLabel);
         return false;
@@ -2782,10 +2854,8 @@ function App() {
   }
 
   function requireAuthenticatedConsent(actionLabel) {
-    if (currentUser && hasValidPrivacyConsent(currentUser)) return true;
     if (currentUser) {
-      requestPrivacyConsent(actionLabel);
-      return false;
+      return true;
     }
     requestAuthentication(actionLabel);
     return false;
@@ -4233,6 +4303,7 @@ function App() {
       reactionSummary: { like: 0, love: 0, fire: 0 },
       selectedReaction: '',
       comments: [],
+      commentCount: 0,
       mediaType: media?.type ?? '',
       mediaName: media?.name ?? '',
       mediaUrl: media?.url ?? '',
@@ -4305,6 +4376,7 @@ function App() {
         reactionSummary: { like: 0, love: 0, fire: 0 },
         selectedReaction: '',
         comments: [],
+        commentCount: 0,
         mediaType: post.mediaType ?? '',
         mediaName: post.mediaName ?? '',
         mediaUrl: post.mediaUrl ?? '',
@@ -4361,19 +4433,75 @@ function App() {
     );
   }
 
-  // Comentarios: adiciona comentario no post e pontua a interacao.
-  function commentOnFeedPost(postId, body) {
+  function notifyFeedCommentFailure(message) {
+    setNotifications((current) => [
+      {
+        id: `notice-comment-sync-${Date.now()}`,
+        title: message,
+        channel: 'computador',
+        read: false,
+      },
+      ...current,
+    ]);
+  }
+
+  async function loadFeedPostComments(postId) {
+    if (!canUsePostCommentsApi(postId)) return [];
+    try {
+      const response = await postCommentsRequest(postId);
+      const comments = unwrapApiList(response).map(mapBackendPostCommentToComment);
+      setFeedPosts((current) =>
+        current.map((post) =>
+          post.id === postId
+            ? { ...post, comments, commentCount: comments.length }
+            : post,
+        ),
+      );
+      return comments;
+    } catch {
+      return [];
+    }
+  }
+
+  function applyFeedPostCommentEvent(postId, payload = {}) {
+    if (!payload?.kind || payload.kind === 'keepalive') return;
+    setFeedPosts((current) =>
+      current.map((post) => {
+        if (post.id !== postId) return post;
+        if (payload.kind === 'comment.deleted') {
+          const comments = (post.comments ?? []).filter((comment) => comment.id !== payload.commentId);
+          return { ...post, comments, commentCount: comments.length };
+        }
+        if (!payload.comment) return post;
+        const comments = upsertPostComment(
+          post.comments ?? [],
+          mapBackendPostCommentToComment(payload.comment),
+        );
+        return { ...post, comments, commentCount: comments.length };
+      }),
+    );
+  }
+
+  // Comentarios: persiste na API para todos os usuarios verem no feed global.
+  async function commentOnFeedPost(postId, body) {
     if (!requireAuthenticatedAction('comentar no feed')) return null;
     const content = body.trim();
     if (!content) return null;
-    recordFeedInterest(postId, 'comment');
+    if (!canUsePostCommentsApi(postId)) {
+      notifyFeedCommentFailure('Comentário não foi salvo na API: aguarde a publicação sincronizar.');
+      return null;
+    }
+    const optimisticId = `comment-${Date.now()}`;
     const comment = {
-      id: `comment-${Date.now()}`,
+      id: optimisticId,
+      authorId: currentUser?.id ?? '',
       author: currentUser?.name ?? 'Visitante',
       initials: currentUser?.initials ?? getInitials(currentUser?.name ?? 'Visitante'),
       photo: profilePhoto,
       createdAt: getPostTimestamp(),
+      createdAtRaw: new Date().toISOString(),
       body: content,
+      syncStatus: 'syncing',
     };
     setFeedPosts((current) =>
       current.map((post) =>
@@ -4384,12 +4512,39 @@ function App() {
                 ...(post.comments ?? []),
                 comment,
               ],
+              commentCount: getFeedPostCommentCount(post) + 1,
             }
           : post,
       ),
     );
-    awardPoints(8, 'comentário publicado');
-    return comment.id;
+    try {
+      const savedComment = mapBackendPostCommentToComment(
+        await createPostCommentRequest(postId, content),
+      );
+      setFeedPosts((current) =>
+        current.map((post) => {
+          if (post.id !== postId) return post;
+          const comments = upsertPostComment(
+            (post.comments ?? []).filter((item) => item.id !== optimisticId),
+            savedComment,
+          );
+          return { ...post, comments, commentCount: comments.length };
+        }),
+      );
+      recordFeedInterest(postId, 'comment');
+      awardPoints(8, 'comentário publicado');
+      return savedComment.id;
+    } catch (error) {
+      setFeedPosts((current) =>
+        current.map((post) => {
+          if (post.id !== postId) return post;
+          const comments = (post.comments ?? []).filter((item) => item.id !== optimisticId);
+          return { ...post, comments, commentCount: Math.max(getFeedPostCommentCount(post) - 1, 0) };
+        }),
+      );
+      notifyFeedCommentFailure(`Comentário não foi salvo na API: ${error.message}`);
+      return null;
+    }
   }
 
   function editFeedPost(postId, nextBody) {
@@ -4406,7 +4561,7 @@ function App() {
     setFeedPosts((current) => current.filter((post) => post.id !== postId));
   }
 
-  function editFeedComment(postId, commentId, nextBody) {
+  async function editFeedComment(postId, commentId, nextBody) {
     if (!requireAuthenticatedAction('editar comentário')) return;
     const content = nextBody.trim();
     if (!content) return;
@@ -4416,23 +4571,52 @@ function App() {
           ? {
               ...post,
               comments: (post.comments ?? []).map((comment) =>
-                comment.id === commentId ? { ...comment, body: content, edited: true } : comment,
+                comment.id === commentId
+                  ? { ...comment, body: content, edited: true, syncStatus: 'syncing' }
+                  : comment,
               ),
             }
           : post,
       ),
     );
+    if (!canUsePostCommentsApi(postId) || String(commentId).startsWith('comment-')) return;
+    try {
+      const savedComment = mapBackendPostCommentToComment(
+        await updatePostCommentRequest(postId, commentId, content),
+      );
+      setFeedPosts((current) =>
+        current.map((post) => {
+          if (post.id !== postId) return post;
+          const comments = upsertPostComment(post.comments ?? [], savedComment);
+          return { ...post, comments, commentCount: comments.length };
+        }),
+      );
+    } catch (error) {
+      notifyFeedCommentFailure(`Comentário não foi atualizado na API: ${error.message}`);
+      await loadFeedPostComments(postId);
+    }
   }
 
-  function deleteFeedComment(postId, commentId) {
+  async function deleteFeedComment(postId, commentId) {
     if (!requireAuthenticatedAction('excluir comentário')) return;
     setFeedPosts((current) =>
       current.map((post) =>
         post.id === postId
-          ? { ...post, comments: (post.comments ?? []).filter((comment) => comment.id !== commentId) }
+          ? {
+              ...post,
+              comments: (post.comments ?? []).filter((comment) => comment.id !== commentId),
+              commentCount: Math.max(getFeedPostCommentCount(post) - 1, 0),
+            }
           : post,
       ),
     );
+    if (!canUsePostCommentsApi(postId) || String(commentId).startsWith('comment-')) return;
+    try {
+      await deletePostCommentRequest(postId, commentId);
+    } catch (error) {
+      notifyFeedCommentFailure(`Comentário não foi removido da API: ${error.message}`);
+      await loadFeedPostComments(postId);
+    }
   }
 
   // Eventos: cria chamada no feed/comunidade e envia notificacao local.
@@ -5162,6 +5346,8 @@ function App() {
                 shareFeedPost={shareFeedPost}
                 reactToFeedPost={reactToFeedPost}
                 commentOnFeedPost={commentOnFeedPost}
+                loadFeedPostComments={loadFeedPostComments}
+                applyFeedPostCommentEvent={applyFeedPostCommentEvent}
                 editFeedPost={editFeedPost}
                 deleteFeedPost={deleteFeedPost}
                 editFeedComment={editFeedComment}
@@ -5193,6 +5379,8 @@ function App() {
               shareFeedPost={shareFeedPost}
               reactToFeedPost={reactToFeedPost}
               commentOnFeedPost={commentOnFeedPost}
+              loadFeedPostComments={loadFeedPostComments}
+              applyFeedPostCommentEvent={applyFeedPostCommentEvent}
               editFeedPost={editFeedPost}
               deleteFeedPost={deleteFeedPost}
               editFeedComment={editFeedComment}
@@ -7173,6 +7361,8 @@ function FeedView({
   shareFeedPost,
   reactToFeedPost,
   commentOnFeedPost,
+  loadFeedPostComments,
+  applyFeedPostCommentEvent,
   editFeedPost,
   deleteFeedPost,
   editFeedComment,
@@ -7249,7 +7439,7 @@ function FeedView({
   }, [currentUser?.id, peopleQuery]);
 
   const feedFilters = ['Tudo', 'Seguindo', 'Recomendados', 'Minha cidade', 'Eventos', 'Vagas'];
-  const totalComments = posts.reduce((total, post) => total + (post.comments?.length ?? 0), 0);
+  const totalComments = posts.reduce((total, post) => total + getFeedPostCommentCount(post), 0);
   const totalReactions = posts.reduce(
     (total, post) =>
       total + Object.values(post.reactionSummary ?? {}).reduce((sum, value) => sum + value, 0),
@@ -7806,6 +7996,8 @@ function FeedView({
                 shareFeedPost={shareFeedPost}
                 reactToFeedPost={reactToFeedPost}
                 commentOnFeedPost={commentOnFeedPost}
+                loadFeedPostComments={loadFeedPostComments}
+                applyFeedPostCommentEvent={applyFeedPostCommentEvent}
                 editFeedPost={editFeedPost}
                 deleteFeedPost={deleteFeedPost}
                 editFeedComment={editFeedComment}
@@ -8323,6 +8515,8 @@ function FeedPostCard({
   shareFeedPost,
   reactToFeedPost,
   commentOnFeedPost,
+  loadFeedPostComments,
+  applyFeedPostCommentEvent,
   editFeedPost,
   deleteFeedPost,
   editFeedComment,
@@ -8335,6 +8529,8 @@ function FeedPostCard({
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [commentsLoading, setCommentsLoading] = useState(false);
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [postDraft, setPostDraft] = useState(post.body ?? '');
   const [editingCommentId, setEditingCommentId] = useState('');
@@ -8391,19 +8587,57 @@ useEffect(() => {
   return () => document.removeEventListener('pointerdown', closeReactionDetails);
 }, [reactionsOpen, post.id]);
 
-useEffect(() => {
-  if (!commentsOpen) return undefined;
+  useEffect(() => {
+    if (!commentsOpen) return undefined;
 
-  function closeCommentsOnOutsideClick(event) {
-    if (commentPanelRef.current?.contains(event.target)) return;
-    if (event.target?.closest?.(`[data-comment-trigger-id="${post.id}"]`)) return;
-    setCommentsOpen(false);
-    setEditingCommentId('');
-  }
+    function closeCommentsOnOutsideClick(event) {
+      if (commentPanelRef.current?.contains(event.target)) return;
+      if (event.target?.closest?.(`[data-comment-trigger-id="${post.id}"]`)) return;
+      setCommentsOpen(false);
+      setEditingCommentId('');
+    }
 
-  document.addEventListener('pointerdown', closeCommentsOnOutsideClick);
-  return () => document.removeEventListener('pointerdown', closeCommentsOnOutsideClick);
-}, [commentsOpen, post.id]);
+    document.addEventListener('pointerdown', closeCommentsOnOutsideClick);
+    return () => document.removeEventListener('pointerdown', closeCommentsOnOutsideClick);
+  }, [commentsOpen, post.id]);
+
+  useEffect(() => {
+    if (!commentsOpen || !canUsePostCommentsApi(post.id)) return undefined;
+    let cancelled = false;
+    let pollingId = null;
+    const stream = openPostCommentsStream(post.id);
+
+    async function syncComments() {
+      setCommentsLoading(true);
+      await loadFeedPostComments?.(post.id);
+      if (!cancelled) setCommentsLoading(false);
+    }
+
+    syncComments();
+
+    if (stream) {
+      stream.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          applyFeedPostCommentEvent?.(post.id, payload);
+        } catch {
+          // Mantem o painel aberto mesmo que algum evento SSE venha invalido.
+        }
+      };
+      stream.onerror = () => {
+        stream.close();
+        pollingId = window.setInterval(syncComments, 15_000);
+      };
+    } else {
+      pollingId = window.setInterval(syncComments, 15_000);
+    }
+
+    return () => {
+      cancelled = true;
+      stream?.close();
+      if (pollingId) window.clearInterval(pollingId);
+    };
+  }, [commentsOpen, post.id]);
 
 useEffect(() => () => {
   window.clearTimeout(reactionHoldTimerRef.current);
@@ -8433,13 +8667,19 @@ useEffect(() => {
     0,
   );
   const comments = post.comments ?? [];
+  const commentTotal = getFeedPostCommentCount(post);
   const reactors = post.reactors ?? [];
   const reactionLabelById = Object.fromEntries(feedReactions.map((reaction) => [reaction.id, reaction]));
 
-  function submitComment() {
-    const commentId = commentOnFeedPost(post.id, commentDraft);
-    setCommentDraft('');
+  async function submitComment() {
+    if (commentSubmitting) return;
+    const content = commentDraft.trim();
+    if (!content) return;
+    setCommentSubmitting(true);
     setCommentsOpen(true);
+    const commentId = await commentOnFeedPost(post.id, content);
+    if (commentId) setCommentDraft('');
+    setCommentSubmitting(false);
     if (commentId) {
       scrollToFeedTarget(`[data-comment-id="${commentId}"]`);
       return;
@@ -8848,7 +9088,7 @@ post.body && (
           )}
         </div>
         <button className="comment-count-button" data-comment-trigger-id={post.id} onClick={toggleCommentsPanel}>
-          {comments.length} comentário(s)
+          {commentTotal} comentário(s)
         </button>
       </div>
       <footer className="post-actions-bar">
@@ -8905,6 +9145,7 @@ post.body && (
       {shareStatus && <small className="share-status">{shareStatus}</small>}
       {commentsOpen && (
         <section className="comment-panel" data-comment-panel-id={post.id} ref={commentPanelRef}>
+          {commentsLoading && <small className="share-status">Atualizando comentários...</small>}
           {comments.map((comment) => (
             <article className="comment-item social-comment-card" data-comment-id={comment.id} key={comment.id}>
               <Avatar
@@ -8912,78 +9153,79 @@ post.body && (
                 photo={comment.photo}
               />
               {editingCommentId === comment.id ? (
-<div
-  className="inline-edit-box compact comment-edit-panel"
-  data-edit-comment-id={comment.id}
->
-  <input
-    className="platform-input"
-    value={commentEditDraft}
-    onChange={(event) => setCommentEditDraft(event.target.value)}
-  />
-
-<div className="micro-actions edit-save-actions">
-  <button
-    className="social-action-button save-action"
-    onClick={() => {
-      editFeedComment(post.id, comment.id, commentEditDraft);
-      setEditingCommentId('');
-      scrollToFeedTarget(`[data-comment-id="${comment.id}"]`);
-    }}
-  >
-    💾 Salvar alterações
-  </button>
-
-  <button
-    className="social-action-button cancel-action"
-    onClick={() => setEditingCommentId('')}
-  >
-    ↩ Cancelar edição
-  </button>
-</div>
-</div>
+                <div
+                  className="inline-edit-box compact comment-edit-panel"
+                  data-edit-comment-id={comment.id}
+                >
+                  <input
+                    className="platform-input"
+                    value={commentEditDraft}
+                    onChange={(event) => setCommentEditDraft(event.target.value)}
+                  />
+                  <div className="micro-actions edit-save-actions">
+                    <button
+                      className="social-action-button save-action"
+                      onClick={() => {
+                        void editFeedComment(post.id, comment.id, commentEditDraft);
+                        setEditingCommentId('');
+                        scrollToFeedTarget(`[data-comment-id="${comment.id}"]`);
+                      }}
+                    >
+                      💾 Salvar alterações
+                    </button>
+                    <button
+                      className="social-action-button cancel-action"
+                      onClick={() => setEditingCommentId('')}
+                    >
+                      ↩ Cancelar edição
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <>
                   <div className="comment-bubble">
                     <strong>{comment.author}</strong>
                     <p>{comment.body} {comment.edited && <small className="edited-label">editado</small>}</p>
                     <small>{comment.createdAt ?? 'Agora'}</small>
+                    {comment.syncStatus === 'syncing' && <small>Sincronizando...</small>}
                   </div>
-                  <div className="micro-actions">
-<button
-  className="social-action-button edit-action"
-  onClick={() => {
-    setEditingCommentId(comment.id);
-    setCommentEditDraft(comment.body);
+                  {canManageFeedComment(comment, currentUser) && (
+                    <div className="micro-actions">
+                      <button
+                        className="social-action-button edit-action"
+                        onClick={() => {
+                          setEditingCommentId(comment.id);
+                          setCommentEditDraft(comment.body);
 
-    setTimeout(() => {
-      document
-        .querySelector(`[data-edit-comment-id="${comment.id}"]`)
-        ?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-        });
-    }, 80);
-  }}
->
-  ✏️ Editar
-</button>
-<button
-  className="social-action-button danger-action"
-  onClick={() => {
-    const confirmed = window.confirm(
-      'Tem certeza que deseja apagar este comentário?',
-    );
+                          setTimeout(() => {
+                            document
+                              .querySelector(`[data-edit-comment-id="${comment.id}"]`)
+                              ?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                              });
+                          }, 80);
+                        }}
+                      >
+                        ✏️ Editar
+                      </button>
+                      <button
+                        className="social-action-button danger-action"
+                        onClick={() => {
+                          const confirmed = window.confirm(
+                            'Tem certeza que deseja apagar este comentário?',
+                          );
 
-    if (!confirmed) return;
+                          if (!confirmed) return;
 
-    deleteFeedComment(post.id, comment.id);
-    scrollToFeedTarget(`[data-comment-panel-id="${post.id}"]`);
-  }}
->
-  🗑️ Apagar
-</button>
-                  </div>
+                          void deleteFeedComment(post.id, comment.id);
+                          scrollToFeedTarget(`[data-comment-panel-id="${post.id}"]`);
+                        }}
+                      >
+                        🗑️ Apagar
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
             </article>
@@ -8993,18 +9235,26 @@ post.body && (
               initials={currentUser?.initials ?? 'MP'}
               photo={profilePhoto}
             />
-            <input
-              value={commentDraft}
-              onChange={(event) => setCommentDraft(event.target.value)}
-              onKeyDown={(event) => {
+	            <input
+	              value={commentDraft}
+	              onChange={(event) => setCommentDraft(event.target.value)}
+	              onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
-                  submitComment();
+                  void submitComment();
                 }
               }}
               placeholder="Escreva um comentário e pressione Enter"
             />
-            <button className="comment-send-button" onClick={submitComment}>Enviar</button>
+            <button
+              className="comment-send-button"
+              disabled={commentSubmitting || !commentDraft.trim()}
+              onClick={() => {
+                void submitComment();
+              }}
+            >
+              {commentSubmitting ? 'Enviando...' : 'Enviar'}
+            </button>
           </div>
         </section>
       )}

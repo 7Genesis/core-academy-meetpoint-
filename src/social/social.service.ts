@@ -17,6 +17,7 @@ import { map, mergeMap } from 'rxjs/operators';
 import { AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CommunityMessagesRealtimeService } from './community-messages-realtime.service';
+import { PostCommentsRealtimeService } from './post-comments-realtime.service';
 import {
   ApplyOpportunityDto,
   CreateBenefitDto,
@@ -28,6 +29,7 @@ import {
   CreatePostDto,
   CreatePostReactionDto,
   JoinCommunityDto,
+  ListPostCommentsQueryDto,
   ListCommunityMessagesQueryDto,
   ListPublicContentQueryDto,
   UpdateBenefitDto,
@@ -35,6 +37,7 @@ import {
   UpdateCommunityMessageDto,
   UpdateEventDto,
   UpdateOpportunityDto,
+  UpdatePostCommentDto,
   UpdatePostDto,
 } from './dto/social-content.dto';
 
@@ -51,6 +54,7 @@ export class SocialService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly communityMessagesRealtime: CommunityMessagesRealtimeService,
+    private readonly postCommentsRealtime: PostCommentsRealtimeService,
   ) {}
 
   createPost(tenantId: string, authorId: string, dto: CreatePostDto) {
@@ -153,15 +157,111 @@ export class SocialService {
     dto: CreatePostCommentDto,
   ) {
     await this.ensurePublicPost(postId);
-    return this.prisma.postComment.create({
+    const comment = await this.prisma.postComment.create({
       data: {
         postId,
         tenantId,
         authorId,
         body: this.sanitizeRequiredText(dto.body, 'body'),
       },
-      include: { author: { select: this.publicUserSelect() } },
+      include: this.postCommentInclude(),
     });
+    this.postCommentsRealtime.publish({
+      postId,
+      kind: 'comment.created',
+      comment,
+    });
+    return comment;
+  }
+
+  async listPostComments(
+    postId: string,
+    query: ListPostCommentsQueryDto,
+  ) {
+    await this.ensurePublicPost(postId);
+    const limit = query.limit ?? 100;
+    const comments = await this.prisma.withPlatformAdmin(async (tx) => {
+      const data = await tx.postComment.findMany({
+        where: { postId },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: this.postCommentInclude(),
+      });
+      return data.reverse();
+    });
+    return { data: comments };
+  }
+
+  streamPostComments(postId: string): Observable<MessageEvent> {
+    return defer(() =>
+      from(this.ensurePublicPost(postId)).pipe(
+        mergeMap(() =>
+          merge(
+            this.postCommentsRealtime.stream(postId).pipe(
+              map((event) => ({
+                data: event,
+              })),
+            ),
+            interval(25_000).pipe(
+              map(() => ({
+                data: {
+                  kind: 'keepalive',
+                  postId,
+                  at: new Date().toISOString(),
+                },
+              })),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  async updatePostComment(
+    postId: string,
+    commentId: string,
+    user: AuthenticatedUser,
+    dto: UpdatePostCommentDto,
+  ) {
+    const existing = await this.prisma.postComment.findFirst({
+      where: { id: commentId, postId },
+      select: { id: true, authorId: true },
+    });
+    if (!existing) throw new NotFoundException('Post comment not found');
+    this.assertOwnerOrAdmin(existing.authorId, user);
+
+    const comment = await this.prisma.postComment.update({
+      where: { id: commentId },
+      data: { body: this.sanitizeRequiredText(dto.body, 'body') },
+      include: this.postCommentInclude(),
+    });
+    this.postCommentsRealtime.publish({
+      postId,
+      kind: 'comment.updated',
+      comment,
+    });
+    return comment;
+  }
+
+  async deletePostComment(
+    postId: string,
+    commentId: string,
+    user: AuthenticatedUser,
+  ) {
+    const existing = await this.prisma.postComment.findFirst({
+      where: { id: commentId, postId },
+      select: { id: true, authorId: true },
+    });
+    if (!existing) throw new NotFoundException('Post comment not found');
+    this.assertOwnerOrAdmin(existing.authorId, user);
+
+    await this.prisma.postComment.delete({ where: { id: commentId } });
+    this.postCommentsRealtime.publish({
+      postId,
+      kind: 'comment.deleted',
+      commentId,
+    });
+    return { deleted: true, id: commentId };
   }
 
   async reactPost(
@@ -1143,6 +1243,12 @@ export class SocialService {
       author: { select: this.publicUserSelect() },
       _count: { select: { comments: true, reactions: true } },
     } satisfies Prisma.PostInclude;
+  }
+
+  private postCommentInclude() {
+    return {
+      author: { select: this.publicUserSelect() },
+    } satisfies Prisma.PostCommentInclude;
   }
 
   private communityInclude() {
