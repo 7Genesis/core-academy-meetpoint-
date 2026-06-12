@@ -8,7 +8,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
-import { AccountStatus } from '@prisma/client';
+import { AccountStatus, FriendRequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { FieldEncryptionService } from '../common/security/field-encryption.service';
@@ -297,6 +297,102 @@ export class AuthService {
       }),
     );
 
+    const userIds = users.map((user) => user.id);
+    const [
+      followerCounts,
+      followingCounts,
+      acceptedFriendRequests,
+      currentFollowing,
+      sentRequests,
+      incomingRequests,
+      currentFriendRequests,
+    ] = userIds.length
+      ? await this.prisma.withPlatformAdmin((tx) =>
+          Promise.all([
+            tx.userFollow.groupBy({
+              by: ['followingId'],
+              where: { followingId: { in: userIds } },
+              _count: { _all: true },
+            }),
+            tx.userFollow.groupBy({
+              by: ['followerId'],
+              where: { followerId: { in: userIds } },
+              _count: { _all: true },
+            }),
+            tx.friendRequest.findMany({
+              where: {
+                status: FriendRequestStatus.ACCEPTED,
+                OR: [
+                  { requesterId: { in: userIds } },
+                  { recipientId: { in: userIds } },
+                ],
+              },
+              select: { requesterId: true, recipientId: true },
+            }),
+            tx.userFollow.findMany({
+              where: { followerId: payload.sub, followingId: { in: userIds } },
+              select: { followingId: true },
+            }),
+            tx.friendRequest.findMany({
+              where: {
+                requesterId: payload.sub,
+                recipientId: { in: userIds },
+                status: FriendRequestStatus.PENDING,
+              },
+              select: { recipientId: true },
+            }),
+            tx.friendRequest.findMany({
+              where: {
+                requesterId: { in: userIds },
+                recipientId: payload.sub,
+                status: FriendRequestStatus.PENDING,
+              },
+              select: { requesterId: true },
+            }),
+            tx.friendRequest.findMany({
+              where: {
+                status: FriendRequestStatus.ACCEPTED,
+                OR: [
+                  { requesterId: payload.sub, recipientId: { in: userIds } },
+                  { requesterId: { in: userIds }, recipientId: payload.sub },
+                ],
+              },
+              select: { requesterId: true, recipientId: true },
+            }),
+          ]),
+        )
+      : [[], [], [], [], [], [], []];
+
+    const followerCountByUser = new Map(
+      followerCounts.map((item) => [item.followingId, item._count._all]),
+    );
+    const followingCountByUser = new Map(
+      followingCounts.map((item) => [item.followerId, item._count._all]),
+    );
+    const friendCountByUser = new Map<string, number>();
+    acceptedFriendRequests.forEach((request) => {
+      if (userIds.includes(request.requesterId)) {
+        friendCountByUser.set(
+          request.requesterId,
+          (friendCountByUser.get(request.requesterId) ?? 0) + 1,
+        );
+      }
+      if (userIds.includes(request.recipientId)) {
+        friendCountByUser.set(
+          request.recipientId,
+          (friendCountByUser.get(request.recipientId) ?? 0) + 1,
+        );
+      }
+    });
+    const followingIds = new Set(currentFollowing.map((item) => item.followingId));
+    const sentRequestIds = new Set(sentRequests.map((item) => item.recipientId));
+    const incomingRequestIds = new Set(incomingRequests.map((item) => item.requesterId));
+    const friendIds = new Set(
+      currentFriendRequests.map((request) =>
+        request.requesterId === payload.sub ? request.recipientId : request.requesterId,
+      ),
+    );
+
     return users.map((user) => ({
       id: user.id,
       name: user.name || 'Perfil MeetPoint',
@@ -307,6 +403,13 @@ export class AuthService {
       photo: user.profileImage ?? '',
       accountSegment: parseAccountSegmentFromBio(user.bio),
       createdAt: user.createdAt,
+      followers: followerCountByUser.get(user.id) ?? 0,
+      following: followingCountByUser.get(user.id) ?? 0,
+      friends: friendCountByUser.get(user.id) ?? 0,
+      isFollowing: followingIds.has(user.id),
+      friendRequestSent: sentRequestIds.has(user.id),
+      incomingFriendRequest: incomingRequestIds.has(user.id),
+      isFriend: friendIds.has(user.id),
     }));
   }
 

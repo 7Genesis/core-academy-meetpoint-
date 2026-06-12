@@ -27,10 +27,12 @@ import {
   CreatePostCommentDto,
   CreatePostDto,
   CreatePostReactionDto,
+  FriendRequestResponseDto,
   JoinCommunityDto,
   ListPostCommentsQueryDto,
   ListCommunityMessagesQueryDto,
   ListPublicContentQueryDto,
+  SocialTargetDto,
   UpdateBenefitDto,
   UpdateCommunityDto,
   UpdateCommunityMessageDto,
@@ -42,6 +44,51 @@ import {
 import { SocialService } from './social.service';
 
 type TenantRequest = Request & { tenantId: string };
+
+@Controller('social')
+export class SocialConnectionsController {
+  constructor(private readonly socialService: SocialService) {}
+
+  @RequireActiveSubscription()
+  @Get('graph')
+  graph(@CurrentUser() user: AuthenticatedUser) {
+    return this.socialService.getSocialGraph(user);
+  }
+
+  @RequireActiveSubscription()
+  @Post('follows')
+  follow(@CurrentUser() user: AuthenticatedUser, @Body() dto: SocialTargetDto) {
+    return this.socialService.followUser(user, dto);
+  }
+
+  @RequireActiveSubscription()
+  @Delete('follows/:targetUserId')
+  unfollow(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('targetUserId') targetUserId: string,
+  ) {
+    return this.socialService.unfollowUser(user, targetUserId);
+  }
+
+  @RequireActiveSubscription()
+  @Post('friend-requests')
+  requestFriendship(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SocialTargetDto,
+  ) {
+    return this.socialService.requestFriendship(user, dto);
+  }
+
+  @RequireActiveSubscription()
+  @Patch('friend-requests/:requesterId')
+  respondFriendship(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requesterId') requesterId: string,
+    @Body() dto: FriendRequestResponseDto,
+  ) {
+    return this.socialService.respondFriendRequest(user, requesterId, dto);
+  }
+}
 
 @Controller('posts')
 export class PostsController {

@@ -110,6 +110,13 @@ enum CommunityAccessMode {
   PASSWORD
 }
 
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
 model Tenant {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
@@ -139,6 +146,9 @@ model Tenant {
   benefitRedemptions      BenefitRedemption[]
   events                  Event[]
   eventRegistrations      EventRegistration[]
+  userFollows             UserFollow[]
+  friendRequests          FriendRequest[]
+  socialNotifications     SocialNotification[]
 
   @@map("tenants")
 }
@@ -202,6 +212,12 @@ model User {
   benefitRedemptions      BenefitRedemption[]
   events                  Event[]
   eventRegistrations      EventRegistration[]
+  following               UserFollow[] @relation("UserFollowing")
+  followers               UserFollow[] @relation("UserFollowers")
+  sentFriendRequests      FriendRequest[] @relation("FriendRequestRequester")
+  receivedFriendRequests  FriendRequest[] @relation("FriendRequestRecipient")
+  socialNotifications     SocialNotification[] @relation("SocialNotificationRecipient")
+  socialNotificationActor SocialNotification[] @relation("SocialNotificationActor")
 
   @@unique([tenantId, email])
   @@unique([tenantId, emailHash])
@@ -363,6 +379,7 @@ model Post {
   id         String            @id @default(uuid()) @db.Uuid
   tenantId   String            @db.Uuid
   authorId   String            @db.Uuid
+  sharedFromPostId String?     @db.Uuid
   visibility ContentVisibility @default(PUBLIC)
   body       String
   mediaUrl   String?
@@ -374,13 +391,74 @@ model Post {
 
   tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   author    User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  sharedFrom Post?         @relation("PostShares", fields: [sharedFromPostId], references: [id], onDelete: SetNull)
+  shares    Post[]         @relation("PostShares")
   comments  PostComment[]
   reactions PostReaction[]
 
   @@index([visibility, createdAt])
   @@index([tenantId, createdAt])
   @@index([authorId, createdAt])
+  @@index([sharedFromPostId])
   @@map("posts")
+}
+
+model UserFollow {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  followerId  String   @db.Uuid
+  followingId String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  follower  User   @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following User   @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([tenantId, createdAt])
+  @@index([followingId, createdAt])
+  @@map("user_follows")
+}
+
+model FriendRequest {
+  id          String              @id @default(uuid()) @db.Uuid
+  tenantId    String              @db.Uuid
+  requesterId String              @db.Uuid
+  recipientId String              @db.Uuid
+  status      FriendRequestStatus @default(PENDING)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  respondedAt DateTime?
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requester User   @relation("FriendRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  recipient User   @relation("FriendRequestRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, recipientId])
+  @@index([tenantId, status, createdAt])
+  @@index([recipientId, status, createdAt])
+  @@index([requesterId, status, createdAt])
+  @@map("friend_requests")
+}
+
+model SocialNotification {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  recipientId String   @db.Uuid
+  actorId     String?  @db.Uuid
+  type        String
+  title       String
+  read        Boolean  @default(false)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recipient User   @relation("SocialNotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User?  @relation("SocialNotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, read, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("social_notifications")
 }
 
 model PostComment {

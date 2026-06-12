@@ -8,6 +8,7 @@ import {
 import {
   CommunityAccessMode,
   ContentVisibility,
+  FriendRequestStatus,
   Prisma,
   UserRole,
 } from '@prisma/client';
@@ -28,10 +29,12 @@ import {
   CreatePostCommentDto,
   CreatePostDto,
   CreatePostReactionDto,
+  FriendRequestResponseDto,
   JoinCommunityDto,
   ListPostCommentsQueryDto,
   ListCommunityMessagesQueryDto,
   ListPublicContentQueryDto,
+  SocialTargetDto,
   UpdateBenefitDto,
   UpdateCommunityDto,
   UpdateCommunityMessageDto,
@@ -57,7 +60,11 @@ export class SocialService {
     private readonly postCommentsRealtime: PostCommentsRealtimeService,
   ) {}
 
-  createPost(tenantId: string, authorId: string, dto: CreatePostDto) {
+  async createPost(tenantId: string, authorId: string, dto: CreatePostDto) {
+    if (dto.sharedFromPostId) {
+      await this.ensurePublicPost(dto.sharedFromPostId);
+    }
+
     return this.prisma.withTenant(tenantId, (tx) =>
       tx.post.create({
         data: {
@@ -69,6 +76,179 @@ export class SocialService {
         include: this.postInclude(),
       }),
     );
+  }
+
+  async getSocialGraph(user: AuthenticatedUser) {
+    return this.prisma.withPlatformAdmin((tx) => this.buildSocialGraph(tx, user.sub));
+  }
+
+  async followUser(user: AuthenticatedUser, dto: SocialTargetDto) {
+    await this.assertDifferentUsers(user.sub, dto.targetUserId);
+    await this.prisma.withPlatformAdmin(async (tx) => {
+      const [actor, target] = await Promise.all([
+        this.requireActiveUser(tx, user.sub),
+        this.requireActiveUser(tx, dto.targetUserId),
+      ]);
+      this.assertSameTenant(actor.tenantId, target.tenantId);
+
+      const existing = await tx.userFollow.findUnique({
+        where: {
+          followerId_followingId: {
+            followerId: user.sub,
+            followingId: dto.targetUserId,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (existing) return;
+
+      await tx.userFollow.create({
+        data: {
+          tenantId: actor.tenantId,
+          followerId: user.sub,
+          followingId: dto.targetUserId,
+        },
+      });
+      await this.createSocialNotification(tx, {
+        tenantId: actor.tenantId,
+        recipientId: dto.targetUserId,
+        actorId: user.sub,
+        type: 'social-follow',
+        title: `${actor.name || 'Um membro'} começou a seguir você.`,
+      });
+    });
+
+    return this.getSocialGraph(user);
+  }
+
+  async unfollowUser(user: AuthenticatedUser, targetUserId: string) {
+    await this.assertDifferentUsers(user.sub, targetUserId);
+    await this.prisma.withPlatformAdmin(async (tx) => {
+      await tx.userFollow.deleteMany({
+        where: {
+          followerId: user.sub,
+          followingId: targetUserId,
+        },
+      });
+    });
+
+    return this.getSocialGraph(user);
+  }
+
+  async requestFriendship(user: AuthenticatedUser, dto: SocialTargetDto) {
+    await this.assertDifferentUsers(user.sub, dto.targetUserId);
+    await this.prisma.withPlatformAdmin(async (tx) => {
+      const [actor, target] = await Promise.all([
+        this.requireActiveUser(tx, user.sub),
+        this.requireActiveUser(tx, dto.targetUserId),
+      ]);
+      this.assertSameTenant(actor.tenantId, target.tenantId);
+
+      const accepted = await tx.friendRequest.findFirst({
+        where: {
+          status: FriendRequestStatus.ACCEPTED,
+          OR: [
+            { requesterId: user.sub, recipientId: dto.targetUserId },
+            { requesterId: dto.targetUserId, recipientId: user.sub },
+          ],
+        },
+        select: { id: true },
+      });
+      if (accepted) return;
+
+      const reversePending = await tx.friendRequest.findUnique({
+        where: {
+          requesterId_recipientId: {
+            requesterId: dto.targetUserId,
+            recipientId: user.sub,
+          },
+        },
+      });
+      if (reversePending?.status === FriendRequestStatus.PENDING) {
+        await this.acceptFriendRequest(tx, actor.tenantId, dto.targetUserId, user.sub);
+        return;
+      }
+
+      await tx.friendRequest.upsert({
+        where: {
+          requesterId_recipientId: {
+            requesterId: user.sub,
+            recipientId: dto.targetUserId,
+          },
+        },
+        create: {
+          tenantId: actor.tenantId,
+          requesterId: user.sub,
+          recipientId: dto.targetUserId,
+          status: FriendRequestStatus.PENDING,
+        },
+        update: {
+          status: FriendRequestStatus.PENDING,
+          respondedAt: null,
+        },
+      });
+      await this.createSocialNotification(tx, {
+        tenantId: actor.tenantId,
+        recipientId: dto.targetUserId,
+        actorId: user.sub,
+        type: 'friend-request',
+        title: `${actor.name || 'Um membro'} enviou uma solicitação de amizade.`,
+      });
+    });
+
+    return this.getSocialGraph(user);
+  }
+
+  async respondFriendRequest(
+    user: AuthenticatedUser,
+    requesterId: string,
+    dto: FriendRequestResponseDto,
+  ) {
+    await this.assertDifferentUsers(user.sub, requesterId);
+    await this.prisma.withPlatformAdmin(async (tx) => {
+      const [actor, requester] = await Promise.all([
+        this.requireActiveUser(tx, user.sub),
+        this.requireActiveUser(tx, requesterId),
+      ]);
+      this.assertSameTenant(actor.tenantId, requester.tenantId);
+
+      const existing = await tx.friendRequest.findUnique({
+        where: {
+          requesterId_recipientId: {
+            requesterId,
+            recipientId: user.sub,
+          },
+        },
+      });
+      if (!existing || existing.status !== FriendRequestStatus.PENDING) {
+        throw new NotFoundException('Friend request not found');
+      }
+
+      if (dto.accepted) {
+        await this.acceptFriendRequest(tx, actor.tenantId, requesterId, user.sub);
+      } else {
+        await tx.friendRequest.update({
+          where: { id: existing.id },
+          data: {
+            status: FriendRequestStatus.REJECTED,
+            respondedAt: new Date(),
+          },
+        });
+      }
+
+      await this.createSocialNotification(tx, {
+        tenantId: actor.tenantId,
+        recipientId: requesterId,
+        actorId: user.sub,
+        type: dto.accepted ? 'friend-accepted' : 'friend-rejected',
+        title: dto.accepted
+          ? `${actor.name || 'Um membro'} aceitou sua solicitação de amizade.`
+          : `${actor.name || 'Um membro'} recusou sua solicitação de amizade.`,
+      });
+    });
+
+    return this.getSocialGraph(user);
   }
 
   async listPosts(query: ListPublicContentQueryDto) {
@@ -953,6 +1133,217 @@ export class SocialService {
     throw new ForbiddenException('Only the owner or an admin can change this content');
   }
 
+  private assertDifferentUsers(userId: string, targetUserId: string) {
+    if (userId === targetUserId) {
+      throw new BadRequestException('Target user must be different from current user');
+    }
+  }
+
+  private assertSameTenant(currentTenantId: string, targetTenantId: string) {
+    if (currentTenantId !== targetTenantId) {
+      throw new ForbiddenException('Social interaction is restricted to the current tenant');
+    }
+  }
+
+  private requireActiveUser(tx: Prisma.TransactionClient, userId: string) {
+    return tx.user.findFirstOrThrow({
+      where: {
+        id: userId,
+        status: { in: ['ACTIVE', 'PENDING_PAYMENT', 'PAYMENT_PROCESSING'] },
+      },
+      select: this.socialUserSelect(),
+    });
+  }
+
+  private async createSocialNotification(
+    tx: Prisma.TransactionClient,
+    data: {
+      tenantId: string;
+      recipientId: string;
+      actorId?: string;
+      type: string;
+      title: string;
+      metadata?: Prisma.InputJsonValue;
+    },
+  ) {
+    if (data.recipientId === data.actorId) return null;
+    return tx.socialNotification.create({
+      data: {
+        tenantId: data.tenantId,
+        recipientId: data.recipientId,
+        actorId: data.actorId,
+        type: data.type,
+        title: data.title,
+        metadata: data.metadata,
+      },
+    });
+  }
+
+  private async acceptFriendRequest(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    requesterId: string,
+    recipientId: string,
+  ) {
+    await tx.friendRequest.update({
+      where: {
+        requesterId_recipientId: {
+          requesterId,
+          recipientId,
+        },
+      },
+      data: {
+        status: FriendRequestStatus.ACCEPTED,
+        respondedAt: new Date(),
+      },
+    });
+
+    await Promise.all([
+      tx.userFollow.upsert({
+        where: {
+          followerId_followingId: {
+            followerId: requesterId,
+            followingId: recipientId,
+          },
+        },
+        create: { tenantId, followerId: requesterId, followingId: recipientId },
+        update: {},
+      }),
+      tx.userFollow.upsert({
+        where: {
+          followerId_followingId: {
+            followerId: recipientId,
+            followingId: requesterId,
+          },
+        },
+        create: { tenantId, followerId: recipientId, followingId: requesterId },
+        update: {},
+      }),
+    ]);
+  }
+
+  private async buildSocialGraph(tx: Prisma.TransactionClient, userId: string) {
+    const user = await this.requireActiveUser(tx, userId);
+    const [
+      following,
+      followers,
+      sentRequests,
+      incomingRequests,
+      acceptedRequests,
+      notifications,
+      followersCount,
+      followingCount,
+      friendsCount,
+    ] = await Promise.all([
+      tx.userFollow.findMany({
+        where: { followerId: userId },
+        orderBy: { createdAt: 'desc' },
+        include: { following: { select: this.socialUserSelect() } },
+        take: 500,
+      }),
+      tx.userFollow.findMany({
+        where: { followingId: userId },
+        orderBy: { createdAt: 'desc' },
+        include: { follower: { select: this.socialUserSelect() } },
+        take: 500,
+      }),
+      tx.friendRequest.findMany({
+        where: { requesterId: userId, status: FriendRequestStatus.PENDING },
+        orderBy: { createdAt: 'desc' },
+        include: { recipient: { select: this.socialUserSelect() } },
+        take: 500,
+      }),
+      tx.friendRequest.findMany({
+        where: { recipientId: userId, status: FriendRequestStatus.PENDING },
+        orderBy: { createdAt: 'desc' },
+        include: { requester: { select: this.socialUserSelect() } },
+        take: 500,
+      }),
+      tx.friendRequest.findMany({
+        where: {
+          status: FriendRequestStatus.ACCEPTED,
+          OR: [{ requesterId: userId }, { recipientId: userId }],
+        },
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          requester: { select: this.socialUserSelect() },
+          recipient: { select: this.socialUserSelect() },
+        },
+        take: 500,
+      }),
+      tx.socialNotification.findMany({
+        where: { recipientId: userId },
+        orderBy: { createdAt: 'desc' },
+        include: { actor: { select: this.socialUserSelect() } },
+        take: 100,
+      }),
+      tx.userFollow.count({ where: { followingId: userId } }),
+      tx.userFollow.count({ where: { followerId: userId } }),
+      tx.friendRequest.count({
+        where: {
+          status: FriendRequestStatus.ACCEPTED,
+          OR: [{ requesterId: userId }, { recipientId: userId }],
+        },
+      }),
+    ]);
+
+    const followingProfiles = following.map((item) => this.mapSocialUser(item.following));
+    const followerProfiles = followers.map((item) => this.mapSocialUser(item.follower));
+    const sentProfiles = sentRequests.map((item) => this.mapSocialUser(item.recipient));
+    const incomingProfiles = incomingRequests.map((item) => this.mapSocialUser(item.requester));
+    const friendProfiles = acceptedRequests.map((item) =>
+      this.mapSocialUser(item.requesterId === userId ? item.recipient : item.requester),
+    );
+    const profiles = this.uniqueSocialProfiles([
+      ...followingProfiles,
+      ...followerProfiles,
+      ...sentProfiles,
+      ...incomingProfiles,
+      ...friendProfiles,
+      ...notifications.map((notice) =>
+        notice.actor ? this.mapSocialUser(notice.actor) : null,
+      ),
+    ]);
+
+    return {
+      currentUser: this.mapSocialUser(user),
+      profiles,
+      followingHandles: followingProfiles.map((profile) => profile.handle),
+      followerHandles: followerProfiles.map((profile) => profile.handle),
+      sentFriendRequestHandles: sentProfiles.map((profile) => profile.handle),
+      incomingFriendRequestHandles: incomingProfiles.map((profile) => profile.handle),
+      friendHandles: friendProfiles.map((profile) => profile.handle),
+      blockedHandles: [],
+      followerDeltas: {},
+      stats: {
+        followers: followersCount,
+        following: followingCount,
+        friends: friendsCount,
+      },
+      notifications: notifications.map((notice) => ({
+        id: notice.id,
+        title: notice.title,
+        channel: 'computador',
+        read: notice.read,
+        type: notice.type,
+        actorHandle: notice.actor ? this.mapSocialUser(notice.actor).handle : '',
+        createdAt: notice.createdAt,
+      })),
+    };
+  }
+
+  private uniqueSocialProfiles(
+    profiles: Array<ReturnType<SocialService['mapSocialUser']> | null>,
+  ) {
+    const byHandle = new Map<string, ReturnType<SocialService['mapSocialUser']>>();
+    profiles
+      .filter((profile): profile is ReturnType<SocialService['mapSocialUser']> => Boolean(profile))
+      .forEach((profile) => {
+        byHandle.set(profile.handle, profile);
+      });
+    return [...byHandle.values()];
+  }
+
   private sanitizePostCreate(dto: CreatePostDto): Prisma.PostUncheckedCreateInput {
     return {
       body: this.sanitizeRequiredText(dto.body, 'body'),
@@ -960,6 +1351,7 @@ export class SocialService {
       mediaType: this.sanitizeOptionalText(dto.mediaType),
       city: this.sanitizeOptionalText(dto.city),
       tag: this.sanitizeOptionalText(dto.tag),
+      sharedFromPostId: dto.sharedFromPostId,
     } as Prisma.PostUncheckedCreateInput;
   }
 
@@ -1229,6 +1621,45 @@ export class SocialService {
     } satisfies Prisma.UserSelect;
   }
 
+  private socialUserSelect() {
+    return {
+      id: true,
+      tenantId: true,
+      email: true,
+      name: true,
+      city: true,
+      state: true,
+      profileImage: true,
+      bio: true,
+      createdAt: true,
+    } satisfies Prisma.UserSelect;
+  }
+
+  private mapSocialUser(user: {
+    id: string;
+    tenantId?: string;
+    email: string;
+    name: string | null;
+    city: string | null;
+    state: string | null;
+    profileImage: string | null;
+    bio?: string | null;
+    createdAt?: Date | null;
+  }) {
+    const name = user.name || 'Perfil MeetPoint';
+    return {
+      id: user.id,
+      name,
+      handle: buildPublicHandle(name, user.email, user.id),
+      initials: buildInitials(name || user.email),
+      city: [user.city, user.state].filter(Boolean).join(', ') || 'MeetPoint',
+      bio: stripAccountMetadata(user.bio) || 'Perfil cadastrado na plataforma.',
+      photo: user.profileImage ?? '',
+      accountSegment: parseAccountSegmentFromBio(user.bio),
+      createdAt: user.createdAt,
+    };
+  }
+
   private tenantSelect() {
     return {
       id: true,
@@ -1241,6 +1672,18 @@ export class SocialService {
     return {
       tenant: { select: this.tenantSelect() },
       author: { select: this.publicUserSelect() },
+      sharedFrom: {
+        select: {
+          id: true,
+          body: true,
+          mediaUrl: true,
+          mediaType: true,
+          city: true,
+          tag: true,
+          createdAt: true,
+          author: { select: this.publicUserSelect() },
+        },
+      },
       _count: { select: { comments: true, reactions: true } },
     } satisfies Prisma.PostInclude;
   }
@@ -1328,4 +1771,51 @@ export class SocialService {
       _count: { select: { registrations: true } },
     } satisfies Prisma.EventInclude;
   }
+}
+
+function buildPublicHandle(name: string | null | undefined, email: string, id: string) {
+  const source = name?.trim() || email.split('@')[0] || 'perfil';
+  const slug = source
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 24);
+  return `@${slug || 'perfil'}${id.slice(0, 4)}`;
+}
+
+function buildInitials(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'MP';
+}
+
+function parseAccountSegmentFromBio(bio: string | null | undefined) {
+  const match =
+    bio?.match(/\[\[managed-account-segment:([a-z-]+)\]\]/i) ??
+    bio?.match(/\[\[account-segment:([a-z-]+)\]\]/i);
+  const value = match?.[1]?.toLowerCase?.() ?? '';
+  if (['student', 'teacher', 'company', 'sponsor', 'ambassador', 'platform', 'employee'].includes(value)) {
+    return value;
+  }
+  return 'student';
+}
+
+function stripAccountMetadata(bio: string | null | undefined) {
+  return (bio ?? '')
+    .replace(/\s*Origem administrativa:\s*[^.]+\.?/gi, ' ')
+    .replace(/\s*Organizacao:\s*[^.]+\.?/gi, ' ')
+    .replace(/\s*Conta criada pelo admin com cortesia administrativa\.?/gi, ' ')
+    .replace(/\s*\[\[managed-account:(main|linked)\]\]\s*/gi, ' ')
+    .replace(/\s*\[\[managed-account-segment:[^\]]+\]\]\s*/gi, ' ')
+    .replace(/\s*\[\[managed-account-company:[^\]]+\]\]\s*/gi, ' ')
+    .replace(/\s*\[\[managed-account-parent:[^\]]+\]\]\s*/gi, ' ')
+    .replace(/\s*\[\[account-segment:[^\]]+\]\]\s*/gi, ' ')
+    .replace(/\s*\[\[company-link:[^\]]+\]\]\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }

@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsIn,
@@ -7,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -68,6 +70,10 @@ export class CreatePostDto {
   @MaxLength(80)
   @IsOptional()
   tag?: string;
+
+  @IsUUID()
+  @IsOptional()
+  sharedFromPostId?: string;
 }
 
 export class UpdatePostDto {
@@ -126,6 +132,16 @@ export class CreatePostReactionDto {
   @MaxLength(30)
   @IsOptional()
   type?: string;
+}
+
+export class SocialTargetDto {
+  @IsUUID()
+  targetUserId: string;
+}
+
+export class FriendRequestResponseDto {
+  @IsBoolean()
+  accepted: boolean;
 }
 
 export class CreateCommunityDto {

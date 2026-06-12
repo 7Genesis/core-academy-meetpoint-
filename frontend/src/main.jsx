@@ -1386,6 +1386,37 @@ function peopleDiscoveryRequest(search = '') {
   return apiRequest(`/auth/people${suffix}`);
 }
 
+function socialGraphRequest() {
+  return apiRequest('/social/graph');
+}
+
+function followUserRequest(targetUserId) {
+  return apiRequest('/social/follows', {
+    method: 'POST',
+    body: JSON.stringify({ targetUserId }),
+  });
+}
+
+function unfollowUserRequest(targetUserId) {
+  return apiRequest(`/social/follows/${encodeURIComponent(targetUserId)}`, {
+    method: 'DELETE',
+  });
+}
+
+function requestFriendshipRequest(targetUserId) {
+  return apiRequest('/social/friend-requests', {
+    method: 'POST',
+    body: JSON.stringify({ targetUserId }),
+  });
+}
+
+function respondFriendshipRequest(requesterId, accepted) {
+  return apiRequest(`/social/friend-requests/${encodeURIComponent(requesterId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ accepted }),
+  });
+}
+
 function privacyConsentRequest(consent = {}) {
   return apiRequest('/auth/privacy-consent', {
     method: 'POST',
@@ -1606,6 +1637,7 @@ function mapBackendPostToFeedPost(post = {}) {
   const authorName = post.author?.name ?? 'MeetPoint';
   const youtube = post.mediaType === 'youtube' ? getYouTubeVideo(post.mediaUrl) : null;
   const comments = (post.comments ?? []).map(mapBackendPostCommentToComment);
+  const sharedAuthorName = post.sharedFrom?.author?.name ?? '';
   return {
     id: post.id,
     author: authorName,
@@ -1629,6 +1661,17 @@ function mapBackendPostToFeedPost(post = {}) {
     youtubeId: youtube?.id ?? '',
     mediaEmbedUrl: youtube?.embedUrl ?? '',
     mediaThumbnailUrl: youtube?.thumbnailUrl ?? '',
+    sharedFrom: post.sharedFrom
+      ? {
+          postId: post.sharedFrom.id,
+          author: sharedAuthorName,
+          role: 'Membro',
+          city: post.sharedFrom.city || post.sharedFrom.author?.city || 'Regional',
+          tag: post.sharedFrom.tag || 'Atualização',
+          createdAt: getIsoDateParts(post.sharedFrom.createdAt).createdAt,
+          sharedAt: getIsoDateParts(post.createdAt).createdAt,
+        }
+      : null,
     syncStatus: 'synced',
   };
 }
@@ -2027,10 +2070,10 @@ function normalizeProfilePublicInfo(account, profileInfo = {}) {
 function normalizeWorkspaceSnapshot(snapshot, account) {
   const defaults = account ? createAccountWorkspace(account) : createGuestWorkspace();
   const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
-  const socialGraph = {
+  const socialGraph = normalizeSocialGraph({
     ...defaults.socialGraph,
     ...(source.socialGraph ?? {}),
-  };
+  });
   const hasLegacyDemoStats =
     source.userPoints === 420 ||
     socialGraph.friendHandles.length === 1 ||
@@ -2090,6 +2133,8 @@ function createDefaultSocialGraph() {
     followerHandles: [],
     blockedHandles: [],
     followerDeltas: {},
+    profiles: [],
+    stats: { friends: 0, followers: 0, following: 0 },
   };
 }
 
@@ -2097,8 +2142,94 @@ function uniqueItems(items = []) {
   return [...new Set(items.filter(Boolean))];
 }
 
-function getSocialProfileByHandle(handle) {
-  return socialProfiles.find((profile) => profile.handle === handle);
+function normalizeSocialProfile(profile = {}) {
+  const name = profile.name || 'Perfil MeetPoint';
+  return {
+    id: profile.id ?? profile.handle ?? name,
+    name,
+    handle: profile.handle ?? getUserHandle({ name }),
+    initials: profile.initials ?? getInitials(name),
+    city: profile.city ?? 'MeetPoint',
+    bio: profile.bio ?? 'Perfil cadastrado na plataforma.',
+    interests: profile.interests ?? [],
+    followers: Number(profile.followers ?? 0),
+    following: Number(profile.following ?? 0),
+    friends: Number(profile.friends ?? 0),
+    posts: Number(profile.posts ?? 0),
+    photo: profile.photo ?? profile.profileImage ?? '',
+    accountSegment: profile.accountSegment ?? 'student',
+    isFollowing: Boolean(profile.isFollowing),
+    friendRequestSent: Boolean(profile.friendRequestSent),
+    incomingFriendRequest: Boolean(profile.incomingFriendRequest),
+    isFriend: Boolean(profile.isFriend),
+  };
+}
+
+function normalizeSocialGraph(graph = {}) {
+  const defaults = createDefaultSocialGraph();
+  return {
+    ...defaults,
+    ...(graph && typeof graph === 'object' ? graph : {}),
+    followingHandles: uniqueItems(graph.followingHandles ?? defaults.followingHandles),
+    sentFriendRequestHandles: uniqueItems(graph.sentFriendRequestHandles ?? defaults.sentFriendRequestHandles),
+    incomingFriendRequestHandles: uniqueItems(graph.incomingFriendRequestHandles ?? defaults.incomingFriendRequestHandles),
+    friendHandles: uniqueItems(graph.friendHandles ?? defaults.friendHandles),
+    followerHandles: uniqueItems(graph.followerHandles ?? defaults.followerHandles),
+    blockedHandles: uniqueItems(graph.blockedHandles ?? defaults.blockedHandles),
+    followerDeltas: graph.followerDeltas ?? defaults.followerDeltas,
+    profiles: (graph.profiles ?? []).map(normalizeSocialProfile),
+    stats: {
+      ...defaults.stats,
+      ...(graph.stats ?? {}),
+    },
+  };
+}
+
+function mergeSocialProfiles(primary = [], secondary = []) {
+  const byHandle = new Map();
+  [...secondary, ...primary].map(normalizeSocialProfile).forEach((profile) => {
+    if (!profile.handle) return;
+    byHandle.set(profile.handle, {
+      ...(byHandle.get(profile.handle) ?? {}),
+      ...profile,
+    });
+  });
+  return [...byHandle.values()];
+}
+
+function mergeNotifications(primary = [], secondary = []) {
+  const byId = new Map();
+  [...secondary, ...primary].forEach((notice) => {
+    const id = notice?.id;
+    if (!id) return;
+    byId.set(id, {
+      channel: 'computador',
+      read: false,
+      ...notice,
+    });
+  });
+  return [...byId.values()].sort((first, second) =>
+    String(second.createdAt ?? '').localeCompare(String(first.createdAt ?? '')),
+  );
+}
+
+function isBackendUserId(value = '') {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    .test(String(value));
+}
+
+function getSocialProfileByHandle(handle, graph = {}) {
+  return [
+    ...(graph.profiles ?? []),
+    ...socialProfiles,
+  ].map(normalizeSocialProfile).find((profile) => profile.handle === handle);
+}
+
+function getConnectionProfiles(handles = [], graph = {}) {
+  const profiles = mergeSocialProfiles(graph.profiles ?? [], socialProfiles);
+  return uniqueItems(handles).map((handle) =>
+    profiles.find((profile) => profile.handle === handle) ?? getFallbackSocialProfile(handle),
+  );
 }
 
 function normalizeInterestTerm(term = '') {
@@ -2189,10 +2320,6 @@ function getFallbackSocialProfile(handle) {
     followers: 0,
     posts: 0,
   };
-}
-
-function getConnectionProfiles(handles = []) {
-  return uniqueItems(handles).map((handle) => getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle));
 }
 
 function getCurrentUserSocialProfile(currentUser, profilePublicInfo, profilePhoto) {
@@ -2300,9 +2427,9 @@ function getOwnProfileOpportunities(currentUser, jobs = []) {
 function getViewedProfileStats(profile, socialGraph, profilePosts = [], profileEvents = [], profileOpportunities = []) {
   const followerDelta = socialGraph?.followerDeltas?.[profile?.handle] ?? 0;
   return {
-    friends: 0,
+    friends: profile?.friends ?? 0,
     followers: Math.max((profile?.followers ?? 0) + followerDelta, 0),
-    following: 0,
+    following: profile?.following ?? 0,
     posts: profilePosts.length,
     events: profileEvents.length,
     opportunities: profileOpportunities.length,
@@ -2313,9 +2440,9 @@ function getOwnProfileStats(socialGraph, profilePosts = [], profileEvents = [], 
   const defaultGraph = createDefaultSocialGraph();
   const graph = { ...defaultGraph, ...(socialGraph ?? {}) };
   return {
-    friends: ownSocialBaseStats.friends + (graph.friendHandles.length - defaultGraph.friendHandles.length),
-    followers: ownSocialBaseStats.followers + (graph.followerHandles.length - defaultGraph.followerHandles.length),
-    following: ownSocialBaseStats.following + (graph.followingHandles.length - defaultGraph.followingHandles.length),
+    friends: graph.stats?.friends ?? ownSocialBaseStats.friends + (graph.friendHandles.length - defaultGraph.friendHandles.length),
+    followers: graph.stats?.followers ?? ownSocialBaseStats.followers + (graph.followerHandles.length - defaultGraph.followerHandles.length),
+    following: graph.stats?.following ?? ownSocialBaseStats.following + (graph.followingHandles.length - defaultGraph.followingHandles.length),
     posts: profilePosts.length,
     events: profileEvents.length,
     opportunities: profileOpportunities.length,
@@ -2609,6 +2736,30 @@ function App() {
     () => catalogCourses.find((course) => course.id === selectedCourseId) ?? catalogCourses[0],
     [catalogCourses, selectedCourseId],
   );
+
+  useEffect(() => {
+    if (!currentUser?.id) return undefined;
+    let cancelled = false;
+
+    socialGraphRequest()
+      .then((graph) => {
+        if (!cancelled) applyBackendSocialGraph(graph);
+      })
+      .catch(() => {});
+
+    const pollingId = window.setInterval(() => {
+      socialGraphRequest()
+        .then((graph) => {
+          if (!cancelled) applyBackendSocialGraph(graph);
+        })
+        .catch(() => {});
+    }, 30_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(pollingId);
+    };
+  }, [currentUser?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4080,10 +4231,35 @@ function App() {
     ]);
   }
 
+  function applyBackendSocialGraph(graph = {}) {
+    const normalized = normalizeSocialGraph(graph);
+    setSocialGraph((current) => normalizeSocialGraph({
+      ...normalized,
+      blockedHandles: current.blockedHandles ?? [],
+      profiles: mergeSocialProfiles(normalized.profiles, current.profiles),
+    }));
+    if (Array.isArray(graph.notifications)) {
+      setNotifications((current) => mergeNotifications(graph.notifications, current));
+    }
+  }
+
+  function resolveSocialProfileTarget(target) {
+    if (!target) return null;
+    if (typeof target === 'object') {
+      return normalizeSocialProfile(target);
+    }
+    if (isBackendUserId(target)) {
+      return normalizeSocialProfile({ id: target, handle: target, name: 'Perfil MeetPoint' });
+    }
+    return getSocialProfileByHandle(target, socialGraph) ?? getFallbackSocialProfile(target);
+  }
+
   // Rede social: seguir, amizade, bloqueio e notificacoes ficam no App para valer em Feed e Perfil.
-  function followProfile(handle) {
+  async function followProfile(target) {
     if (!requireAuthenticatedAction('seguir perfil')) return;
-    const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
+    const profile = resolveSocialProfileTarget(target);
+    if (!profile) return;
+    const handle = profile.handle;
     const isBlocked = socialGraph.blockedHandles.includes(handle);
     if (isBlocked) {
       addNotification({
@@ -4095,6 +4271,28 @@ function App() {
     }
 
     const isFollowing = socialGraph.followingHandles.includes(handle);
+    if (isBackendUserId(profile.id)) {
+      try {
+        const graph = isFollowing
+          ? await unfollowUserRequest(profile.id)
+          : await followUserRequest(profile.id);
+        applyBackendSocialGraph(graph);
+        addNotification({
+          title: isFollowing ? `Você deixou de seguir ${profile.name}.` : `Você começou a seguir ${profile.name}.`,
+          type: isFollowing ? 'social-unfollow' : 'social-following',
+          actorHandle: handle,
+        });
+        return;
+      } catch (error) {
+        addNotification({
+          title: `A ação de seguir não foi salva na API: ${error.message}`,
+          type: 'social-sync-failed',
+          actorHandle: handle,
+        });
+        return;
+      }
+    }
+
     setSocialGraph((current) => ({
       ...current,
       followingHandles: isFollowing
@@ -4112,10 +4310,32 @@ function App() {
     });
   }
 
-  function requestFriendship(handle) {
+  async function requestFriendship(target) {
     if (!requireAuthenticatedAction('enviar solicitação de amizade')) return;
-    const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
+    const profile = resolveSocialProfileTarget(target);
+    if (!profile) return;
+    const handle = profile.handle;
     if (socialGraph.blockedHandles.includes(handle) || socialGraph.friendHandles.includes(handle)) return;
+
+    if (isBackendUserId(profile.id)) {
+      try {
+        const graph = await requestFriendshipRequest(profile.id);
+        applyBackendSocialGraph(graph);
+        addNotification({
+          title: `Solicitação de amizade enviada para ${profile.name}.`,
+          type: 'friend-request-sent',
+          actorHandle: handle,
+        });
+        return;
+      } catch (error) {
+        addNotification({
+          title: `A solicitação de amizade não foi salva na API: ${error.message}`,
+          type: 'social-sync-failed',
+          actorHandle: handle,
+        });
+        return;
+      }
+    }
 
     setSocialGraph((current) => ({
       ...current,
@@ -4128,9 +4348,11 @@ function App() {
     });
   }
 
-  function resolveFriendship(handle, accepted) {
+  async function resolveFriendship(target, accepted) {
     if (!requireAuthenticatedAction(accepted ? 'aceitar amizade' : 'recusar amizade')) return;
-    const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
+    const profile = resolveSocialProfileTarget(target);
+    if (!profile) return;
+    const handle = profile.handle;
     setSocialGraph((current) => ({
       ...current,
       sentFriendRequestHandles: current.sentFriendRequestHandles.filter((item) => item !== handle),
@@ -4150,9 +4372,30 @@ function App() {
     });
   }
 
-  function acceptIncomingFriendRequest(handle) {
+  async function acceptIncomingFriendRequest(target) {
     if (!requireAuthenticatedAction('aceitar amizade')) return;
-    const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
+    const profile = resolveSocialProfileTarget(target);
+    if (!profile) return;
+    const handle = profile.handle;
+    if (isBackendUserId(profile.id)) {
+      try {
+        const graph = await respondFriendshipRequest(profile.id, true);
+        applyBackendSocialGraph(graph);
+        addNotification({
+          title: `Você aceitou a solicitação de ${profile.name}.`,
+          type: 'friend-accepted',
+          actorHandle: handle,
+        });
+        return;
+      } catch (error) {
+        addNotification({
+          title: `A resposta da amizade não foi salva na API: ${error.message}`,
+          type: 'social-sync-failed',
+          actorHandle: handle,
+        });
+        return;
+      }
+    }
     setSocialGraph((current) => ({
       ...current,
       incomingFriendRequestHandles: current.incomingFriendRequestHandles.filter((item) => item !== handle),
@@ -4166,9 +4409,30 @@ function App() {
     });
   }
 
-  function rejectIncomingFriendRequest(handle) {
+  async function rejectIncomingFriendRequest(target) {
     if (!requireAuthenticatedAction('recusar amizade')) return;
-    const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
+    const profile = resolveSocialProfileTarget(target);
+    if (!profile) return;
+    const handle = profile.handle;
+    if (isBackendUserId(profile.id)) {
+      try {
+        const graph = await respondFriendshipRequest(profile.id, false);
+        applyBackendSocialGraph(graph);
+        addNotification({
+          title: `Você recusou a solicitação de ${profile.name}.`,
+          type: 'friend-rejected',
+          actorHandle: handle,
+        });
+        return;
+      } catch (error) {
+        addNotification({
+          title: `A resposta da amizade não foi salva na API: ${error.message}`,
+          type: 'social-sync-failed',
+          actorHandle: handle,
+        });
+        return;
+      }
+    }
     setSocialGraph((current) => ({
       ...current,
       incomingFriendRequestHandles: current.incomingFriendRequestHandles.filter((item) => item !== handle),
@@ -4182,7 +4446,7 @@ function App() {
 
   function blockProfile(handle) {
     if (!requireAuthenticatedAction('bloquear perfil')) return;
-    const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
+    const profile = getSocialProfileByHandle(handle, socialGraph) ?? getFallbackSocialProfile(handle);
     const wasFollowing = socialGraph.followingHandles.includes(handle);
     setSocialGraph((current) => ({
       ...current,
@@ -4206,7 +4470,7 @@ function App() {
 
   function unblockProfile(handle) {
     if (!requireAuthenticatedAction('desbloquear perfil')) return;
-    const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
+    const profile = getSocialProfileByHandle(handle, socialGraph) ?? getFallbackSocialProfile(handle);
     setSocialGraph((current) => ({
       ...current,
       blockedHandles: current.blockedHandles.filter((item) => item !== handle),
@@ -4220,7 +4484,7 @@ function App() {
 
   function removeFollower(handle) {
     if (!requireAuthenticatedAction('remover seguidor')) return;
-    const profile = getSocialProfileByHandle(handle) ?? getFallbackSocialProfile(handle);
+    const profile = getSocialProfileByHandle(handle, socialGraph) ?? getFallbackSocialProfile(handle);
     setSocialGraph((current) => ({
       ...current,
       followerHandles: current.followerHandles.filter((item) => item !== handle),
@@ -4354,49 +4618,82 @@ function App() {
       throw error;
     }
   }
-  // Compartilhar: republica o post no topo do feed preservando origem.
-  function shareFeedPost(post) {
+  // Compartilhar: republica o post no feed global preservando origem na API.
+  async function shareFeedPost(post) {
     if (!requireAuthenticatedAction('compartilhar publicação')) return null;
+    if (!canUsePostCommentsApi(post.id)) {
+      addNotification({
+        title: 'Compartilhamento não foi salvo na API: aguarde a publicação original sincronizar.',
+        type: 'post-share-failed',
+        actorHandle: getPostAuthorHandle(post),
+      });
+      return null;
+    }
     const shareId = `share-${Date.now()}`;
     recordFeedInterest(post, 'share');
-    setFeedPosts((current) => [
-      {
-        id: shareId,
-        author: currentUser?.name ?? 'Visitante',
-        authorHandle: getUserHandle(currentUser),
-        authorEmail: currentUser?.email ?? '',
-        role: currentUser?.label ?? 'Membro',
-        initials: currentUser?.initials ?? 'MP',
-        photo: profilePhoto,
-        city: post.city ?? 'Regional',
-        tag: 'Compartilhado',
-        createdAt: getPostTimestamp(),
-        body: post.body,
-        likes: 0,
-        reactionSummary: { like: 0, love: 0, fire: 0 },
-        selectedReaction: '',
-        comments: [],
-        commentCount: 0,
-        mediaType: post.mediaType ?? '',
-        mediaName: post.mediaName ?? '',
-        mediaUrl: post.mediaUrl ?? '',
-        youtubeId: post.youtubeId ?? '',
-        mediaEmbedUrl: post.mediaEmbedUrl ?? '',
-        mediaThumbnailUrl: post.mediaThumbnailUrl ?? '',
-        sharedFrom: {
-          author: post.author,
-          role: post.role,
-          city: post.city,
-          tag: post.tag,
-          createdAt: post.createdAt,
-          sharedAt: getPostTimestamp(),
-        },
+    const optimisticShare = {
+      id: shareId,
+      author: currentUser?.name ?? 'Visitante',
+      authorHandle: getUserHandle(currentUser),
+      authorEmail: currentUser?.email ?? '',
+      role: currentUser?.label ?? 'Membro',
+      initials: currentUser?.initials ?? 'MP',
+      photo: profilePhoto,
+      city: post.city ?? 'Regional',
+      tag: 'Compartilhado',
+      createdAt: getPostTimestamp(),
+      body: post.body || 'Compartilhamento de publicação.',
+      likes: 0,
+      reactionSummary: { like: 0, love: 0, fire: 0 },
+      selectedReaction: '',
+      comments: [],
+      commentCount: 0,
+      mediaType: post.mediaType ?? '',
+      mediaName: post.mediaName ?? '',
+      mediaUrl: post.mediaUrl ?? '',
+      youtubeId: post.youtubeId ?? '',
+      mediaEmbedUrl: post.mediaEmbedUrl ?? '',
+      mediaThumbnailUrl: post.mediaThumbnailUrl ?? '',
+      syncStatus: 'syncing',
+      sharedFrom: {
+        postId: post.id,
+        author: post.author,
+        role: post.role,
+        city: post.city,
+        tag: post.tag,
+        createdAt: post.createdAt,
+        sharedAt: getPostTimestamp(),
       },
-      ...current,
-    ]);
+    };
+    setFeedPosts((current) => [optimisticShare, ...current]);
 
-    awardPoints(5, 'compartilhamento no feed');
-    return shareId;
+    try {
+      const createdPost = await apiRequest('/posts', {
+        method: 'POST',
+        body: JSON.stringify({
+          body: optimisticShare.body,
+          mediaUrl: post.mediaUrl || undefined,
+          mediaType: post.mediaType || undefined,
+          city: post.city || undefined,
+          tag: 'Compartilhado',
+          sharedFromPostId: post.id,
+        }),
+      });
+      const mappedPost = mapBackendPostToFeedPost(createdPost);
+      setFeedPosts((current) =>
+        current.map((item) => (item.id === shareId ? mappedPost : item)),
+      );
+      awardPoints(5, 'compartilhamento no feed');
+      return mappedPost.id;
+    } catch (error) {
+      setFeedPosts((current) => current.filter((item) => item.id !== shareId));
+      addNotification({
+        title: `Compartilhamento não foi salvo na API: ${error.message}`,
+        type: 'post-share-failed',
+        actorHandle: getPostAuthorHandle(post),
+      });
+      return null;
+    }
   }
 
   // Reacoes: alterna curtir/amei/quente sem abrir a janela de detalhes.
@@ -5192,6 +5489,7 @@ function App() {
               onOpenChange={setNotificationDockOpen}
               notifications={notifications}
               eventCreatorAlerts={eventCreatorAlerts}
+              socialGraph={socialGraph}
               setNotifications={setNotifications}
               setEventCreatorAlerts={setEventCreatorAlerts}
             />
@@ -6268,6 +6566,7 @@ function FloatingNotificationDock({
   onOpenChange,
   notifications,
   eventCreatorAlerts,
+  socialGraph,
   setNotifications,
   setEventCreatorAlerts,
 }) {
@@ -6277,7 +6576,7 @@ function FloatingNotificationDock({
       id: notice.id,
       title: notice.title,
       meta: notice.actorHandle
-        ? `${getSocialProfileByHandle(notice.actorHandle)?.name ?? notice.actorHandle} • ${notice.channel}`
+        ? `${getSocialProfileByHandle(notice.actorHandle, socialGraph)?.name ?? notice.actorHandle} • ${notice.channel}`
         : `Canal: ${notice.channel}`,
       read: notice.read,
       category: getNotificationCategory(notice),
@@ -7339,7 +7638,7 @@ function scrollToFeedTarget(selector, block = 'center') {
 
 function mapBackendPersonToSocialProfile(person = {}) {
   const name = person.name || 'Perfil MeetPoint';
-  return {
+  return normalizeSocialProfile({
     id: person.id ?? person.handle ?? name,
     name,
     handle: person.handle ?? getUserHandle({ name }),
@@ -7347,11 +7646,17 @@ function mapBackendPersonToSocialProfile(person = {}) {
     city: person.city ?? 'MeetPoint',
     bio: person.bio ?? 'Perfil cadastrado na plataforma.',
     interests: [],
-    followers: 0,
-    posts: 0,
+    followers: person.followers ?? 0,
+    following: person.following ?? 0,
+    friends: person.friends ?? 0,
+    posts: person.posts ?? 0,
     photo: person.photo ?? person.profileImage ?? '',
     accountSegment: person.accountSegment ?? 'student',
-  };
+    isFollowing: person.isFollowing,
+    friendRequestSent: person.friendRequestSent,
+    incomingFriendRequest: person.incomingFriendRequest,
+    isFriend: person.isFriend,
+  });
 }
 
 // Tela Feed: cria posts, filtra conteudos, busca pessoas e conecta cards sociais.
@@ -7422,7 +7727,28 @@ function FeedView({
       peopleDiscoveryRequest(peopleQuery)
         .then((items) => {
           if (cancelled) return;
-          setRemotePeople(Array.isArray(items) ? items.map(mapBackendPersonToSocialProfile) : []);
+          const people = Array.isArray(items) ? items.map(mapBackendPersonToSocialProfile) : [];
+          setRemotePeople(people);
+          setSocialGraph((current) => normalizeSocialGraph({
+            ...current,
+            profiles: mergeSocialProfiles(people, current.profiles),
+            followingHandles: uniqueItems([
+              ...current.followingHandles,
+              ...people.filter((profile) => profile.isFollowing).map((profile) => profile.handle),
+            ]),
+            sentFriendRequestHandles: uniqueItems([
+              ...current.sentFriendRequestHandles,
+              ...people.filter((profile) => profile.friendRequestSent).map((profile) => profile.handle),
+            ]),
+            incomingFriendRequestHandles: uniqueItems([
+              ...current.incomingFriendRequestHandles,
+              ...people.filter((profile) => profile.incomingFriendRequest).map((profile) => profile.handle),
+            ]),
+            friendHandles: uniqueItems([
+              ...current.friendHandles,
+              ...people.filter((profile) => profile.isFriend).map((profile) => profile.handle),
+            ]),
+          }));
           setPeopleStatus('');
         })
         .catch((error) => {
@@ -8250,14 +8576,14 @@ function PeopleDiscovery({
                     </span>
                   </button>
                   <div className="person-actions">
-                    <button className="person-action-button" type="button" onClick={() => followProfile(profile.handle)}>
+                    <button className="person-action-button" type="button" onClick={() => { void followProfile(profile); }}>
                       {isFollowing ? 'Deixar' : 'Seguir'}
                     </button>
                     <button
                       className="light person-action-button"
                       disabled={requestSent}
                       type="button"
-                      onClick={() => requestFriendship(profile.handle)}
+                      onClick={() => { void requestFriendship(profile); }}
                     >
                       {requestSent ? 'Enviado' : 'Amizade'}
                     </button>
@@ -8307,16 +8633,16 @@ function SocialProfileModal({
   const [activeSection, setActiveSection] = useState('posts');
   const isBlocked = socialGraph.blockedHandles.includes(profile.handle);
   const currentUserProfile = getCurrentUserSocialProfile(currentUser, null, currentUserPhoto);
-  const friendProfiles = getConnectionProfiles(getProfileSampleHandles(profile, 1, 3));
-  const followingProfiles = getConnectionProfiles(getProfileSampleHandles(profile, 0, 3));
+  const friendProfiles = getConnectionProfiles(getProfileSampleHandles(profile, 1, 3), socialGraph);
+  const followingProfiles = getConnectionProfiles(getProfileSampleHandles(profile, 0, 3), socialGraph);
   const followerProfiles = [
     ...(isFollowing ? [currentUserProfile] : []),
-    ...getConnectionProfiles(getProfileSampleHandles(profile, 2, 3)),
+    ...getConnectionProfiles(getProfileSampleHandles(profile, 2, 3), socialGraph),
   ];
   const commonHandles = uniqueItems([...socialGraph.friendHandles, ...socialGraph.followingHandles]).filter((handle) =>
     [...friendProfiles, ...followingProfiles, ...followerProfiles].some((item) => item.handle === handle),
   );
-  const commonProfiles = getConnectionProfiles(commonHandles).slice(0, 3);
+  const commonProfiles = getConnectionProfiles(commonHandles, socialGraph).slice(0, 3);
   const stats = profileStats ?? getViewedProfileStats(profile, socialGraph, profilePosts, profileEvents, profileOpportunities);
   const sectionTitle = {
     friends: 'Amigos',
@@ -8347,7 +8673,7 @@ function SocialProfileModal({
               {isCurrentUser ? (
                 <span className="self-connection-pill">Você</span>
               ) : (
-                <button className="light compact-social-button" type="button" onClick={() => followProfile(item.handle)}>
+                <button className="light compact-social-button" type="button" onClick={() => { void followProfile(item); }}>
                   {following ? 'Seguindo' : 'Seguir'}
                 </button>
               )}
@@ -8457,14 +8783,14 @@ function SocialProfileModal({
           </article>
         </div>
         <div className="profile-social-actions">
-          <button type="button" onClick={() => followProfile(profile.handle)}>
+          <button type="button" onClick={() => { void followProfile(profile); }}>
             {isFollowing ? 'Deixar de seguir' : 'Seguir'}
           </button>
           <button
             className="light"
             disabled={requestSent}
             type="button"
-            onClick={() => requestFriendship(profile.handle)}
+            onClick={() => { void requestFriendship(profile); }}
           >
             {requestSent ? 'Solicitação enviada' : 'Solicitar amizade'}
           </button>
@@ -8489,10 +8815,10 @@ function SocialProfileModal({
         {requestSent && (
           <div className="friend-request-review">
             <strong>Prévia da moderação de amizade</strong>
-            <button type="button" onClick={() => resolveFriendship(profile.handle, true)}>
+            <button type="button" onClick={() => { void resolveFriendship(profile, true); }}>
               Aceitar
             </button>
-            <button className="light" type="button" onClick={() => resolveFriendship(profile.handle, false)}>
+            <button className="light" type="button" onClick={() => { void resolveFriendship(profile, false); }}>
               Recusar
             </button>
           </div>
@@ -8687,12 +9013,17 @@ useEffect(() => {
     scrollToFeedTarget(`[data-comment-panel-id="${post.id}"]`);
   }
 
-function sharePost() {
+async function sharePost() {
   const confirmed = window.confirm(`Republicar a publicação de ${post.author} no seu feed?`);
   if (!confirmed) return;
 
-  const sharedPostId = shareFeedPost(post);
-  setShareStatus('Publicação republicada no seu feed.');
+  setShareStatus('Salvando compartilhamento na API...');
+  const sharedPostId = await shareFeedPost(post);
+  setShareStatus(
+    sharedPostId
+      ? 'Publicação republicada no feed global.'
+      : 'A API não confirmou o compartilhamento.',
+  );
   if (sharedPostId) {
     scrollToFeedTarget(`[data-post-id="${sharedPostId}"]`, 'start');
   }
@@ -9137,7 +9468,7 @@ post.body && (
             💬 Comentar
           </button>
 
-          <button className="social-action-button share-button" onClick={sharePost}>
+          <button className="social-action-button share-button" onClick={() => { void sharePost(); }}>
             🔄 Compartilhar
           </button>
         </div>
@@ -14525,7 +14856,7 @@ function ProfileNotificationsCard({
   acceptIncomingFriendRequest,
   rejectIncomingFriendRequest,
 }) {
-  const incomingRequests = getConnectionProfiles(socialGraph.incomingFriendRequestHandles);
+  const incomingRequests = getConnectionProfiles(socialGraph.incomingFriendRequestHandles, socialGraph);
 
   return (
     <section className="profile-card points-profile-card" data-profile-target="notifications">
@@ -14549,10 +14880,10 @@ function ProfileNotificationsCard({
                 <strong>{profile.name}</strong>
                 <small>enviou uma solicitação de amizade</small>
               </div>
-            <button className="compact-social-button" type="button" onClick={() => acceptIncomingFriendRequest(profile.handle)}>
+            <button className="compact-social-button" type="button" onClick={() => { void acceptIncomingFriendRequest(profile); }}>
               Aceitar
             </button>
-              <button className="light compact-social-button" type="button" onClick={() => rejectIncomingFriendRequest(profile.handle)}>
+              <button className="light compact-social-button" type="button" onClick={() => { void rejectIncomingFriendRequest(profile); }}>
                 Recusar
               </button>
             </article>
@@ -14564,7 +14895,7 @@ function ProfileNotificationsCard({
         {notifications.length === 0 ? (
           <p className="empty-state">Nenhuma notificação nova.</p>
         ) : notifications.map((notice) => {
-          const actor = notice.actorHandle ? getSocialProfileByHandle(notice.actorHandle) : null;
+          const actor = notice.actorHandle ? getSocialProfileByHandle(notice.actorHandle, socialGraph) : null;
           return (
             <article key={notice.id}>
               <strong>{notice.title}</strong>
@@ -14615,10 +14946,10 @@ function ProfileSocialPanel({
     opportunities: 'Oportunidades',
     blocked: 'Bloqueados',
   };
-  const followerProfiles = getConnectionProfiles(socialGraph.followerHandles);
-  const friendProfiles = getConnectionProfiles(socialGraph.friendHandles);
-  const followingProfiles = getConnectionProfiles(socialGraph.followingHandles);
-  const blockedProfiles = getConnectionProfiles(socialGraph.blockedHandles);
+  const followerProfiles = getConnectionProfiles(socialGraph.followerHandles, socialGraph);
+  const friendProfiles = getConnectionProfiles(socialGraph.friendHandles, socialGraph);
+  const followingProfiles = getConnectionProfiles(socialGraph.followingHandles, socialGraph);
+  const blockedProfiles = getConnectionProfiles(socialGraph.blockedHandles, socialGraph);
   const currentTitle = panelLabels[activePanel] ?? 'Conexões';
 
   function renderConnectionRows(profiles, emptyMessage) {
@@ -14637,7 +14968,7 @@ function ProfileSocialPanel({
                 <small>{profile.handle} • {profile.city}</small>
               </div>
               {activePanel !== 'blocked' && (
-                <button className="light compact-social-button" type="button" onClick={() => followProfile(profile.handle)}>
+                <button className="light compact-social-button" type="button" onClick={() => { void followProfile(profile); }}>
                   {following ? 'Deixar de seguir' : 'Seguir'}
                 </button>
               )}
