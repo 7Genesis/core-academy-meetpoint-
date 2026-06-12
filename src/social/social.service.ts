@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  MessageEvent,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -11,8 +12,11 @@ import {
   UserRole,
 } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
+import { defer, from, interval, merge, Observable } from 'rxjs';
+import { map, mergeMap } from 'rxjs/operators';
 import { AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { CommunityMessagesRealtimeService } from './community-messages-realtime.service';
 import {
   ApplyOpportunityDto,
   CreateBenefitDto,
@@ -44,7 +48,10 @@ const COMMUNITY_SECRET_HASH_ROUNDS = 12;
 
 @Injectable()
 export class SocialService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly communityMessagesRealtime: CommunityMessagesRealtimeService,
+  ) {}
 
   createPost(tenantId: string, authorId: string, dto: CreatePostDto) {
     return this.prisma.withTenant(tenantId, (tx) =>
@@ -375,6 +382,42 @@ export class SocialService {
     return { data: data.map((message) => this.mapCommunityMessage(message, user)) };
   }
 
+  streamCommunityMessages(
+    communityId: string,
+    user: AuthenticatedUser,
+  ): Observable<MessageEvent> {
+    return defer(() =>
+      from(
+        this.prisma.withPlatformAdmin((tx) =>
+          this.assertCommunityMember(tx, communityId, user.sub),
+        ),
+      ),
+    ).pipe(
+      mergeMap(() =>
+        merge(
+          this.communityMessagesRealtime.stream(communityId).pipe(
+            map((event) => ({
+              id: event.message.id,
+              data: {
+                kind: event.kind,
+                message: this.mapCommunityMessage(event.message, user),
+              },
+            })),
+          ),
+          interval(25_000).pipe(
+            map(() => ({
+              data: {
+                kind: 'keepalive',
+                communityId,
+                at: new Date().toISOString(),
+              },
+            })),
+          ),
+        ),
+      ),
+    );
+  }
+
   async createCommunityMessage(
     communityId: string,
     user: AuthenticatedUser,
@@ -391,6 +434,11 @@ export class SocialService {
         },
         select: this.communityMessageSelect(),
       });
+    });
+    this.communityMessagesRealtime.publish({
+      communityId,
+      kind: 'message.created',
+      message,
     });
     return this.mapCommunityMessage(message, user);
   }
@@ -421,6 +469,11 @@ export class SocialService {
         },
         select: this.communityMessageSelect(),
       });
+    });
+    this.communityMessagesRealtime.publish({
+      communityId,
+      kind: 'message.updated',
+      message,
     });
     return this.mapCommunityMessage(message, user);
   }
@@ -458,6 +511,11 @@ export class SocialService {
         },
         select: this.communityMessageSelect(),
       });
+    });
+    this.communityMessagesRealtime.publish({
+      communityId,
+      kind: 'message.deleted',
+      message,
     });
     return this.mapCommunityMessage(message, user);
   }

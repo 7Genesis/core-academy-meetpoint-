@@ -1416,6 +1416,14 @@ function communityMessagesRequest(communityId) {
   return apiRequest(`/communities/${encodeURIComponent(communityId)}/messages?limit=100`);
 }
 
+function openCommunityMessagesStream(communityId) {
+  if (typeof EventSource === 'undefined' || !API_BASE_URLS[0]) return null;
+  return new EventSource(
+    `${API_BASE_URLS[0]}/communities/${encodeURIComponent(communityId)}/messages/stream`,
+    { withCredentials: true },
+  );
+}
+
 function sendCommunityMessageRequest(communityId, body) {
   return apiRequest(`/communities/${encodeURIComponent(communityId)}/messages`, {
     method: 'POST',
@@ -1456,6 +1464,18 @@ function mergeById(primary = [], secondary = []) {
     seen.add(id);
     return true;
   });
+}
+
+function upsertCommunityMessage(messages = [], nextMessage = {}) {
+  if (!nextMessage?.id) return messages;
+  const exists = messages.some((message) => message.id === nextMessage.id);
+  const merged = exists
+    ? messages.map((message) =>
+        message.id === nextMessage.id ? { ...message, ...nextMessage } : message,
+      )
+    : [...messages, nextMessage];
+
+  return merged.sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0));
 }
 
 function getIsoDateParts(value) {
@@ -12065,6 +12085,7 @@ function CommunitiesView({
   useEffect(() => {
     let cancelled = false;
     let pollingId = 0;
+    let messageStream = null;
 
     async function loadCommunityMessages({ silent = false } = {}) {
       if (!activeCommunity?.id || !communityBubbleOpen || !currentUser) {
@@ -12095,15 +12116,73 @@ function CommunitiesView({
       }
     }
 
-    loadCommunityMessages();
-    if (activeCommunity?.id && communityBubbleOpen && currentUser) {
-      pollingId = window.setInterval(() => {
-        loadCommunityMessages({ silent: true });
-      }, 3000);
+    function applyRealtimePayload(payload = {}) {
+      if (payload.kind === 'keepalive') return;
+      if (!payload.message) return;
+
+      const mappedMessage = mapBackendCommunityMessageToMessage(payload.message);
+      const shouldAutoScroll = isCommunityNearBottom();
+      setLocalMessages((current) => upsertCommunityMessage(current, mappedMessage));
+
+      if (payload.kind === 'message.created' && !mappedMessage.mine) {
+        setCommunityToast('Nova mensagem na comunidade.');
+        if (shouldAutoScroll) {
+          setTimeout(scrollCommunityToBottom, 80);
+          setUnreadCommunityMessages(0);
+          setShowNewMessageButton(false);
+        } else {
+          setUnreadCommunityMessages((current) => current + 1);
+          setShowNewMessageButton(true);
+        }
+        setTimeout(() => setCommunityToast(''), 3500);
+        return;
+      }
+
+      if (shouldAutoScroll) {
+        setTimeout(scrollCommunityToBottom, 80);
+      }
     }
+
+    if (!activeCommunity?.id || !communityBubbleOpen || !currentUser) {
+      setLocalMessages([]);
+      return undefined;
+    }
+
+    if (!activeCommunity.joined && !activeCommunity.isAdmin) {
+      setLocalMessages([]);
+      setModerationMessage('Entre na comunidade para ver a conversa.');
+      return undefined;
+    }
+
+    loadCommunityMessages();
+    messageStream = openCommunityMessagesStream(activeCommunity.id);
+
+    if (messageStream) {
+      messageStream.onopen = () => {
+        if (!cancelled) setModerationMessage('');
+      };
+      messageStream.onmessage = (event) => {
+        if (cancelled) return;
+        try {
+          applyRealtimePayload(JSON.parse(event.data));
+        } catch {
+          setModerationMessage('Não foi possível ler uma atualização em tempo real.');
+        }
+      };
+      messageStream.onerror = () => {
+        if (!cancelled) {
+          setModerationMessage('Tempo real instável; sincronização automática continua.');
+        }
+      };
+    }
+
+    pollingId = window.setInterval(() => {
+      loadCommunityMessages({ silent: true });
+    }, 15000);
 
     return () => {
       cancelled = true;
+      messageStream?.close();
       if (pollingId) window.clearInterval(pollingId);
     };
   }, [
@@ -12202,7 +12281,7 @@ function CommunitiesView({
     try {
       const savedMessage = await sendCommunityMessageRequest(activeCommunity.id, content);
       const mappedMessage = mapBackendCommunityMessageToMessage(savedMessage);
-      setLocalMessages((current) => mergeById([...current, mappedMessage], []));
+      setLocalMessages((current) => upsertCommunityMessage(current, mappedMessage));
       setDraft('');
       setModerationMessage('Mensagem enviada para a comunidade.');
       setCommunityToast('Nova mensagem na comunidade.');

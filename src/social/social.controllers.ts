@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  Sse,
 } from '@nestjs/common';
 import { Request } from 'express';
 import {
@@ -171,6 +172,15 @@ export class CommunitiesController {
     @Query() query: ListCommunityMessagesQueryDto,
   ) {
     return this.socialService.listCommunityMessages(id, user, query);
+  }
+
+  @RequireActiveSubscription()
+  @Sse(':id/messages/stream')
+  streamMessages(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.socialService.streamCommunityMessages(id, user);
   }
 
   @RequireActiveSubscription()
