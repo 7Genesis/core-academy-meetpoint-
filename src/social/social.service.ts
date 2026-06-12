@@ -48,24 +48,11 @@ export class SocialService {
     );
   }
 
-  async listPosts(
-    query: ListPublicContentQueryDto,
-    user?: AuthenticatedUser,
-  ) {
+  async listPosts(query: ListPublicContentQueryDto) {
     const { page, limit, skip } = this.pagination(query);
     const search = query.search?.trim();
     const where: Prisma.PostWhereInput = {
-      OR: [
-        { visibility: ContentVisibility.PUBLIC },
-        ...(user?.tenantId
-          ? [
-              {
-                visibility: ContentVisibility.PRIVATE,
-                tenantId: user.tenantId,
-              },
-            ]
-          : []),
-      ],
+      visibility: ContentVisibility.PUBLIC,
       ...(query.city?.trim()
         ? { city: { equals: query.city.trim(), mode: 'insensitive' } }
         : {}),
@@ -84,44 +71,38 @@ export class SocialService {
         : {}),
     };
 
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.post.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        include: this.postInclude(),
-      }),
-      this.prisma.post.count({ where }),
-    ]);
+    const [data, total] = await this.prisma.withPlatformAdmin((tx) =>
+      Promise.all([
+        tx.post.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: this.postInclude(),
+        }),
+        tx.post.count({ where }),
+      ]),
+    );
 
     return this.page(data, total, page, limit);
   }
 
-  async getPost(id: string, user?: AuthenticatedUser) {
-    const post = await this.prisma.post.findFirst({
-      where: {
-        id,
-        OR: [
-          { visibility: ContentVisibility.PUBLIC },
-          ...(user?.tenantId
-            ? [
-                {
-                  visibility: ContentVisibility.PRIVATE,
-                  tenantId: user.tenantId,
-                },
-              ]
-            : []),
-        ],
-      },
-      include: {
-        ...this.postInclude(),
-        comments: {
-          orderBy: { createdAt: 'asc' },
-          include: { author: { select: this.publicUserSelect() } },
+  async getPost(id: string) {
+    const post = await this.prisma.withPlatformAdmin((tx) =>
+      tx.post.findFirst({
+        where: {
+          id,
+          visibility: ContentVisibility.PUBLIC,
         },
-      },
-    });
+        include: {
+          ...this.postInclude(),
+          comments: {
+            orderBy: { createdAt: 'asc' },
+            include: { author: { select: this.publicUserSelect() } },
+          },
+        },
+      }),
+    );
     if (!post) throw new NotFoundException('Post not found');
     return post;
   }
@@ -227,24 +208,28 @@ export class SocialService {
           }
         : {}),
     };
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.community.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        include: this.communityInclude(),
-      }),
-      this.prisma.community.count({ where }),
-    ]);
+    const [data, total] = await this.prisma.withPlatformAdmin((tx) =>
+      Promise.all([
+        tx.community.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: this.communityInclude(),
+        }),
+        tx.community.count({ where }),
+      ]),
+    );
     return this.page(data, total, page, limit);
   }
 
   async getCommunity(id: string) {
-    const community = await this.prisma.community.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
-      include: this.communityInclude(),
-    });
+    const community = await this.prisma.withPlatformAdmin((tx) =>
+      tx.community.findFirst({
+        where: { id, visibility: ContentVisibility.PUBLIC },
+        include: this.communityInclude(),
+      }),
+    );
     if (!community) throw new NotFoundException('Community not found');
     return community;
   }
@@ -330,24 +315,28 @@ export class SocialService {
           }
         : {}),
     };
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.opportunity.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        include: this.opportunityInclude(),
-      }),
-      this.prisma.opportunity.count({ where }),
-    ]);
+    const [data, total] = await this.prisma.withPlatformAdmin((tx) =>
+      Promise.all([
+        tx.opportunity.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: this.opportunityInclude(),
+        }),
+        tx.opportunity.count({ where }),
+      ]),
+    );
     return this.page(data, total, page, limit);
   }
 
   async getOpportunity(id: string) {
-    const opportunity = await this.prisma.opportunity.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
-      include: this.opportunityInclude(),
-    });
+    const opportunity = await this.prisma.withPlatformAdmin((tx) =>
+      tx.opportunity.findFirst({
+        where: { id, visibility: ContentVisibility.PUBLIC },
+        include: this.opportunityInclude(),
+      }),
+    );
     if (!opportunity) throw new NotFoundException('Opportunity not found');
     return opportunity;
   }
@@ -429,24 +418,28 @@ export class SocialService {
           }
         : {}),
     };
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.benefit.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        include: this.benefitInclude(),
-      }),
-      this.prisma.benefit.count({ where }),
-    ]);
+    const [data, total] = await this.prisma.withPlatformAdmin((tx) =>
+      Promise.all([
+        tx.benefit.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: this.benefitInclude(),
+        }),
+        tx.benefit.count({ where }),
+      ]),
+    );
     return this.page(data, total, page, limit);
   }
 
   async getBenefit(id: string) {
-    const benefit = await this.prisma.benefit.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
-      include: this.benefitInclude(),
-    });
+    const benefit = await this.prisma.withPlatformAdmin((tx) =>
+      tx.benefit.findFirst({
+        where: { id, visibility: ContentVisibility.PUBLIC },
+        include: this.benefitInclude(),
+      }),
+    );
     if (!benefit) throw new NotFoundException('Benefit not found');
     return benefit;
   }
@@ -530,24 +523,28 @@ export class SocialService {
           }
         : {}),
     };
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.event.findMany({
-        where,
-        orderBy: [{ startsAt: 'asc' }, { createdAt: 'desc' }],
-        skip,
-        take: limit,
-        include: this.eventInclude(),
-      }),
-      this.prisma.event.count({ where }),
-    ]);
+    const [data, total] = await this.prisma.withPlatformAdmin((tx) =>
+      Promise.all([
+        tx.event.findMany({
+          where,
+          orderBy: [{ startsAt: 'asc' }, { createdAt: 'desc' }],
+          skip,
+          take: limit,
+          include: this.eventInclude(),
+        }),
+        tx.event.count({ where }),
+      ]),
+    );
     return this.page(data, total, page, limit);
   }
 
   async getEvent(id: string) {
-    const event = await this.prisma.event.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
-      include: this.eventInclude(),
-    });
+    const event = await this.prisma.withPlatformAdmin((tx) =>
+      tx.event.findFirst({
+        where: { id, visibility: ContentVisibility.PUBLIC },
+        include: this.eventInclude(),
+      }),
+    );
     if (!event) throw new NotFoundException('Event not found');
     return event;
   }
@@ -663,42 +660,52 @@ export class SocialService {
   }
 
   private async ensurePublicPost(id: string) {
-    const post = await this.prisma.post.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
-      select: { id: true },
-    });
+    const post = await this.prisma.withPlatformAdmin((tx) =>
+      tx.post.findFirst({
+        where: { id, visibility: ContentVisibility.PUBLIC },
+        select: { id: true },
+      }),
+    );
     if (!post) throw new NotFoundException('Post not found');
   }
 
   private async ensurePublicCommunity(id: string) {
-    const community = await this.prisma.community.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
-      select: { id: true },
-    });
+    const community = await this.prisma.withPlatformAdmin((tx) =>
+      tx.community.findFirst({
+        where: { id, visibility: ContentVisibility.PUBLIC },
+        select: { id: true },
+      }),
+    );
     if (!community) throw new NotFoundException('Community not found');
   }
 
   private async ensurePublicOpportunity(id: string) {
-    const opportunity = await this.prisma.opportunity.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
-      select: { id: true },
-    });
+    const opportunity = await this.prisma.withPlatformAdmin((tx) =>
+      tx.opportunity.findFirst({
+        where: { id, visibility: ContentVisibility.PUBLIC },
+        select: { id: true },
+      }),
+    );
     if (!opportunity) throw new NotFoundException('Opportunity not found');
   }
 
   private async ensurePublicBenefit(id: string) {
-    const benefit = await this.prisma.benefit.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
-      select: { id: true },
-    });
+    const benefit = await this.prisma.withPlatformAdmin((tx) =>
+      tx.benefit.findFirst({
+        where: { id, visibility: ContentVisibility.PUBLIC },
+        select: { id: true },
+      }),
+    );
     if (!benefit) throw new NotFoundException('Benefit not found');
   }
 
   private async ensurePublicEvent(id: string) {
-    const event = await this.prisma.event.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
-      select: { id: true },
-    });
+    const event = await this.prisma.withPlatformAdmin((tx) =>
+      tx.event.findFirst({
+        where: { id, visibility: ContentVisibility.PUBLIC },
+        select: { id: true },
+      }),
+    );
     if (!event) throw new NotFoundException('Event not found');
   }
 

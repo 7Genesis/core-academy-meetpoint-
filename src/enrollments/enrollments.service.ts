@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  ContentVisibility,
   SaleStatus,
 } from '@prisma/client';
 import {
@@ -25,10 +26,16 @@ export class EnrollmentsService {
       paymentStatus?: EnrollmentPaymentStatusType;
     },
   ) {
-    return this.prisma.withTenant(tenantId, async (tx) => {
+    return this.prisma.withPlatformAdmin(async (tx) => {
       const [user, course] = await Promise.all([
-        tx.user.findFirst({ where: { id: userId, tenantId } }),
-        tx.course.findFirst({ where: { id: courseId, tenantId } }),
+        tx.user.findUnique({ where: { id: userId } }),
+        tx.course.findFirst({
+          where: {
+            id: courseId,
+            tenantId,
+            visibility: ContentVisibility.PUBLIC,
+          },
+        }),
       ]);
 
       if (!user) throw new NotFoundException('User not found');

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { ContentVisibility, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { EnrollmentPaymentStatus } from '../common/prisma-enums';
@@ -30,23 +30,27 @@ export class PaymentsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createCourseCheckout(
-    tenantId: string,
+    _tenantId: string,
     user: AuthenticatedUser,
     dto: CreateCourseCheckoutDto,
   ) {
     const checkoutReference = randomUUID();
     const orderNsu = `meetpoint-course-${checkoutReference}`;
 
-    const prepared = await this.prisma.withTenant(tenantId, async (tx) => {
+    const prepared = await this.prisma.withPlatformAdmin(async (tx) => {
       const [userRecord, course] = await Promise.all([
-        tx.user.findFirst({
-          where: { id: user.sub, tenantId },
+        tx.user.findUnique({
+          where: { id: user.sub },
           select: { id: true, email: true, name: true, status: true },
         }),
         tx.course.findFirst({
-          where: { id: dto.courseId, tenantId },
+          where: {
+            id: dto.courseId,
+            visibility: ContentVisibility.PUBLIC,
+          },
           select: {
             id: true,
+            tenantId: true,
             title: true,
             priceCents: true,
             currency: true,
@@ -62,6 +66,7 @@ export class PaymentsService {
       }
 
       const amountCents = course.priceCents;
+      const courseTenantId = course.tenantId;
       const platformFeeCents = Math.round(
         (amountCents * course.platformFeeBps) / 10_000,
       );
@@ -72,13 +77,13 @@ export class PaymentsService {
         ? await tx.enrollment.upsert({
             where: {
               tenantId_userId_courseId: {
-                tenantId,
+                tenantId: courseTenantId,
                 userId: userRecord.id,
                 courseId: course.id,
               },
             },
             create: {
-              tenantId,
+              tenantId: courseTenantId,
               userId: userRecord.id,
               courseId: course.id,
               paymentStatus: EnrollmentPaymentStatus.FREE,
@@ -100,7 +105,7 @@ export class PaymentsService {
           data: {
             gateway: INFINITEPAY_GATEWAY,
             orderNsu,
-            tenantId,
+            tenantId: courseTenantId,
             userId: userRecord.id,
             courseId: course.id,
             amountCents,
@@ -113,6 +118,7 @@ export class PaymentsService {
       return {
         userRecord,
         course,
+        courseTenantId,
         amountCents,
         platformFeeCents,
         producerNetCents,
@@ -135,7 +141,7 @@ export class PaymentsService {
         });
 
     if (checkoutSession) {
-      await this.prisma.withTenant(tenantId, (tx) =>
+      await this.prisma.withPlatformAdmin((tx) =>
         tx.paymentCheckout.update({
           where: { orderNsu },
           data: {
@@ -164,6 +170,8 @@ export class PaymentsService {
       enrollment: prepared.enrollment,
       security: {
         amountSource: 'server',
+        courseTenantId: prepared.courseTenantId,
+        globalCourseCatalog: true,
         tenantScoped: true,
         userScoped: true,
         webhookRequiredToReleaseCourse: !prepared.isFree,

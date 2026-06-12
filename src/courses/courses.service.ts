@@ -45,20 +45,22 @@ export class CoursesService {
         : {}),
     };
 
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.course.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: {
-          tenant: {
-            select: { id: true, name: true, subdomain: true },
+    const [data, total] = await this.prisma.withPlatformAdmin((tx) =>
+      Promise.all([
+        tx.course.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+          include: {
+            tenant: {
+              select: { id: true, name: true, subdomain: true },
+            },
           },
-        },
-      }),
-      this.prisma.course.count({ where }),
-    ]);
+        }),
+        tx.course.count({ where }),
+      ]),
+    );
 
     return {
       data,
@@ -72,22 +74,24 @@ export class CoursesService {
   }
 
   async findOne(id: string) {
-    const course = await this.prisma.course.findFirst({
-      where: { id, visibility: ContentVisibility.PUBLIC },
-      include: {
-        tenant: {
-          select: { id: true, name: true, subdomain: true },
-        },
-        modules: {
-          orderBy: { order: 'asc' },
-          include: {
-            lessons: {
-              orderBy: { order: 'asc' },
+    const course = await this.prisma.withPlatformAdmin((tx) =>
+      tx.course.findFirst({
+        where: { id, visibility: ContentVisibility.PUBLIC },
+        include: {
+          tenant: {
+            select: { id: true, name: true, subdomain: true },
+          },
+          modules: {
+            orderBy: { order: 'asc' },
+            include: {
+              lessons: {
+                orderBy: { order: 'asc' },
+              },
             },
           },
         },
-      },
-    });
+      }),
+    );
 
     if (!course) throw new NotFoundException('Course not found');
     return course;
