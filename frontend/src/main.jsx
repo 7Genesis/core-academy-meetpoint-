@@ -1511,6 +1511,13 @@ function createPostCommentRequest(postId, body) {
   });
 }
 
+function reactToPostRequest(postId, type) {
+  return apiRequest(`/posts/${encodeURIComponent(postId)}/reactions`, {
+    method: 'POST',
+    body: JSON.stringify({ type }),
+  });
+}
+
 function updatePostCommentRequest(postId, commentId, body) {
   return apiRequest(
     `/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
@@ -1617,6 +1624,24 @@ function getIsoDateParts(value) {
   };
 }
 
+function normalizeReactionSummary(summary = {}, fallbackTotal = 0) {
+  const normalized = {
+    like: Number(summary.like ?? 0),
+    love: Number(summary.love ?? 0),
+    fire: Number(summary.fire ?? 0),
+  };
+  const total = normalized.like + normalized.love + normalized.fire;
+  if (!total && fallbackTotal) normalized.like = Number(fallbackTotal);
+  return normalized;
+}
+
+function getReactionSummaryTotal(summary = {}) {
+  return Object.values(normalizeReactionSummary(summary)).reduce(
+    (total, value) => total + value,
+    0,
+  );
+}
+
 function mapBackendPostCommentToComment(comment = {}) {
   const authorName = comment.author?.name ?? 'Membro';
   return {
@@ -1638,6 +1663,17 @@ function mapBackendPostToFeedPost(post = {}) {
   const youtube = post.mediaType === 'youtube' ? getYouTubeVideo(post.mediaUrl) : null;
   const comments = (post.comments ?? []).map(mapBackendPostCommentToComment);
   const sharedAuthorName = post.sharedFrom?.author?.name ?? '';
+  const reactionSummary = normalizeReactionSummary(
+    post.reactionSummary,
+    post._count?.reactions,
+  );
+  const recentReactions = Array.isArray(post.recentReactions)
+    ? post.recentReactions.map((reaction) => ({
+        user: reaction.user || 'Membro MeetPoint',
+        reaction: reaction.reaction || 'like',
+        at: reaction.at || getPostTimestamp(),
+      }))
+    : [];
   return {
     id: post.id,
     author: authorName,
@@ -1650,9 +1686,10 @@ function mapBackendPostToFeedPost(post = {}) {
     tag: post.tag || 'Atualização',
     createdAt: getIsoDateParts(post.createdAt).createdAt,
     body: post.body ?? '',
-    likes: post._count?.reactions ?? 0,
-    reactionSummary: { like: post._count?.reactions ?? 0, love: 0, fire: 0 },
-    selectedReaction: '',
+    likes: getReactionSummaryTotal(reactionSummary),
+    reactionSummary,
+    selectedReaction: post.selectedReaction || '',
+    reactors: recentReactions,
     comments,
     commentCount: post._count?.comments ?? comments.length,
     mediaType: post.mediaType ?? '',
@@ -4696,38 +4733,84 @@ function App() {
     }
   }
 
-  // Reacoes: alterna curtir/amei/quente sem abrir a janela de detalhes.
-  function reactToFeedPost(postId, reaction) {
+  function buildOptimisticReactionPost(post, reaction) {
+    const previousReaction = post.selectedReaction;
+    const reactionSummary = normalizeReactionSummary(post.reactionSummary);
+    const reactors = (post.reactors ?? []).filter(
+      (item) => item.user !== (currentUser?.name ?? 'Visitante'),
+    );
+    if (previousReaction) {
+      reactionSummary[previousReaction] = Math.max(
+        (reactionSummary[previousReaction] ?? 1) - 1,
+        0,
+      );
+    }
+    if (previousReaction !== reaction) {
+      reactionSummary[reaction] = (reactionSummary[reaction] ?? 0) + 1;
+      reactors.unshift({
+        user: currentUser?.name ?? 'Visitante',
+        reaction,
+        at: getPostTimestamp(),
+      });
+    }
+    return {
+      ...post,
+      selectedReaction: previousReaction === reaction ? '' : reaction,
+      reactionSummary,
+      reactors,
+      likes: getReactionSummaryTotal(reactionSummary),
+    };
+  }
+
+  function mergeConfirmedReactionPost(currentPost, confirmedPost) {
+    const mappedPost = mapBackendPostToFeedPost(confirmedPost);
+    return {
+      ...currentPost,
+      ...mappedPost,
+      comments: currentPost.comments ?? mappedPost.comments,
+      commentCount: mappedPost.commentCount ?? currentPost.commentCount,
+    };
+  }
+
+  // Reacoes: persiste curtir/amei/quente na API para o feed global.
+  async function reactToFeedPost(postId, reaction) {
     if (!requireAuthenticatedAction('reagir à publicação')) return;
     const currentPost = feedPosts.find((post) => post.id === postId);
-    if (currentPost?.selectedReaction !== reaction) {
-      recordFeedInterest(currentPost, 'reaction');
+    if (!currentPost) return;
+    if (!canUsePostCommentsApi(postId)) {
+      addNotification({
+        title: 'A curtida não foi salva na API: aguarde a publicação sincronizar.',
+        type: 'post-reaction-failed',
+        actorHandle: getPostAuthorHandle(currentPost),
+      });
+      return;
     }
+
+    const optimisticPost = buildOptimisticReactionPost(currentPost, reaction);
     setFeedPosts((current) =>
-      current.map((post) => {
-        if (post.id !== postId) return post;
-        const previousReaction = post.selectedReaction;
-        const reactionSummary = { ...(post.reactionSummary ?? {}) };
-        const reactors = (post.reactors ?? []).filter((item) => item.user !== (currentUser?.name ?? 'Visitante'));
-        if (previousReaction) {
-          reactionSummary[previousReaction] = Math.max((reactionSummary[previousReaction] ?? 1) - 1, 0);
-        }
-        if (previousReaction !== reaction) {
-          reactionSummary[reaction] = (reactionSummary[reaction] ?? 0) + 1;
-          reactors.unshift({
-            user: currentUser?.name ?? 'Visitante',
-            reaction,
-            at: getPostTimestamp(),
-          });
-        }
-        return {
-          ...post,
-          selectedReaction: previousReaction === reaction ? '' : reaction,
-          reactionSummary,
-          reactors,
-        };
-      }),
+      current.map((post) => (post.id === postId ? optimisticPost : post)),
     );
+
+    try {
+      const confirmedPost = await reactToPostRequest(postId, reaction);
+      setFeedPosts((current) =>
+        current.map((post) =>
+          post.id === postId ? mergeConfirmedReactionPost(post, confirmedPost) : post,
+        ),
+      );
+      if (currentPost.selectedReaction !== reaction) {
+        recordFeedInterest(currentPost, 'reaction');
+      }
+    } catch (error) {
+      setFeedPosts((current) =>
+        current.map((post) => (post.id === postId ? currentPost : post)),
+      );
+      addNotification({
+        title: `A curtida não foi salva na API: ${error.message}`,
+        type: 'post-reaction-failed',
+        actorHandle: getPostAuthorHandle(currentPost),
+      });
+    }
   }
 
   function notifyFeedCommentFailure(message) {
@@ -9065,7 +9148,7 @@ async function sharePost() {
   }
 
   function selectReaction(reactionId) {
-    reactToFeedPost(post.id, reactionId);
+    void reactToFeedPost(post.id, reactionId);
     setReactionPickerOpen(false);
   }
 

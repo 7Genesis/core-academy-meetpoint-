@@ -51,6 +51,26 @@ type Pagination = {
 };
 
 const COMMUNITY_SECRET_HASH_ROUNDS = 12;
+const POST_REACTION_TYPES = ['like', 'love', 'fire'] as const;
+const POST_REACTION_LABELS: Record<PostReactionType, string> = {
+  like: 'curtiu',
+  love: 'amou',
+  fire: 'destacou',
+};
+
+type PostReactionType = (typeof POST_REACTION_TYPES)[number];
+type ReactionSummary = Record<PostReactionType, number>;
+type RecentPostReaction = {
+  user: string;
+  userId: string;
+  reaction: PostReactionType;
+  at: string;
+};
+type PostReactionMetadata = {
+  reactionSummary: ReactionSummary;
+  selectedReaction: PostReactionType | '';
+  recentReactions: RecentPostReaction[];
+};
 
 @Injectable()
 export class SocialService {
@@ -251,7 +271,7 @@ export class SocialService {
     return this.getSocialGraph(user);
   }
 
-  async listPosts(query: ListPublicContentQueryDto) {
+  async listPosts(query: ListPublicContentQueryDto, user?: AuthenticatedUser) {
     const { page, limit, skip } = this.pagination(query);
     const search = query.search?.trim();
     const where: Prisma.PostWhereInput = {
@@ -274,8 +294,8 @@ export class SocialService {
         : {}),
     };
 
-    const [data, total] = await this.prisma.withPlatformAdmin((tx) =>
-      Promise.all([
+    const [data, total] = await this.prisma.withPlatformAdmin(async (tx) => {
+      const [posts, count] = await Promise.all([
         tx.post.findMany({
           where,
           orderBy: { createdAt: 'desc' },
@@ -284,13 +304,17 @@ export class SocialService {
           include: this.postInclude(),
         }),
         tx.post.count({ where }),
-      ]),
-    );
+      ]);
+      return [
+        await this.withPostReactionMetadata(tx, posts, user?.sub),
+        count,
+      ] as const;
+    });
 
     return this.page(data, total, page, limit);
   }
 
-  async getPost(id: string) {
+  async getPost(id: string, user?: AuthenticatedUser) {
     const post = await this.prisma.withPlatformAdmin((tx) =>
       tx.post.findFirst({
         where: {
@@ -307,7 +331,10 @@ export class SocialService {
       }),
     );
     if (!post) throw new NotFoundException('Post not found');
-    return post;
+    const [enrichedPost] = await this.prisma.withPlatformAdmin((tx) =>
+      this.withPostReactionMetadata(tx, [post], user?.sub),
+    );
+    return enrichedPost;
   }
 
   async updatePost(id: string, user: AuthenticatedUser, dto: UpdatePostDto) {
@@ -450,22 +477,74 @@ export class SocialService {
     userId: string,
     dto: CreatePostReactionDto,
   ) {
-    await this.ensurePublicPost(postId);
-    return this.prisma.postReaction.upsert({
-      where: {
-        postId_userId_type: {
-          postId,
-          userId,
-          type: dto.type ?? 'like',
+    const reactionType = this.sanitizePostReactionType(dto.type);
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const [post, actor] = await Promise.all([
+        tx.post.findFirst({
+          where: { id: postId, visibility: ContentVisibility.PUBLIC },
+          select: {
+            id: true,
+            tenantId: true,
+            authorId: true,
+            body: true,
+          },
+        }),
+        tx.user.findFirst({
+          where: {
+            id: userId,
+            status: { in: ['ACTIVE', 'PENDING_PAYMENT', 'PAYMENT_PROCESSING'] },
+          },
+          select: { id: true, name: true },
+        }),
+      ]);
+      if (!post) throw new NotFoundException('Post not found');
+      if (!actor) throw new ForbiddenException('User is not active');
+
+      const existing = await tx.postReaction.findUnique({
+        where: {
+          postId_userId: {
+            postId,
+            userId,
+          },
         },
-      },
-      create: {
-        postId,
-        tenantId,
-        userId,
-        type: dto.type ?? 'like',
-      },
-      update: {},
+        select: { id: true, type: true },
+      });
+
+      if (existing?.type === reactionType) {
+        await tx.postReaction.delete({ where: { id: existing.id } });
+      } else if (existing) {
+        await tx.postReaction.update({
+          where: { id: existing.id },
+          data: { type: reactionType },
+        });
+      } else {
+        await tx.postReaction.create({
+          data: {
+            postId,
+            tenantId: post.tenantId || tenantId,
+            userId,
+            type: reactionType,
+          },
+        });
+      }
+
+      if (existing?.type !== reactionType) {
+        await this.createSocialNotification(tx, {
+          tenantId: post.tenantId || tenantId,
+          recipientId: post.authorId,
+          actorId: userId,
+          type: 'post-reaction',
+          title: `${actor.name || 'Um membro'} ${POST_REACTION_LABELS[reactionType]} sua publicação.`,
+          metadata: { postId, reaction: reactionType },
+        });
+      }
+
+      const updatedPost = await tx.post.findFirstOrThrow({
+        where: { id: postId },
+        include: this.postInclude(),
+      });
+      const [enrichedPost] = await this.withPostReactionMetadata(tx, [updatedPost], userId);
+      return enrichedPost;
     });
   }
 
@@ -1342,6 +1421,106 @@ export class SocialService {
         byHandle.set(profile.handle, profile);
       });
     return [...byHandle.values()];
+  }
+
+  private async withPostReactionMetadata<T extends { id: string }>(
+    tx: Prisma.TransactionClient,
+    posts: T[],
+    currentUserId?: string | null,
+  ): Promise<Array<T & PostReactionMetadata>> {
+    const postIds = posts.map((post) => post.id);
+    if (!postIds.length) return [];
+
+    const [groupedReactions, currentUserReactions, recentReactions] =
+      await Promise.all([
+        tx.postReaction.groupBy({
+          by: ['postId', 'type'],
+          where: { postId: { in: postIds } },
+          _count: { _all: true },
+        }),
+        currentUserId
+          ? tx.postReaction.findMany({
+              where: { postId: { in: postIds }, userId: currentUserId },
+              select: { postId: true, type: true },
+            })
+          : Promise.resolve([]),
+        tx.postReaction.findMany({
+          where: { postId: { in: postIds } },
+          orderBy: { createdAt: 'desc' },
+          take: postIds.length * 8,
+          include: { user: { select: this.publicUserSelect() } },
+        }),
+      ]);
+
+    const summaryByPost = new Map<string, ReactionSummary>();
+    const selectedByPost = new Map<string, PostReactionType>();
+    const recentByPost = new Map<string, RecentPostReaction[]>();
+
+    groupedReactions.forEach((reaction) => {
+      const type = this.sanitizePostReactionType(reaction.type);
+      const summary = summaryByPost.get(reaction.postId) ?? this.emptyReactionSummary();
+      summary[type] = reaction._count._all;
+      summaryByPost.set(reaction.postId, summary);
+    });
+
+    currentUserReactions.forEach((reaction) => {
+      selectedByPost.set(
+        reaction.postId,
+        this.sanitizePostReactionType(reaction.type),
+      );
+    });
+
+    recentReactions.forEach((reaction) => {
+      const type = this.sanitizePostReactionType(reaction.type);
+      const current = recentByPost.get(reaction.postId) ?? [];
+      if (current.length >= 6) return;
+      current.push({
+        user: reaction.user.name || 'Membro MeetPoint',
+        userId: reaction.userId,
+        reaction: type,
+        at: reaction.createdAt.toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      });
+      recentByPost.set(reaction.postId, current);
+    });
+
+    return posts.map((post) => {
+      const summary = summaryByPost.get(post.id) ?? this.emptyReactionSummary();
+      const totalReactions = Object.values(summary).reduce(
+        (total, count) => total + count,
+        0,
+      );
+      const postWithCount = post as T & {
+        _count?: Record<string, number>;
+      };
+      return {
+        ...post,
+        _count: {
+          ...(postWithCount._count ?? {}),
+          reactions: totalReactions,
+        },
+        reactionSummary: summary,
+        selectedReaction: selectedByPost.get(post.id) ?? '',
+        recentReactions: recentByPost.get(post.id) ?? [],
+      };
+    });
+  }
+
+  private emptyReactionSummary(): ReactionSummary {
+    return { like: 0, love: 0, fire: 0 };
+  }
+
+  private sanitizePostReactionType(type?: string): PostReactionType {
+    const normalized = (type || 'like').trim().toLowerCase();
+    if (!POST_REACTION_TYPES.includes(normalized as PostReactionType)) {
+      throw new BadRequestException('Invalid post reaction type');
+    }
+    return normalized as PostReactionType;
   }
 
   private sanitizePostCreate(dto: CreatePostDto): Prisma.PostUncheckedCreateInput {

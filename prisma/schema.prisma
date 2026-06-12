@@ -491,7 +491,8 @@ model PostReaction {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([postId, userId, type])
+  @@unique([postId, userId])
+  @@index([postId, type])
   @@index([postId])
   @@index([userId])
   @@map("post_reactions")

@@ -129,6 +129,7 @@ export class ListPostCommentsQueryDto {
 
 export class CreatePostReactionDto {
   @IsString()
+  @IsIn(['like', 'love', 'fire'])
   @MaxLength(30)
   @IsOptional()
   type?: string;
