@@ -602,12 +602,21 @@ function getCoursePublicationIssues(course, modules) {
 }
 
 function getCommunityAccessMode(community = {}) {
-  if (community.accessMode) return community.accessMode;
+  const accessMode = normalizeCommunityAccessMode(community.accessMode);
+  if (accessMode) return accessMode;
   return community.privacy === 'Privada' ? 'invite' : 'public';
 }
 
 function isCommunityPrivate(community = {}) {
   return getCommunityAccessMode(community) !== 'public';
+}
+
+function normalizeCommunityAccessMode(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'password') return 'password';
+  if (normalized === 'invite' || normalized === 'invite_only') return 'invite';
+  if (normalized === 'public') return 'public';
+  return '';
 }
 
 function getCommunityAccessLabel(community = {}) {
@@ -1396,6 +1405,41 @@ function supportRequest(path, options = {}) {
   return apiRequest(`/support${path}`, options);
 }
 
+function joinCommunityRequest(communityId, credentials = {}) {
+  return apiRequest(`/communities/${encodeURIComponent(communityId)}/join`, {
+    method: 'POST',
+    body: JSON.stringify(credentials),
+  });
+}
+
+function communityMessagesRequest(communityId) {
+  return apiRequest(`/communities/${encodeURIComponent(communityId)}/messages?limit=100`);
+}
+
+function sendCommunityMessageRequest(communityId, body) {
+  return apiRequest(`/communities/${encodeURIComponent(communityId)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
+}
+
+function updateCommunityMessageRequest(communityId, messageId, body) {
+  return apiRequest(
+    `/communities/${encodeURIComponent(communityId)}/messages/${encodeURIComponent(messageId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ body }),
+    },
+  );
+}
+
+function deleteCommunityMessageRequest(communityId, messageId) {
+  return apiRequest(
+    `/communities/${encodeURIComponent(communityId)}/messages/${encodeURIComponent(messageId)}`,
+    { method: 'DELETE' },
+  );
+}
+
 function unwrapApiList(response) {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response?.data)) return response.data;
@@ -1506,6 +1550,10 @@ function mapBackendCourseToCourse(course = {}) {
 }
 
 function mapBackendCommunityToCommunity(community = {}) {
+  const accessMode = normalizeCommunityAccessMode(community.accessMode) || 'public';
+  const membershipRole = community.membershipRole ?? '';
+  const isMember = Boolean(community.isMember);
+  const isAdmin = ['OWNER', 'ADMIN'].includes(String(membershipRole).toUpperCase());
   return {
     id: community.id,
     name: community.name ?? 'Comunidade MeetPoint',
@@ -1515,13 +1563,41 @@ function mapBackendCommunityToCommunity(community = {}) {
     photo: community.imageUrl ?? '',
     members: community.memberCount ?? community._count?.members ?? 0,
     unread: 0,
-    privacy: 'Público',
-    accessMode: 'public',
+    privacy: accessMode === 'public' ? 'Público' : 'Privada',
+    accessMode,
     password: '',
-    joined: false,
-    isAdmin: false,
+    joined: isMember,
+    isAdmin,
     favorite: false,
     color: 'yellow',
+  };
+}
+
+function mapBackendCommunityMessageToMessage(message = {}) {
+  const createdAt = message.createdAt ? new Date(message.createdAt) : new Date();
+  const editedAt = message.editedAt ? new Date(message.editedAt) : null;
+  const deletedAt = message.deletedAt ? new Date(message.deletedAt) : null;
+  const authorName = message.author?.name ?? 'Membro';
+  return {
+    id: message.id,
+    author: authorName,
+    role: message.mine ? 'Você' : 'Membro',
+    time: message.time ?? createdAt.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+    createdAt: createdAt.getTime(),
+    body: message.body ?? '',
+    mine: Boolean(message.mine),
+    edited: Boolean(message.edited ?? message.editedAt),
+    editedAt: editedAt
+      ? editedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      : '',
+    deleted: Boolean(message.deleted ?? message.deletedAt),
+    deletedByAdmin: Boolean(message.deletedByAdmin),
+    deletedAt: deletedAt
+      ? deletedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      : '',
   };
 }
 
@@ -2396,6 +2472,7 @@ function App() {
   const [requestedPrivateConversation, setRequestedPrivateConversation] = useState(null);
   const [communityAccessRequest, setCommunityAccessRequest] = useState(null);
   const [communityAccessNotice, setCommunityAccessNotice] = useState('');
+  const [communityCreateNotice, setCommunityCreateNotice] = useState('');
   const [mediaViewer, setMediaViewer] = useState(null);
   const [mediaViewerScrollY, setMediaViewerScrollY] = useState(0);
   const [mediaViewerFocusElement, setMediaViewerFocusElement] = useState(null);
@@ -3345,6 +3422,34 @@ function App() {
     }, 120);
   }
 
+  async function joinAndEnterCommunity(communityId, credentials = {}) {
+    if (!requireAuthenticatedAction('entrar em comunidade')) return;
+    const community = communities.find((item) => item.id === communityId);
+    if (!community) return;
+
+    try {
+      const membership = await joinCommunityRequest(communityId, credentials);
+      setCommunities((current) =>
+        current.map((item) => {
+          if (item.id !== communityId) return item;
+          const wasJoined = Boolean(item.joined || item.isAdmin);
+          const role = String(membership.role ?? '').toUpperCase();
+          return {
+            ...item,
+            joined: true,
+            isAdmin: item.isAdmin || role === 'OWNER' || role === 'ADMIN',
+            members: wasJoined ? item.members : (item.members ?? 0) + 1,
+          };
+        }),
+      );
+      setCommunityAccessRequest(null);
+      setCommunityAccessNotice('');
+      enterCommunity(communityId);
+    } catch (error) {
+      setCommunityAccessNotice(error.message || 'Não foi possível entrar na comunidade.');
+    }
+  }
+
   function openCommunity(communityId) {
     if (!requireAuthenticatedAction('entrar em comunidade')) return;
     const community = communities.find((item) => item.id === communityId);
@@ -3356,91 +3461,66 @@ function App() {
       return;
     }
 
-    enterCommunity(communityId);
+    if (community.joined || community.isAdmin) {
+      enterCommunity(communityId);
+      return;
+    }
+
+    void joinAndEnterCommunity(communityId);
   }
 
-  function confirmCommunityAccess(password = '') {
+  function confirmCommunityAccess(credential = '') {
     if (!requireAuthenticatedAction('entrar em comunidade privada')) return;
     const community = communities.find((item) => item.id === communityAccessRequest?.communityId);
     if (!community) return;
 
     const accessMode = getCommunityAccessMode(community);
-    if (accessMode === 'invite') {
-      setCommunityAccessNotice('Essa comunidade só aceita entrada por convite do administrador.');
-      return;
-    }
-
-    if (accessMode === 'password' && String(community.password ?? '') !== password.trim()) {
-      setCommunityAccessNotice('Senha incorreta para esta comunidade.');
-      return;
-    }
-
-    setCommunities((current) =>
-      current.map((item) =>
-        item.id === community.id
-          ? { ...item, joined: true, members: (item.members ?? 0) + 1 }
-          : item,
-      ),
+    void joinAndEnterCommunity(
+      community.id,
+      accessMode === 'password'
+        ? { password: credential }
+        : { inviteCode: credential },
     );
-    setCommunityAccessRequest(null);
-    setCommunityAccessNotice('');
-    enterCommunity(community.id);
   }
 
   function openCommunityCreate() {
     if (!requireAuthenticatedAction('criar comunidade')) return;
+    setCommunityCreateNotice('');
     openPage('community-create');
   }
 
   // Comunidades: cria grupo, seleciona automaticamente e sugere adicionar membros.
-  function createCommunity(data) {
+  async function createCommunity(data) {
     if (!requireAuthenticatedAction('criar comunidade')) return;
-    const temporaryId = `community-${Date.now()}`;
-    const community = {
-      id: temporaryId,
-      name: data.name,
-      topic: data.topic,
-      type: data.type,
-      relatedTo: data.relatedTo,
-      photo: data.photo ?? '',
-      members: 1,
-      unread: 0,
-      privacy: data.accessMode === 'public' ? 'Público' : 'Privada',
-      accessMode: data.accessMode,
-      password: data.accessMode === 'password' ? data.password : '',
-      joined: true,
-      isAdmin: true,
-      favorite: false,
-      color: data.color,
-    };
-    setCommunities((current) => [community, ...current]);
-    setActiveCommunityId(community.id);
-    setCommunityBubbleOpen(true);
-    setShowMemberSuggestion(true);
-    openPage('communities', { preserveCommunityOpen: true });
-    apiRequest('/communities', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: data.name,
-        topic: data.topic || undefined,
-        description: data.relatedTo || undefined,
-        imageUrl: normalizeExternalUrl(data.photo ?? '') || undefined,
-      }),
-    })
-      .then((createdCommunity) => {
-        const mappedCommunity = {
-          ...mapBackendCommunityToCommunity(createdCommunity),
-          joined: true,
-          isAdmin: true,
-        };
-        setCommunities((current) =>
-          current.map((item) => (item.id === temporaryId ? mappedCommunity : item)),
-        );
-        setActiveCommunityId(mappedCommunity.id);
-      })
-      .catch(() => {
-        setCommunityAccessNotice('Comunidade criada localmente, mas a API não confirmou a publicação global.');
+    setCommunityCreateNotice('Publicando comunidade...');
+
+    try {
+      const createdCommunity = await apiRequest('/communities', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: data.name,
+          topic: data.topic || undefined,
+          description: data.relatedTo || undefined,
+          imageUrl: normalizeExternalUrl(data.photo ?? '') || undefined,
+          accessMode: data.accessMode || 'public',
+          password: data.accessMode === 'password' ? data.password : undefined,
+          inviteCode: data.accessMode === 'invite' ? data.inviteCode : undefined,
+        }),
       });
+      const mappedCommunity = {
+        ...mapBackendCommunityToCommunity(createdCommunity),
+        joined: true,
+        isAdmin: true,
+      };
+      setCommunities((current) => mergeById([mappedCommunity], current));
+      setActiveCommunityId(mappedCommunity.id);
+      setCommunityBubbleOpen(true);
+      setShowMemberSuggestion(true);
+      setCommunityCreateNotice('');
+      openPage('communities', { preserveCommunityOpen: true });
+    } catch (error) {
+      setCommunityCreateNotice(error.message || 'Não foi possível publicar a comunidade.');
+    }
   }
 
   function toggleFavorite(communityId) {
@@ -5104,6 +5184,7 @@ function App() {
               goBack={goBack}
               niches={niches}
               addNiche={addNiche}
+              createNotice={communityCreateNotice}
             />
           )}
           {activePage === 'event-create' && (
@@ -5466,11 +5547,15 @@ function PrivacyConsentModal({ actionLabel, onAccept, onClose }) {
 }
 
 function CommunityAccessModal({ community, notice, onClose, onConfirm }) {
-  const [password, setPassword] = useState('');
+  const [credential, setCredential] = useState('');
   if (!community) return null;
 
   const accessMode = getCommunityAccessMode(community);
   const isPasswordProtected = accessMode === 'password';
+  const label = isPasswordProtected ? 'Senha da comunidade' : 'Código de convite';
+  const placeholder = isPasswordProtected
+    ? 'Digite a senha enviada pelo administrador'
+    : 'Digite o código enviado pelo administrador';
 
   return (
     <div className="floating-backdrop" onClick={onClose}>
@@ -5481,36 +5566,27 @@ function CommunityAccessModal({ community, notice, onClose, onConfirm }) {
         <span className="section-kicker">Comunidade privada</span>
         <h3>{community.name}</h3>
         <p>{getCommunityAccessLabel(community)}</p>
-        {isPasswordProtected ? (
-          <form
-            className="community-access-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onConfirm(password);
-            }}
-          >
-            <label>
-              Senha da comunidade
-              <input
-                autoFocus
-                type="password"
-                data-protected-password="true"
-                autoComplete="off"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Digite a senha enviada pelo administrador"
-              />
-            </label>
-            <button type="submit">Entrar na comunidade</button>
-          </form>
-        ) : (
-          <div className="community-access-form">
-            <p>Peça convite ao administrador para conseguir acessar a conversa.</p>
-            <button type="button" onClick={() => onConfirm('')}>
-              Solicitar convite
-            </button>
-          </div>
-        )}
+        <form
+          className="community-access-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onConfirm(credential);
+          }}
+        >
+          <label>
+            {label}
+            <input
+              autoFocus
+              type="password"
+              data-protected-password="true"
+              autoComplete="off"
+              value={credential}
+              onChange={(event) => setCredential(event.target.value)}
+              placeholder={placeholder}
+            />
+          </label>
+          <button type="submit">Entrar na comunidade</button>
+        </form>
         {notice && <p className="policy-note">{notice}</p>}
       </section>
     </div>
@@ -11953,7 +12029,8 @@ function CommunitiesView({
 }) {
   const [draft, setDraft] = useState('');
   const [moderationMessage, setModerationMessage] = useState('');
-  const [localMessages, setLocalMessages] = useState(messages);
+  const [localMessages, setLocalMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [unreadCommunityMessages, setUnreadCommunityMessages] = useState(0);
   const [communityToast, setCommunityToast] = useState('');
   const [showNewMessageButton, setShowNewMessageButton] = useState(false);
@@ -11984,6 +12061,58 @@ function CommunitiesView({
   useEffect(() => {
     setCommunityDetailsOpen(false);
   }, [activeCommunity?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let pollingId = 0;
+
+    async function loadCommunityMessages({ silent = false } = {}) {
+      if (!activeCommunity?.id || !communityBubbleOpen || !currentUser) {
+        setLocalMessages([]);
+        return;
+      }
+      if (!activeCommunity.joined && !activeCommunity.isAdmin) {
+        setLocalMessages([]);
+        setModerationMessage('Entre na comunidade para ver a conversa.');
+        return;
+      }
+
+      if (!silent) setMessagesLoading(true);
+      try {
+        const response = await communityMessagesRequest(activeCommunity.id);
+        if (cancelled) return;
+        setLocalMessages(unwrapApiList(response).map(mapBackendCommunityMessageToMessage));
+        if (!silent) {
+          setModerationMessage('');
+          setTimeout(scrollCommunityToBottom, 80);
+        }
+      } catch (error) {
+        if (!cancelled && !silent) {
+          setModerationMessage(error.message || 'Não foi possível carregar as mensagens da comunidade.');
+        }
+      } finally {
+        if (!cancelled && !silent) setMessagesLoading(false);
+      }
+    }
+
+    loadCommunityMessages();
+    if (activeCommunity?.id && communityBubbleOpen && currentUser) {
+      pollingId = window.setInterval(() => {
+        loadCommunityMessages({ silent: true });
+      }, 3000);
+    }
+
+    return () => {
+      cancelled = true;
+      if (pollingId) window.clearInterval(pollingId);
+    };
+  }, [
+    activeCommunity?.id,
+    activeCommunity?.joined,
+    activeCommunity?.isAdmin,
+    communityBubbleOpen,
+    currentUser?.id,
+  ]);
 
   useEffect(() => {
     if (!communityDetailsOpen) return undefined;
@@ -12051,8 +12180,9 @@ function CommunitiesView({
     return distanceFromBottom < 120;
   }
 
-  function publish() {
+  async function publish() {
     const shouldAutoScroll = isCommunityNearBottom();
+    const content = draft.trim();
 
     const blocked = bannedTerms.some((term) =>
       draft.toLowerCase().includes(term),
@@ -12063,47 +12193,39 @@ function CommunitiesView({
       return;
     }
 
-    if (!draft.trim()) return;
-
-    setLocalMessages((current) => [
-      ...current,
-      {
-        id: `community-message-${Date.now()}`,
-        author: currentUser?.name ?? 'Visitante',
-        role: currentUser?.label ?? 'Membro',
-        time: new Date().toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-        createdAt: Date.now(),
-        body: draft,
-        mine: true,
-        edited: false,
-        deleted: false,
-        deletedByAdmin: false,
-      },
-    ]);
-
-    setDraft('');
-    setModerationMessage('Mensagem enviada para a comunidade.');
-    setCommunityToast('Nova mensagem na comunidade.');
-
-    if (shouldAutoScroll) {
-      setTimeout(scrollCommunityToBottom, 80);
-      setUnreadCommunityMessages(0);
-      setShowNewMessageButton(false);
-    } else {
-      setUnreadCommunityMessages((current) => current + 1);
-      setShowNewMessageButton(true);
+    if (!content || !activeCommunity?.id) return;
+    if (!activeCommunity.joined && !activeCommunity.isAdmin) {
+      setModerationMessage('Entre na comunidade antes de enviar mensagem.');
+      return;
     }
 
-    setTimeout(() => setCommunityToast(''), 3500);
+    try {
+      const savedMessage = await sendCommunityMessageRequest(activeCommunity.id, content);
+      const mappedMessage = mapBackendCommunityMessageToMessage(savedMessage);
+      setLocalMessages((current) => mergeById([...current, mappedMessage], []));
+      setDraft('');
+      setModerationMessage('Mensagem enviada para a comunidade.');
+      setCommunityToast('Nova mensagem na comunidade.');
+
+      if (shouldAutoScroll) {
+        setTimeout(scrollCommunityToBottom, 80);
+        setUnreadCommunityMessages(0);
+        setShowNewMessageButton(false);
+      } else {
+        setUnreadCommunityMessages((current) => current + 1);
+        setShowNewMessageButton(true);
+      }
+
+      setTimeout(() => setCommunityToast(''), 3500);
+    } catch (error) {
+      setModerationMessage(error.message || 'Não foi possível enviar a mensagem.');
+    }
   }
 
   function handleMessageKeyDown(event) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      publish();
+      void publish();
     }
   }
   function canAuthorModifyMessage(message) {
@@ -12115,57 +12237,48 @@ function CommunitiesView({
     return Boolean(activeCommunity?.isAdmin);
   }
 
-  function editCommunityMessage(messageId, nextBody) {
-    if (!nextBody.trim()) return;
+  async function editCommunityMessage(messageId, nextBody) {
+    const content = nextBody.trim();
+    if (!content || !activeCommunity?.id) return;
 
-    setLocalMessages((current) =>
-      current.map((message) => {
-        if (message.id !== messageId) return message;
-
-        if (!canAuthorModifyMessage(message)) return message;
-
-        return {
-          ...message,
-          body: nextBody.trim(),
-          edited: true,
-          editedAt: new Date().toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-        };
-      }),
-    );
-
-    setEditingCommunityMessageId('');
-    setCommunityEditDraft('');
-    setModerationMessage('Mensagem editada.');
+    try {
+      const updatedMessage = await updateCommunityMessageRequest(
+        activeCommunity.id,
+        messageId,
+        content,
+      );
+      const mappedMessage = mapBackendCommunityMessageToMessage(updatedMessage);
+      setLocalMessages((current) =>
+        current.map((message) =>
+          message.id === messageId ? mappedMessage : message,
+        ),
+      );
+      setEditingCommunityMessageId('');
+      setCommunityEditDraft('');
+      setModerationMessage('Mensagem editada.');
+    } catch (error) {
+      setModerationMessage(error.message || 'Não foi possível editar a mensagem.');
+    }
   }
 
-  function deleteCommunityMessage(messageId) {
-    setLocalMessages((current) =>
-      current.map((message) => {
-        if (message.id !== messageId) return message;
+  async function deleteCommunityMessage(messageId) {
+    if (!activeCommunity?.id) return;
 
-        const deletedByAdmin = canAdminDeleteMessage() && !canAuthorModifyMessage(message);
-
-        if (!canAuthorModifyMessage(message) && !canAdminDeleteMessage()) {
-          return message;
-        }
-
-        return {
-          ...message,
-          body: '',
-          deleted: true,
-          deletedByAdmin,
-          deletedAt: new Date().toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-        };
-      }),
-    );
-
-    setModerationMessage('Mensagem apagada.');
+    try {
+      const deletedMessage = await deleteCommunityMessageRequest(
+        activeCommunity.id,
+        messageId,
+      );
+      const mappedMessage = mapBackendCommunityMessageToMessage(deletedMessage);
+      setLocalMessages((current) =>
+        current.map((message) =>
+          message.id === messageId ? mappedMessage : message,
+        ),
+      );
+      setModerationMessage('Mensagem apagada.');
+    } catch (error) {
+      setModerationMessage(error.message || 'Não foi possível apagar a mensagem.');
+    }
   }
 
   function runAdminAction(action) {
@@ -12537,10 +12650,22 @@ function CommunitiesView({
                   </div>
                 </header>
 	        <div className="message-list" ref={communityMessagesRef}>
-	          {localMessages.map((message, index) => (
+            {messagesLoading && (
+              <article className="empty-state inline-empty-state">
+                <strong>Carregando mensagens...</strong>
+                <span>Sincronizando conversa da comunidade.</span>
+              </article>
+            )}
+            {!messagesLoading && localMessages.length === 0 && (
+              <article className="empty-state inline-empty-state">
+                <strong>Nenhuma mensagem ainda.</strong>
+                <span>Envie a primeira mensagem para iniciar a conversa.</span>
+              </article>
+            )}
+	          {localMessages.map((message) => (
             <article
               className={message.mine ? 'message mine' : 'message'}
-              key={`${message.author}-${message.time}-${index}`}
+              key={message.id}
             >
               <header>
 	                <Avatar
@@ -12572,7 +12697,7 @@ function CommunitiesView({
             <button
               className="social-action-button save-action"
               onClick={() =>
-                editCommunityMessage(message.id, communityEditDraft)
+                void editCommunityMessage(message.id, communityEditDraft)
               }
             >
               💾 Salvar alterações
@@ -12623,7 +12748,7 @@ function CommunitiesView({
 
                   if (!confirmed) return;
 
-                  deleteCommunityMessage(message.id);
+                  void deleteCommunityMessage(message.id);
                 }}
               >
                 🗑️ Apagar
@@ -12668,7 +12793,7 @@ function CommunitiesView({
               +
             </button>
             <button>Foto/vídeo</button>
-            <button className="primary" onClick={publish}>Enviar</button>
+            <button className="primary" onClick={() => void publish()}>Enviar</button>
           </div>
 	          {moderationMessage && <p className="policy-note">{moderationMessage}</p>}
 	        </div>
@@ -12732,7 +12857,7 @@ function CommunitiesView({
 }
 
 // Criacao de comunidade: formulario com nicho, assunto e vinculo opcional.
-function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
+function CreateCommunityView({ createCommunity, goBack, niches, addNiche, createNotice }) {
   const defaultRelatedOptions = [
     'Curso: Arquitetura SaaS Multi-Tenant',
     'Curso: Comunidades, Conteúdo e Retenção',
@@ -12747,6 +12872,7 @@ function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
     relatedTo: 'Curso: Arquitetura SaaS Multi-Tenant',
     accessMode: 'public',
     password: '',
+    inviteCode: '',
     color: 'yellow',
     photo: '',
   });
@@ -12771,6 +12897,10 @@ function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
       setAccessError('Defina uma senha para criar comunidade privada com senha.');
       return;
     }
+    if (form.accessMode === 'invite' && !form.inviteCode.trim()) {
+      setAccessError('Defina um código de convite para criar comunidade privada por convite.');
+      return;
+    }
     setAccessError('');
     const relatedTo =
       form.relatedTo === 'Outro curso ou tema'
@@ -12782,6 +12912,7 @@ function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
       name: form.name || 'Nova comunidade',
       topic: form.topic || 'Assunto ainda não definido',
       password: form.accessMode === 'password' ? form.password.trim() : '',
+      inviteCode: form.accessMode === 'invite' ? form.inviteCode.trim() : '',
     });
   }
 
@@ -12934,11 +13065,25 @@ function CreateCommunityView({ createCommunity, goBack, niches, addNiche }) {
               />
             </label>
           )}
+          {form.accessMode === 'invite' && (
+            <label>
+              Código de convite
+              <input
+                type="password"
+                data-protected-password="true"
+                autoComplete="new-password"
+                value={form.inviteCode}
+                onChange={(event) => updateForm('inviteCode', event.target.value)}
+                placeholder="Defina um código para convidados"
+              />
+            </label>
+          )}
           <p className="policy-note">
-            Comunidades privadas não entram livremente: por convite, só o admin libera;
-            com senha, a pessoa precisa informar a senha definida.
+            Comunidades privadas não entram livremente: por convite, a pessoa precisa
+            do código definido; com senha, precisa informar a senha da comunidade.
           </p>
           {accessError && <p className="invalid-note">{accessError}</p>}
+          {createNotice && <p className="policy-note">{createNotice}</p>}
         </section>
 
         <aside className={`admin-card ${form.color}`}>

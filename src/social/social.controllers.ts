@@ -20,14 +20,18 @@ import {
   ApplyOpportunityDto,
   CreateBenefitDto,
   CreateCommunityDto,
+  CreateCommunityMessageDto,
   CreateEventDto,
   CreateOpportunityDto,
   CreatePostCommentDto,
   CreatePostDto,
   CreatePostReactionDto,
+  JoinCommunityDto,
+  ListCommunityMessagesQueryDto,
   ListPublicContentQueryDto,
   UpdateBenefitDto,
   UpdateCommunityDto,
+  UpdateCommunityMessageDto,
   UpdateEventDto,
   UpdateOpportunityDto,
   UpdatePostDto,
@@ -107,14 +111,20 @@ export class CommunitiesController {
 
   @Public()
   @Get()
-  findAll(@Query() query: ListPublicContentQueryDto) {
-    return this.socialService.listCommunities(query);
+  findAll(
+    @Query() query: ListPublicContentQueryDto,
+    @CurrentUser() user?: AuthenticatedUser,
+  ) {
+    return this.socialService.listCommunities(query, user);
   }
 
   @Public()
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.socialService.getCommunity(id);
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user?: AuthenticatedUser,
+  ) {
+    return this.socialService.getCommunity(id, user);
   }
 
   @RequireActiveSubscription()
@@ -146,11 +156,52 @@ export class CommunitiesController {
   @RequireActiveSubscription()
   @Post(':id/join')
   join(
-    @Req() request: TenantRequest,
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: JoinCommunityDto,
   ) {
-    return this.socialService.joinCommunity(request.tenantId, id, user.sub);
+    return this.socialService.joinCommunity(id, user.sub, dto);
+  }
+
+  @RequireActiveSubscription()
+  @Get(':id/messages')
+  listMessages(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListCommunityMessagesQueryDto,
+  ) {
+    return this.socialService.listCommunityMessages(id, user, query);
+  }
+
+  @RequireActiveSubscription()
+  @Post(':id/messages')
+  createMessage(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateCommunityMessageDto,
+  ) {
+    return this.socialService.createCommunityMessage(id, user, dto);
+  }
+
+  @RequireActiveSubscription()
+  @Patch(':id/messages/:messageId')
+  updateMessage(
+    @Param('id') id: string,
+    @Param('messageId') messageId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateCommunityMessageDto,
+  ) {
+    return this.socialService.updateCommunityMessage(id, messageId, user, dto);
+  }
+
+  @RequireActiveSubscription()
+  @Delete(':id/messages/:messageId')
+  deleteMessage(
+    @Param('id') id: string,
+    @Param('messageId') messageId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.socialService.deleteCommunityMessage(id, messageId, user);
   }
 }
 

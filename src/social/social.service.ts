@@ -4,21 +4,31 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ContentVisibility, Prisma, UserRole } from '@prisma/client';
+import {
+  CommunityAccessMode,
+  ContentVisibility,
+  Prisma,
+  UserRole,
+} from '@prisma/client';
+import { compare, hash } from 'bcryptjs';
 import { AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ApplyOpportunityDto,
   CreateBenefitDto,
   CreateCommunityDto,
+  CreateCommunityMessageDto,
   CreateEventDto,
   CreateOpportunityDto,
   CreatePostCommentDto,
   CreatePostDto,
   CreatePostReactionDto,
+  JoinCommunityDto,
+  ListCommunityMessagesQueryDto,
   ListPublicContentQueryDto,
   UpdateBenefitDto,
   UpdateCommunityDto,
+  UpdateCommunityMessageDto,
   UpdateEventDto,
   UpdateOpportunityDto,
   UpdatePostDto,
@@ -29,6 +39,8 @@ type Pagination = {
   limit: number;
   skip: number;
 };
+
+const COMMUNITY_SECRET_HASH_ROUNDS = 12;
 
 @Injectable()
 export class SocialService {
@@ -170,23 +182,41 @@ export class SocialService {
     });
   }
 
-  createCommunity(tenantId: string, ownerId: string, dto: CreateCommunityDto) {
-    return this.prisma.community.create({
-      data: {
-        ...dto,
-        tenantId,
-        ownerId,
-        visibility: ContentVisibility.PUBLIC,
-        members: {
-          create: { tenantId, userId: ownerId, role: 'OWNER' },
+  async createCommunity(
+    tenantId: string,
+    ownerId: string,
+    dto: CreateCommunityDto,
+  ) {
+    const access = await this.prepareCommunityAccess(dto);
+    const community = await this.prisma.withTenant(tenantId, (tx) =>
+      tx.community.create({
+        data: {
+          name: this.sanitizeRequiredText(dto.name, 'name'),
+          topic: this.sanitizeOptionalText(dto.topic),
+          description: this.sanitizeOptionalText(dto.description),
+          city: this.sanitizeOptionalText(dto.city),
+          imageUrl: dto.imageUrl,
+          tenantId,
+          ownerId,
+          visibility: ContentVisibility.PUBLIC,
+          accessMode: access.accessMode,
+          passwordHash: access.passwordHash,
+          inviteCodeHash: access.inviteCodeHash,
+          members: {
+            create: { tenantId, userId: ownerId, role: 'OWNER' },
+          },
+          memberCount: 1,
         },
-        memberCount: 1,
-      },
-      include: this.communityInclude(),
-    });
+        select: this.communitySelect(ownerId),
+      }),
+    );
+    return this.mapCommunityForUser(community);
   }
 
-  async listCommunities(query: ListPublicContentQueryDto) {
+  async listCommunities(
+    query: ListPublicContentQueryDto,
+    user?: AuthenticatedUser,
+  ) {
     const { page, limit, skip } = this.pagination(query);
     const search = query.search?.trim();
     const where: Prisma.CommunityWhereInput = {
@@ -215,23 +245,28 @@ export class SocialService {
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
-          include: this.communityInclude(),
+          select: this.communitySelect(user?.sub),
         }),
         tx.community.count({ where }),
       ]),
     );
-    return this.page(data, total, page, limit);
+    return this.page(
+      data.map((community) => this.mapCommunityForUser(community)),
+      total,
+      page,
+      limit,
+    );
   }
 
-  async getCommunity(id: string) {
+  async getCommunity(id: string, user?: AuthenticatedUser) {
     const community = await this.prisma.withPlatformAdmin((tx) =>
       tx.community.findFirst({
         where: { id, visibility: ContentVisibility.PUBLIC },
-        include: this.communityInclude(),
+        select: this.communitySelect(user?.sub),
       }),
     );
     if (!community) throw new NotFoundException('Community not found');
-    return community;
+    return this.mapCommunityForUser(community);
   }
 
   async updateCommunity(
@@ -242,11 +277,34 @@ export class SocialService {
     const community = await this.prisma.community.findUnique({ where: { id } });
     if (!community) throw new NotFoundException('Community not found');
     this.assertOwnerOrAdmin(community.ownerId, user);
-    return this.prisma.community.update({
-      where: { id },
-      data: dto,
-      include: this.communityInclude(),
+    const access = await this.prepareCommunityAccess(dto, {
+      accessMode: community.accessMode,
+      passwordHash: community.passwordHash,
+      inviteCodeHash: community.inviteCodeHash,
     });
+    const updated = await this.prisma.community.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined
+          ? { name: this.sanitizeRequiredText(dto.name, 'name') }
+          : {}),
+        ...(dto.topic !== undefined
+          ? { topic: this.sanitizeOptionalText(dto.topic) }
+          : {}),
+        ...(dto.description !== undefined
+          ? { description: this.sanitizeOptionalText(dto.description) }
+          : {}),
+        ...(dto.city !== undefined
+          ? { city: this.sanitizeOptionalText(dto.city) }
+          : {}),
+        ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl } : {}),
+        accessMode: access.accessMode,
+        passwordHash: access.passwordHash,
+        inviteCodeHash: access.inviteCodeHash,
+      },
+      select: this.communitySelect(user.sub),
+    });
+    return this.mapCommunityForUser(updated);
   }
 
   async deleteCommunity(id: string, user: AuthenticatedUser) {
@@ -257,12 +315,34 @@ export class SocialService {
     return { deleted: true };
   }
 
-  async joinCommunity(tenantId: string, communityId: string, userId: string) {
-    await this.ensurePublicCommunity(communityId);
-    return this.prisma.$transaction(async (tx) => {
+  async joinCommunity(
+    communityId: string,
+    userId: string,
+    dto: JoinCommunityDto = {},
+  ) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const community = await tx.community.findFirst({
+        where: { id: communityId, visibility: ContentVisibility.PUBLIC },
+        select: {
+          id: true,
+          tenantId: true,
+          accessMode: true,
+          passwordHash: true,
+          inviteCodeHash: true,
+        },
+      });
+      if (!community) throw new NotFoundException('Community not found');
+
+      const existingMembership = await tx.communityMember.findUnique({
+        where: { communityId_userId: { communityId, userId } },
+      });
+      if (existingMembership) return existingMembership;
+
+      await this.assertCommunityCanBeJoined(community, dto);
+
       const membership = await tx.communityMember.upsert({
         where: { communityId_userId: { communityId, userId } },
-        create: { communityId, tenantId, userId },
+        create: { communityId, tenantId: community.tenantId, userId },
         update: {},
       });
       const memberCount = await tx.communityMember.count({
@@ -274,6 +354,112 @@ export class SocialService {
       });
       return membership;
     });
+  }
+
+  async listCommunityMessages(
+    communityId: string,
+    user: AuthenticatedUser,
+    query: ListCommunityMessagesQueryDto,
+  ) {
+    const limit = query.limit ?? 100;
+    const data = await this.prisma.withPlatformAdmin(async (tx) => {
+      await this.assertCommunityMember(tx, communityId, user.sub);
+      const messages = await tx.communityMessage.findMany({
+        where: { communityId },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        select: this.communityMessageSelect(),
+      });
+      return messages.reverse();
+    });
+    return { data: data.map((message) => this.mapCommunityMessage(message, user)) };
+  }
+
+  async createCommunityMessage(
+    communityId: string,
+    user: AuthenticatedUser,
+    dto: CreateCommunityMessageDto,
+  ) {
+    const message = await this.prisma.withPlatformAdmin(async (tx) => {
+      const community = await this.assertCommunityMember(tx, communityId, user.sub);
+      return tx.communityMessage.create({
+        data: {
+          communityId,
+          tenantId: community.tenantId,
+          authorId: user.sub,
+          body: this.sanitizeRequiredText(dto.body, 'body'),
+        },
+        select: this.communityMessageSelect(),
+      });
+    });
+    return this.mapCommunityMessage(message, user);
+  }
+
+  async updateCommunityMessage(
+    communityId: string,
+    messageId: string,
+    user: AuthenticatedUser,
+    dto: UpdateCommunityMessageDto,
+  ) {
+    const message = await this.prisma.withPlatformAdmin(async (tx) => {
+      await this.assertCommunityMember(tx, communityId, user.sub);
+      const existing = await tx.communityMessage.findFirst({
+        where: { id: messageId, communityId },
+        select: { id: true, authorId: true, deletedAt: true },
+      });
+      if (!existing || existing.deletedAt) {
+        throw new NotFoundException('Community message not found');
+      }
+      if (existing.authorId !== user.sub) {
+        throw new ForbiddenException('Only the author can edit this message');
+      }
+      return tx.communityMessage.update({
+        where: { id: messageId },
+        data: {
+          body: this.sanitizeRequiredText(dto.body, 'body'),
+          editedAt: new Date(),
+        },
+        select: this.communityMessageSelect(),
+      });
+    });
+    return this.mapCommunityMessage(message, user);
+  }
+
+  async deleteCommunityMessage(
+    communityId: string,
+    messageId: string,
+    user: AuthenticatedUser,
+  ) {
+    const message = await this.prisma.withPlatformAdmin(async (tx) => {
+      const membership = await this.assertCommunityMember(tx, communityId, user.sub);
+      const existing = await tx.communityMessage.findFirst({
+        where: { id: messageId, communityId },
+        select: { id: true, authorId: true, deletedAt: true },
+      });
+      if (!existing || existing.deletedAt) {
+        throw new NotFoundException('Community message not found');
+      }
+      const isAuthor = existing.authorId === user.sub;
+      const isAdmin =
+        membership.role === 'OWNER' ||
+        membership.role === 'ADMIN' ||
+        user.role === UserRole.ADMIN ||
+        Boolean(user.platformRole);
+      if (!isAuthor && !isAdmin) {
+        throw new ForbiddenException('Only the author or an admin can delete this message');
+      }
+      return tx.communityMessage.update({
+        where: { id: messageId },
+        data: {
+          deletedAt: new Date(),
+          deletedById: user.sub,
+          deletedByAdmin: !isAuthor && isAdmin,
+          body: '',
+        },
+        select: this.communityMessageSelect(),
+      });
+    });
+    return this.mapCommunityMessage(message, user);
   }
 
   createOpportunity(
@@ -709,6 +895,172 @@ export class SocialService {
     if (!event) throw new NotFoundException('Event not found');
   }
 
+  private async prepareCommunityAccess(
+    dto: Pick<
+      CreateCommunityDto | UpdateCommunityDto,
+      'accessMode' | 'password' | 'inviteCode'
+    >,
+    current?: {
+      accessMode: CommunityAccessMode;
+      passwordHash: string | null;
+      inviteCodeHash: string | null;
+    },
+  ) {
+    const accessMode = this.toCommunityAccessMode(dto.accessMode) ??
+      current?.accessMode ??
+      CommunityAccessMode.PUBLIC;
+
+    if (accessMode === CommunityAccessMode.PASSWORD) {
+      const password = dto.password?.trim();
+      if (!password && !current?.passwordHash) {
+        throw new BadRequestException('Community password is required');
+      }
+      return {
+        accessMode,
+        passwordHash: password
+          ? await hash(password, COMMUNITY_SECRET_HASH_ROUNDS)
+          : current?.passwordHash ?? null,
+        inviteCodeHash: null,
+      };
+    }
+
+    if (accessMode === CommunityAccessMode.INVITE_ONLY) {
+      const inviteCode = dto.inviteCode?.trim();
+      if (!inviteCode && !current?.inviteCodeHash) {
+        throw new BadRequestException('Community invite code is required');
+      }
+      return {
+        accessMode,
+        passwordHash: null,
+        inviteCodeHash: inviteCode
+          ? await hash(inviteCode, COMMUNITY_SECRET_HASH_ROUNDS)
+          : current?.inviteCodeHash ?? null,
+      };
+    }
+
+    return {
+      accessMode: CommunityAccessMode.PUBLIC,
+      passwordHash: null,
+      inviteCodeHash: null,
+    };
+  }
+
+  private toCommunityAccessMode(value?: 'public' | 'invite' | 'password') {
+    if (value === 'password') return CommunityAccessMode.PASSWORD;
+    if (value === 'invite') return CommunityAccessMode.INVITE_ONLY;
+    if (value === 'public') return CommunityAccessMode.PUBLIC;
+    return undefined;
+  }
+
+  private async assertCommunityCanBeJoined(
+    community: {
+      accessMode: CommunityAccessMode;
+      passwordHash: string | null;
+      inviteCodeHash: string | null;
+    },
+    dto: JoinCommunityDto,
+  ) {
+    if (community.accessMode === CommunityAccessMode.PUBLIC) return;
+
+    if (community.accessMode === CommunityAccessMode.PASSWORD) {
+      const password = dto.password?.trim();
+      if (!password || !community.passwordHash) {
+        throw new ForbiddenException('Community password is required');
+      }
+      if (!(await compare(password, community.passwordHash))) {
+        throw new ForbiddenException('Invalid community password');
+      }
+      return;
+    }
+
+    const inviteCode = (dto.inviteCode ?? dto.password)?.trim();
+    if (!inviteCode || !community.inviteCodeHash) {
+      throw new ForbiddenException('Community invite code is required');
+    }
+    if (!(await compare(inviteCode, community.inviteCodeHash))) {
+      throw new ForbiddenException('Invalid community invite code');
+    }
+  }
+
+  private async assertCommunityMember(
+    tx: Prisma.TransactionClient,
+    communityId: string,
+    userId: string,
+  ) {
+    const membership = await tx.communityMember.findUnique({
+      where: { communityId_userId: { communityId, userId } },
+      select: {
+        role: true,
+        community: {
+          select: {
+            id: true,
+            tenantId: true,
+            visibility: true,
+          },
+        },
+      },
+    });
+    if (
+      !membership ||
+      membership.community.visibility !== ContentVisibility.PUBLIC
+    ) {
+      throw new ForbiddenException('Community membership is required');
+    }
+    return {
+      id: membership.community.id,
+      tenantId: membership.community.tenantId,
+      role: membership.role,
+    };
+  }
+
+  private mapCommunityAccessMode(accessMode: CommunityAccessMode) {
+    if (accessMode === CommunityAccessMode.PASSWORD) return 'password';
+    if (accessMode === CommunityAccessMode.INVITE_ONLY) return 'invite';
+    return 'public';
+  }
+
+  private mapCommunityForUser<
+    T extends {
+      accessMode: CommunityAccessMode;
+      members?: Array<{ role: string }>;
+    },
+  >(community: T) {
+    const membership = community.members?.[0];
+    const { members: _members, ...safeCommunity } = community;
+    return {
+      ...safeCommunity,
+      accessMode: this.mapCommunityAccessMode(community.accessMode),
+      isMember: Boolean(membership),
+      membershipRole: membership?.role ?? null,
+    };
+  }
+
+  private mapCommunityMessage<
+    T extends {
+      authorId: string;
+      body: string;
+      createdAt: Date;
+      editedAt: Date | null;
+      deletedAt: Date | null;
+      deletedByAdmin: boolean;
+      author: unknown;
+    },
+  >(message: T, user: AuthenticatedUser) {
+    const deleted = Boolean(message.deletedAt);
+    return {
+      ...message,
+      body: deleted ? '' : message.body,
+      mine: message.authorId === user.sub,
+      deleted,
+      deletedByAdmin: message.deletedByAdmin,
+      time: message.createdAt.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      edited: Boolean(message.editedAt),
+    };
+  }
+
   private publicUserSelect() {
     return {
       id: true,
@@ -741,6 +1093,52 @@ export class SocialService {
       owner: { select: this.publicUserSelect() },
       _count: { select: { members: true } },
     } satisfies Prisma.CommunityInclude;
+  }
+
+  private communitySelect(userId?: string) {
+    return {
+      id: true,
+      tenantId: true,
+      ownerId: true,
+      visibility: true,
+      accessMode: true,
+      name: true,
+      topic: true,
+      description: true,
+      city: true,
+      imageUrl: true,
+      memberCount: true,
+      createdAt: true,
+      updatedAt: true,
+      tenant: { select: this.tenantSelect() },
+      owner: { select: this.publicUserSelect() },
+      _count: { select: { members: true } },
+      ...(userId
+        ? {
+            members: {
+              where: { userId },
+              select: { role: true },
+              take: 1,
+            },
+          }
+        : {}),
+    } satisfies Prisma.CommunitySelect;
+  }
+
+  private communityMessageSelect() {
+    return {
+      id: true,
+      communityId: true,
+      tenantId: true,
+      authorId: true,
+      body: true,
+      editedAt: true,
+      deletedAt: true,
+      deletedByAdmin: true,
+      createdAt: true,
+      updatedAt: true,
+      author: { select: this.publicUserSelect() },
+    } satisfies Prisma.CommunityMessageSelect;
   }
 
   private opportunityInclude() {

@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsDateString,
   IsEmail,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -136,6 +137,22 @@ export class CreateCommunityDto {
   @MaxLength(2048)
   @IsOptional()
   imageUrl?: string;
+
+  @IsIn(['public', 'invite', 'password'])
+  @IsOptional()
+  accessMode?: 'public' | 'invite' | 'password';
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(80)
+  @IsOptional()
+  password?: string;
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(80)
+  @IsOptional()
+  inviteCode?: string;
 }
 
 export class UpdateCommunityDto {
@@ -164,6 +181,59 @@ export class UpdateCommunityDto {
   @MaxLength(2048)
   @IsOptional()
   imageUrl?: string;
+
+  @IsIn(['public', 'invite', 'password'])
+  @IsOptional()
+  accessMode?: 'public' | 'invite' | 'password';
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(80)
+  @IsOptional()
+  password?: string;
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(80)
+  @IsOptional()
+  inviteCode?: string;
+}
+
+export class JoinCommunityDto {
+  @IsString()
+  @MinLength(4)
+  @MaxLength(80)
+  @IsOptional()
+  password?: string;
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(80)
+  @IsOptional()
+  inviteCode?: string;
+}
+
+export class ListCommunityMessagesQueryDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @IsOptional()
+  limit = 100;
+}
+
+export class CreateCommunityMessageDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  body: string;
+}
+
+export class UpdateCommunityMessageDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  body: string;
 }
 
 export class CreateOpportunityDto {

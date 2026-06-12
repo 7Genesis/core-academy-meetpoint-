@@ -104,6 +104,12 @@ enum ContentVisibility {
   PRIVATE
 }
 
+enum CommunityAccessMode {
+  PUBLIC
+  INVITE_ONLY
+  PASSWORD
+}
+
 model Tenant {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
@@ -126,6 +132,7 @@ model Tenant {
   postReactions           PostReaction[]
   communities             Community[]
   communityMembers        CommunityMember[]
+  communityMessages       CommunityMessage[]
   opportunities           Opportunity[]
   opportunityApplications OpportunityApplication[]
   benefits                Benefit[]
@@ -187,6 +194,8 @@ model User {
   postReactions           PostReaction[]
   ownedCommunities        Community[]
   communityMemberships    CommunityMember[]
+  communityMessages       CommunityMessage[] @relation("CommunityMessageAuthor")
+  deletedCommunityMessages CommunityMessage[] @relation("CommunityMessageDeletedBy")
   opportunities           Opportunity[]
   opportunityApplications OpportunityApplication[]
   benefits                Benefit[]
@@ -415,6 +424,9 @@ model Community {
   tenantId    String            @db.Uuid
   ownerId     String            @db.Uuid
   visibility  ContentVisibility @default(PUBLIC)
+  accessMode  CommunityAccessMode @default(PUBLIC)
+  passwordHash String?
+  inviteCodeHash String?
   name        String
   topic       String?
   description String?
@@ -427,6 +439,7 @@ model Community {
   tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   members CommunityMember[]
+  messages CommunityMessage[]
 
   @@index([visibility, createdAt])
   @@index([tenantId, createdAt])
@@ -449,6 +462,30 @@ model CommunityMember {
   @@unique([communityId, userId])
   @@index([userId])
   @@map("community_members")
+}
+
+model CommunityMessage {
+  id             String    @id @default(uuid()) @db.Uuid
+  communityId    String    @db.Uuid
+  tenantId       String    @db.Uuid
+  authorId       String    @db.Uuid
+  body           String
+  editedAt       DateTime?
+  deletedAt      DateTime?
+  deletedById    String?   @db.Uuid
+  deletedByAdmin Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  author    User      @relation("CommunityMessageAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  deletedBy User?     @relation("CommunityMessageDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+
+  @@index([communityId, createdAt])
+  @@index([authorId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("community_messages")
 }
 
 model Opportunity {
