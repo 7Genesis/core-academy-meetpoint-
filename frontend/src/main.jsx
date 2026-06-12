@@ -2631,8 +2631,10 @@ function App() {
       window.clearInterval(pollingId);
     };
   }, []);
-  const canPublishCourses = ['student', 'teacher', 'company', 'platform'].includes(
-    currentUser?.segment,
+  const canPublishCourses = Boolean(
+    currentUser &&
+    currentUser.segment !== 'employee' &&
+    hasActivePlatformSubscription(currentUser),
   );
   const canCreateEvents = ['student', 'teacher', 'company', 'platform'].includes(
     currentUser?.segment,
@@ -3721,6 +3723,8 @@ function App() {
     const isStudent = currentUser?.segment === 'student';
     const isTeacher = currentUser?.segment === 'teacher';
     const isCompany = currentUser?.segment === 'company';
+    const isPlatform = currentUser?.segment === 'platform';
+    const accountPublisherLabel = getAccountTypeLabel(currentUser?.segment) || 'Conta assinante';
     const topic = resolveCourseTopic(courseData.topic ?? courseData.category, courseData.customTopic);
     const publicationScope =
       isTeacher && courseData.publicationMode === 'company' && courseData.linkedCompany
@@ -3731,7 +3735,9 @@ function App() {
             ? 'Empresa'
             : isStudent
               ? 'PF autônoma'
-              : 'Plataforma';
+              : isPlatform
+                ? 'Plataforma'
+                : accountPublisherLabel;
     const companyLabel =
       isTeacher && courseData.publicationMode === 'company' && courseData.linkedCompany
         ? courseData.linkedCompany
@@ -3741,7 +3747,7 @@ function App() {
             ? currentUser?.name ?? 'Empresa'
             : isStudent
               ? 'Publicação pessoa física'
-              : 'Plataforma';
+              : currentUser?.name ?? accountPublisherLabel;
     const course = {
       id: `created-${Date.now()}`,
       title: courseData.title || 'Novo curso',
