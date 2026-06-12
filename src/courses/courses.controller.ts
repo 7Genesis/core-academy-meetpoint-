@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  Sse,
 } from '@nestjs/common';
 import { Request } from 'express';
 import {
@@ -41,6 +42,12 @@ export class CoursesController {
   @Get()
   findAll(@Query() query: ListCoursesQueryDto) {
     return this.coursesService.findAll(query);
+  }
+
+  @Public()
+  @Sse('stream')
+  streamCatalog() {
+    return this.coursesService.streamCatalog();
   }
 
   @Public()

@@ -437,6 +437,12 @@ function getCourseWorkloadLabel(course) {
   return lessonCount ? `${lessonCount} aulas` : 'Grade em construção';
 }
 
+function getCreatedCourseStatusLabel(course = {}) {
+  if (course.syncStatus === 'publishing') return 'Publicando';
+  if (course.syncStatus === 'failed') return 'Falha na publicação';
+  return course.published ? 'Publicado' : 'Rascunho';
+}
+
 function getCoursePublicationIssues(course, modules) {
   const issues = [];
   const normalizedModules = modules ?? normalizeCourseModules(course);
@@ -1414,6 +1420,13 @@ function joinCommunityRequest(communityId, credentials = {}) {
 
 function communityMessagesRequest(communityId) {
   return apiRequest(`/communities/${encodeURIComponent(communityId)}/messages?limit=100`);
+}
+
+function openCoursesCatalogStream() {
+  if (typeof EventSource === 'undefined' || !API_BASE_URLS[0]) return null;
+  return new EventSource(`${API_BASE_URLS[0]}/courses/stream`, {
+    withCredentials: true,
+  });
 }
 
 function openCommunityMessagesStream(communityId) {
@@ -2523,6 +2536,7 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
+    let courseCatalogStream = null;
 
     async function loadGlobalPublicContent() {
       const [
@@ -2571,7 +2585,40 @@ function App() {
       }
     }
 
+    function applyCourseCatalogEvent(payload = {}) {
+      if (payload.kind === 'keepalive') return;
+
+      if (payload.kind === 'course.deleted' && payload.courseId) {
+        setPublicCourses((current) =>
+          current.filter((course) => course.id !== payload.courseId),
+        );
+        return;
+      }
+
+      if ((payload.kind === 'course.created' || payload.kind === 'course.updated') && payload.course) {
+        const mappedCourse = mapBackendCourseToCourse(payload.course);
+        setPublicCourses((current) => mergeById([mappedCourse], current));
+      }
+    }
+
     loadGlobalPublicContent();
+    courseCatalogStream = openCoursesCatalogStream();
+    if (courseCatalogStream) {
+      courseCatalogStream.onmessage = (event) => {
+        if (cancelled) return;
+        try {
+          applyCourseCatalogEvent(JSON.parse(event.data));
+        } catch {
+          // Polling below keeps the catalog consistent if a stream event is malformed.
+        }
+      };
+      courseCatalogStream.onerror = () => {
+        if (!cancelled) {
+          window.setTimeout(loadGlobalPublicContent, 1000);
+        }
+      };
+    }
+
     const pollingId = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
         loadGlobalPublicContent();
@@ -2580,6 +2627,7 @@ function App() {
 
     return () => {
       cancelled = true;
+      courseCatalogStream?.close();
       window.clearInterval(pollingId);
     };
   }, []);
@@ -3722,6 +3770,7 @@ function App() {
       platformFeeRevenue: 0,
       producerNetRevenue: 0,
       published: false,
+      syncStatus: 'draft',
       modules: courseData.modules ?? [],
     };
     setCreatedCourses((current) => [course, ...current]);
@@ -3736,59 +3785,91 @@ function App() {
   }
 
   // Publicacao do curso: simula vendas e split da taxa operacional da plataforma.
-  function publishCreatedCourse(courseId) {
-    if (!requireAuthenticatedAction('publicar curso')) return;
+  async function publishCreatedCourse(courseId) {
+    if (!requireAuthenticatedAction('publicar curso')) return false;
     const courseToPublish = createdCourses.find((course) => course.id === courseId);
+    if (!courseToPublish) return false;
+    const backendCourseId = courseToPublish.backendCourseId || (courseToPublish.backendPublished ? courseToPublish.id : '');
+
     setCreatedCourses((current) =>
-      current.map((course) => {
-        if (course.id !== courseId) return course;
-        const students = course.isFree ? 0 : 12;
-        const split = calculatePlatformSplit(course.price * students);
-        return {
-          ...course,
-          published: true,
-          updatedAt: new Date().toISOString(),
-          students,
-          revenue: split.gross,
-          platformFeeRevenue: split.platformFee,
-          producerNetRevenue: split.producerNet,
-        };
-      }),
+      current.map((course) =>
+        course.id === courseId
+          ? { ...course, syncStatus: 'publishing', updatedAt: new Date().toISOString() }
+          : course,
+      ),
     );
-    if (courseToPublish && !courseToPublish.backendPublished) {
-      apiRequest('/courses', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: courseToPublish.title,
-          topic: courseToPublish.topic || courseToPublish.tag || undefined,
-          description: courseToPublish.description || undefined,
-          instructorName: courseToPublish.instructor || undefined,
-          publisherType: courseToPublish.publicationScope || undefined,
-          linkedCompanyName: courseToPublish.company || undefined,
-          priceCents: Math.round(Number(courseToPublish.price || 0) * 100),
-          currency: 'BRL',
-        }),
-      })
-        .then((createdCourse) => {
-          const mappedCourse = mapBackendCourseToCourse(createdCourse);
-          setPublicCourses((current) => mergeById([mappedCourse], current));
-          setCreatedCourses((current) =>
-            current.map((course) =>
-              course.id === courseId ? { ...course, backendPublished: true } : course,
-            ),
-          );
-        })
-        .catch(() => {
-          setNotifications((current) => [
-            {
-              id: `notice-course-sync-${Date.now()}`,
-              title: 'Curso publicado localmente, mas a API não confirmou o catálogo global.',
-              channel: 'computador',
-              read: false,
-            },
-            ...current,
-          ]);
-        });
+
+    try {
+      const savedCourse = await apiRequest(
+        backendCourseId ? `/courses/${encodeURIComponent(backendCourseId)}` : '/courses',
+        {
+          method: backendCourseId ? 'PATCH' : 'POST',
+          body: JSON.stringify({
+            title: courseToPublish.title,
+            topic: courseToPublish.topic || courseToPublish.tag || undefined,
+            description: courseToPublish.description || undefined,
+            instructorName: courseToPublish.instructor || undefined,
+            publisherType: courseToPublish.publicationScope || undefined,
+            linkedCompanyName: courseToPublish.company || undefined,
+            priceCents: Math.round(Number(courseToPublish.price || 0) * 100),
+            currency: 'BRL',
+          }),
+        },
+      );
+      const mappedCourse = mapBackendCourseToCourse(savedCourse);
+      const students = mappedCourse.isFree ? 0 : 12;
+      const split = calculatePlatformSplit(mappedCourse.price * students);
+
+      setPublicCourses((current) => mergeById([mappedCourse], current));
+      setCreatedCourses((current) =>
+        current.map((course) =>
+          course.id === courseId
+            ? {
+                ...course,
+                ...mappedCourse,
+                id: mappedCourse.id,
+                modules: course.modules,
+                deliveryMode: course.deliveryMode,
+                externalCourseUrl: course.externalCourseUrl,
+                externalPlatformName: course.externalPlatformName,
+                published: true,
+                backendPublished: true,
+                backendCourseId: mappedCourse.id,
+                syncStatus: 'synced',
+                students,
+                revenue: split.gross,
+                platformFeeRevenue: split.platformFee,
+                producerNetRevenue: split.producerNet,
+              }
+            : course,
+        ),
+      );
+      setEditingCreatedCourseId((current) => (current === courseId ? mappedCourse.id : current));
+      setSelectedCourseId(mappedCourse.id);
+      return true;
+    } catch {
+      setCreatedCourses((current) =>
+        current.map((course) =>
+          course.id === courseId
+            ? {
+                ...course,
+                published: Boolean(course.backendPublished),
+                syncStatus: 'failed',
+                updatedAt: new Date().toISOString(),
+              }
+            : course,
+        ),
+      );
+      setNotifications((current) => [
+        {
+          id: `notice-course-sync-${Date.now()}`,
+          title: 'Curso não foi publicado no catálogo global. A API não confirmou a publicação.',
+          channel: 'computador',
+          read: false,
+        },
+        ...current,
+      ]);
+      return false;
     }
   }
 
@@ -10770,7 +10851,7 @@ function CoursesView({
                   onClick={() => openCreatedCourse(course.id)}
                 >
                   <strong>{course.title || 'Curso sem nome'}</strong>
-                  <span className="created-course-status">{course.published ? 'Publicado' : 'Rascunho'}</span>
+                  <span className="created-course-status">{getCreatedCourseStatusLabel(course)}</span>
                   <small>
                     {course.tag || 'Tema pendente'} • {course.isFree ? 'Gratuito' : `R$ ${course.price || 0}`}
                   </small>
@@ -11468,6 +11549,7 @@ function CourseBuilderView({
   const lessonCount = getCourseLessonCount(course);
   const publicationIssues = getCoursePublicationIssues(course, modules);
   const readyToPublish = publicationIssues.length === 0;
+  const publishingCourse = course.syncStatus === 'publishing';
   const topicIsListed = courseTopicOptions.includes(course.tag);
   const selectedTopicValue = topicIsListed ? course.tag : 'Outro tema';
   const checklist = [
@@ -11499,15 +11581,20 @@ function CourseBuilderView({
     target.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
-  function handlePublishCourse() {
+  async function handlePublishCourse() {
     if (!readyToPublish) {
       setPublishNotice(`Ainda falta resolver ${publicationIssues.length} item(ns) antes de publicar.`);
       scrollToPublicationTarget(publicationIssues[0]?.targetId);
       return;
     }
 
-    publishCreatedCourse(course.id);
-    setPublishNotice('Curso pronto e publicado na vitrine.');
+    setPublishNotice('Publicando no catálogo global...');
+    const published = await publishCreatedCourse(course.id);
+    setPublishNotice(
+      published
+        ? 'Curso pronto e publicado para todos no catálogo global.'
+        : 'A API não confirmou a publicação. O curso continua como rascunho local.',
+    );
   }
 
   return (
@@ -11810,8 +11897,12 @@ function CourseBuilderView({
           </div>
 
           {publishNotice && <p className="publish-assistant-note">{publishNotice}</p>}
-          <button onClick={handlePublishCourse}>
-            {course.published ? 'Atualizar publicação' : 'Publicar curso'}
+          <button disabled={publishingCourse} onClick={handlePublishCourse}>
+            {publishingCourse
+              ? 'Publicando...'
+              : course.published
+                ? 'Atualizar publicação'
+                : 'Publicar curso'}
           </button>
           <p className="policy-note">
             Se faltar algo, o assistente leva você direto ao ponto pendente. Quando tudo estiver correto, o curso entra na vitrine e pode receber inscrições.
