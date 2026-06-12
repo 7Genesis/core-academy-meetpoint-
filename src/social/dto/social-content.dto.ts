@@ -129,7 +129,7 @@ export class ListPostCommentsQueryDto {
 
 export class CreatePostReactionDto {
   @IsString()
-  @IsIn(['like', 'love', 'fire'])
+  @IsIn(['like', 'love', 'fire', 'clap'])
   @MaxLength(30)
   @IsOptional()
   type?: string;
@@ -256,6 +256,13 @@ export class ListCommunityMessagesQueryDto {
 }
 
 export class CreateCommunityMessageDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  body: string;
+}
+
+export class CreatePrivateMessageDto {
   @IsString()
   @MinLength(1)
   @MaxLength(2000)

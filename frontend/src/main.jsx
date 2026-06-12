@@ -1390,6 +1390,13 @@ function socialGraphRequest() {
   return apiRequest('/social/graph');
 }
 
+function openSocialNotificationsStream() {
+  if (typeof EventSource === 'undefined' || !API_BASE_URLS[0]) return null;
+  return new EventSource(`${API_BASE_URLS[0]}/social/notifications/stream`, {
+    withCredentials: true,
+  });
+}
+
 function followUserRequest(targetUserId) {
   return apiRequest('/social/follows', {
     method: 'POST',
@@ -1414,6 +1421,36 @@ function respondFriendshipRequest(requesterId, accepted) {
   return apiRequest(`/social/friend-requests/${encodeURIComponent(requesterId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ accepted }),
+  });
+}
+
+function privateConversationsRequest() {
+  return apiRequest('/private-conversations');
+}
+
+function startPrivateConversationRequest(targetUserId) {
+  return apiRequest('/private-conversations', {
+    method: 'POST',
+    body: JSON.stringify({ targetUserId }),
+  });
+}
+
+function privateMessagesRequest(conversationId) {
+  return apiRequest(`/private-conversations/${encodeURIComponent(conversationId)}/messages?limit=100`);
+}
+
+function openPrivateMessagesStream(conversationId) {
+  if (typeof EventSource === 'undefined' || !API_BASE_URLS[0]) return null;
+  return new EventSource(
+    `${API_BASE_URLS[0]}/private-conversations/${encodeURIComponent(conversationId)}/messages/stream`,
+    { withCredentials: true },
+  );
+}
+
+function sendPrivateMessageRequest(conversationId, body) {
+  return apiRequest(`/private-conversations/${encodeURIComponent(conversationId)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
   });
 }
 
@@ -1629,8 +1666,9 @@ function normalizeReactionSummary(summary = {}, fallbackTotal = 0) {
     like: Number(summary.like ?? 0),
     love: Number(summary.love ?? 0),
     fire: Number(summary.fire ?? 0),
+    clap: Number(summary.clap ?? 0),
   };
-  const total = normalized.like + normalized.love + normalized.fire;
+  const total = normalized.like + normalized.love + normalized.fire + normalized.clap;
   if (!total && fallbackTotal) normalized.like = Number(fallbackTotal);
   return normalized;
 }
@@ -1798,6 +1836,66 @@ function mapBackendCommunityMessageToMessage(message = {}) {
       ? deletedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       : '',
   };
+}
+
+function mapBackendPrivateMessageToMessage(message = {}) {
+  const createdAt = message.createdAt ? new Date(message.createdAt) : new Date();
+  return {
+    id: message.id,
+    conversationId: message.conversationId,
+    senderId: message.senderId ?? '',
+    from: message.from ?? 'Membro MeetPoint',
+    body: message.body ?? '',
+    time: message.time ?? createdAt.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+    createdAt: createdAt.getTime(),
+    mine: Boolean(message.mine),
+    readAt: message.readAt ?? null,
+  };
+}
+
+function mapBackendPrivateConversationToConversation(conversation = {}) {
+  return {
+    id: conversation.id,
+    participantId: conversation.participantId ?? '',
+    participantName: conversation.participantName ?? 'Membro MeetPoint',
+    participantHandle: conversation.participantHandle ?? getUserHandle({ name: conversation.participantName }),
+    participantInitials: conversation.participantInitials ?? getInitials(conversation.participantName ?? 'MP'),
+    participantPhoto: conversation.participantPhoto ?? '',
+    unread: Number(conversation.unread ?? 0),
+    updatedAt: conversation.updatedAt ?? '',
+    messages: Array.isArray(conversation.messages)
+      ? conversation.messages.map(mapBackendPrivateMessageToMessage)
+      : [],
+  };
+}
+
+function upsertPrivateMessage(messages = [], nextMessage = {}) {
+  if (!nextMessage?.id) return messages;
+  const mapped = mapBackendPrivateMessageToMessage(nextMessage);
+  const exists = messages.some((message) => message.id === mapped.id);
+  return exists
+    ? messages.map((message) => (message.id === mapped.id ? { ...message, ...mapped } : message))
+    : [...messages, mapped];
+}
+
+function mergePrivateConversations(primary = [], secondary = []) {
+  const byId = new Map();
+  [...secondary, ...primary].forEach((conversation) => {
+    if (!conversation?.id) return;
+    const mapped = mapBackendPrivateConversationToConversation(conversation);
+    const existing = byId.get(mapped.id);
+    byId.set(mapped.id, {
+      ...(existing ?? {}),
+      ...mapped,
+      messages: mapped.messages.length ? mapped.messages : existing?.messages ?? [],
+    });
+  });
+  return [...byId.values()].sort((first, second) =>
+    String(second.updatedAt ?? '').localeCompare(String(first.updatedAt ?? '')),
+  );
 }
 
 function mapBackendOpportunityToJob(opportunity = {}) {
@@ -2777,6 +2875,7 @@ function App() {
   useEffect(() => {
     if (!currentUser?.id) return undefined;
     let cancelled = false;
+    let notificationsStream = null;
 
     socialGraphRequest()
       .then((graph) => {
@@ -2784,13 +2883,58 @@ function App() {
       })
       .catch(() => {});
 
+    notificationsStream = openSocialNotificationsStream();
+    if (notificationsStream) {
+      notificationsStream.onmessage = (event) => {
+        if (cancelled) return;
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.kind === 'notification.created' && payload.notification) {
+            applyRealtimeSocialNotification(payload.notification);
+          }
+        } catch {
+          // Keepalive ou evento inválido: ignorar e manter polling.
+        }
+      };
+      notificationsStream.onerror = () => {
+        notificationsStream?.close();
+        notificationsStream = null;
+      };
+    }
+
     const pollingId = window.setInterval(() => {
       socialGraphRequest()
         .then((graph) => {
           if (!cancelled) applyBackendSocialGraph(graph);
         })
         .catch(() => {});
-    }, 30_000);
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      notificationsStream?.close();
+      window.clearInterval(pollingId);
+    };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setPrivateConversations([]);
+      return undefined;
+    }
+    let cancelled = false;
+
+    function loadPrivateConversations() {
+      privateConversationsRequest()
+        .then((items) => {
+          if (cancelled) return;
+          applyBackendPrivateConversations(items);
+        })
+        .catch(() => {});
+    }
+
+    loadPrivateConversations();
+    const pollingId = window.setInterval(loadPrivateConversations, 15_000);
 
     return () => {
       cancelled = true;
@@ -4270,14 +4414,43 @@ function App() {
 
   function applyBackendSocialGraph(graph = {}) {
     const normalized = normalizeSocialGraph(graph);
+    const notificationActors = (graph.notifications ?? [])
+      .map((notice) => notice.actor)
+      .filter(Boolean)
+      .map(normalizeSocialProfile);
     setSocialGraph((current) => normalizeSocialGraph({
       ...normalized,
       blockedHandles: current.blockedHandles ?? [],
-      profiles: mergeSocialProfiles(normalized.profiles, current.profiles),
+      profiles: mergeSocialProfiles(
+        [...notificationActors, ...normalized.profiles],
+        current.profiles,
+      ),
     }));
     if (Array.isArray(graph.notifications)) {
       setNotifications((current) => mergeNotifications(graph.notifications, current));
     }
+  }
+
+  function applyRealtimeSocialNotification(notification = {}) {
+    setNotifications((current) => mergeNotifications([notification], current));
+    if (notification.actor) {
+      setSocialGraph((current) => normalizeSocialGraph({
+        ...current,
+        profiles: mergeSocialProfiles([notification.actor], current.profiles),
+      }));
+    }
+    if (notification.type === 'private-message') {
+      privateConversationsRequest()
+        .then((items) => applyBackendPrivateConversations(items))
+        .catch(() => {});
+    }
+  }
+
+  function applyBackendPrivateConversations(items = []) {
+    const mapped = Array.isArray(items)
+      ? items.map(mapBackendPrivateConversationToConversation)
+      : [];
+    setPrivateConversations((current) => mergePrivateConversations(mapped, current));
   }
 
   function resolveSocialProfileTarget(target) {
@@ -4533,9 +4706,26 @@ function App() {
     });
   }
 
-  function openPrivateConversationWithProfile(profile) {
+  async function openPrivateConversationWithProfile(profile) {
     if (!profile) return;
     if (!requireAuthenticatedAction('enviar mensagem privada')) return;
+    if (isBackendUserId(profile.id)) {
+      try {
+        const conversation = mapBackendPrivateConversationToConversation(
+          await startPrivateConversationRequest(profile.id),
+        );
+        setPrivateConversations((current) => mergePrivateConversations([conversation], current));
+        setRequestedPrivateConversation(conversation.participantHandle);
+        setPrivateChatOpen(true);
+        return;
+      } catch (error) {
+        addNotification({
+          title: `A conversa privada não foi aberta na API: ${error.message}`,
+          type: 'private-message-failed',
+          actorHandle: profile.handle,
+        });
+      }
+    }
     setPrivateConversations((current) => {
       const existing = current.find(
         (conversation) =>
@@ -5740,6 +5930,7 @@ function App() {
                 communityEvents={communityEvents}
                 jobs={jobs}
                 socialGraph={socialGraph}
+                setSocialGraph={setSocialGraph}
                 interestScores={interestScores}
                 recordFeedInterest={recordFeedInterest}
                 followProfile={followProfile}
@@ -5773,6 +5964,7 @@ function App() {
               communityEvents={communityEvents}
               jobs={jobs}
               socialGraph={socialGraph}
+              setSocialGraph={setSocialGraph}
               interestScores={interestScores}
               recordFeedInterest={recordFeedInterest}
               followProfile={followProfile}
@@ -6581,7 +6773,15 @@ function getNotificationCategory(notice = {}) {
   if (text.includes('evento') || text.includes('inscrição')) return 'Eventos';
   if (text.includes('benefício') || text.includes('beneficio') || text.includes('whatsapp automático')) return 'Benefícios';
   if (text.includes('curso') || text.includes('aula')) return 'Cursos';
-  if (text.includes('amizade') || text.includes('seguir') || text.includes('seguidor') || text.includes('comentário')) return 'Social';
+  if (
+    text.includes('amizade') ||
+    text.includes('seguir') ||
+    text.includes('seguidor') ||
+    text.includes('comentário') ||
+    text.includes('reação') ||
+    text.includes('curtiu') ||
+    text.includes('mensagem privada')
+  ) return 'Social';
   return 'Sistema';
 }
 
@@ -6659,7 +6859,7 @@ function FloatingNotificationDock({
       id: notice.id,
       title: notice.title,
       meta: notice.actorHandle
-        ? `${getSocialProfileByHandle(notice.actorHandle, socialGraph)?.name ?? notice.actorHandle} • ${notice.channel}`
+        ? `${notice.actor?.name ?? getSocialProfileByHandle(notice.actorHandle, socialGraph)?.name ?? notice.actorHandle} • ${notice.channel}`
         : `Canal: ${notice.channel}`,
       read: notice.read,
       category: getNotificationCategory(notice),
@@ -6764,7 +6964,9 @@ function PrivateChatWidget({
   const activeConversation =
     conversations.find((conversation) => conversation.id === activeConversationId) ?? conversations[0];
   const unreadTotal = conversations.reduce((total, conversation) => total + conversation.unread, 0);
-  const peopleResults = socialProfiles.filter((profile) =>
+  const searchableProfiles = mergeSocialProfiles(socialGraph?.profiles ?? [], socialProfiles)
+    .filter((profile) => profile.id !== currentUser?.id);
+  const peopleResults = searchableProfiles.filter((profile) =>
     profile.name.toLowerCase().includes(query.trim().toLowerCase()) ||
     profile.handle.toLowerCase().includes(query.trim().toLowerCase()),
   );
@@ -6801,6 +7003,7 @@ function PrivateChatWidget({
     const nextTab = isPrimaryConversation(requestedConversation) ? 'main' : 'others';
     setConversationTab(nextTab);
     openConversation(requestedConversation.id);
+    void loadConversationMessages(requestedConversation.id);
     clearRequestedConversation?.();
   }, [chatIsVisible, requestedConversationHandle, conversations]);
 
@@ -6821,13 +7024,47 @@ function PrivateChatWidget({
     );
   }
 
-  function startConversation(profile) {
+  async function loadConversationMessages(conversationId) {
+    if (!isBackendUserId(conversationId)) return;
+    try {
+      const response = await privateMessagesRequest(conversationId);
+      const messages = unwrapApiList(response).map(mapBackendPrivateMessageToMessage);
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversation.id === conversationId
+            ? { ...conversation, unread: 0, messages }
+            : conversation,
+        ),
+      );
+    } catch {
+      // A lista de conversas continua como fallback.
+    }
+  }
+
+  async function startConversation(profile) {
     const existing = conversations.find((conversation) => conversation.participantId === profile.id);
     if (existing) {
       setConversationTab(isPrimaryConversation(existing) ? 'main' : 'others');
       openConversation(existing.id);
+      void loadConversationMessages(existing.id);
       setSearchOpen(false);
       return;
+    }
+
+    if (isBackendUserId(profile.id)) {
+      try {
+        const created = mapBackendPrivateConversationToConversation(
+          await startPrivateConversationRequest(profile.id),
+        );
+        setConversations((current) => mergePrivateConversations([created], current));
+        setActiveConversationId(created.id);
+        setConversationTab(isPrimaryConversation(created) ? 'main' : 'others');
+        setSearchOpen(false);
+        void loadConversationMessages(created.id);
+        return;
+      } catch {
+        // Fallback local abaixo para nao bloquear a interface.
+      }
     }
 
     const nextConversation = {
@@ -6846,11 +7083,71 @@ function PrivateChatWidget({
     setSearchOpen(false);
   }
 
-  function sendMessage(event) {
+  useEffect(() => {
+    if (!chatIsVisible || !activeConversation?.id || !isBackendUserId(activeConversation.id)) {
+      return undefined;
+    }
+    let cancelled = false;
+    void loadConversationMessages(activeConversation.id);
+    const stream = openPrivateMessagesStream(activeConversation.id);
+    if (!stream) return undefined;
+
+    stream.onmessage = (event) => {
+      if (cancelled) return;
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.kind !== 'message.created' || !payload.message) return;
+        const message = mapBackendPrivateMessageToMessage({
+          ...payload.message,
+          mine: payload.message.senderId === currentUser?.id,
+        });
+        setConversations((current) =>
+          current.map((conversation) =>
+            conversation.id === activeConversation.id
+              ? {
+                  ...conversation,
+                  unread: message.mine || chatIsVisible ? 0 : conversation.unread + 1,
+                  messages: upsertPrivateMessage(conversation.messages, message),
+                }
+              : conversation,
+          ),
+        );
+      } catch {
+        // Keepalive.
+      }
+    };
+    stream.onerror = () => stream.close();
+
+    return () => {
+      cancelled = true;
+      stream.close();
+    };
+  }, [chatIsVisible, activeConversation?.id, currentUser?.id]);
+
+  async function sendMessage(event) {
     event?.preventDefault();
     const body = draft.trim();
     if (!body || !activeConversation) return;
     if (!requirePrivacyConsent?.('enviar mensagem privada')) return;
+    if (isBackendUserId(activeConversation.id)) {
+      setDraft('');
+      try {
+        const message = await sendPrivateMessageRequest(activeConversation.id, body);
+        setConversations((current) =>
+          current.map((conversation) =>
+            conversation.id === activeConversation.id
+              ? {
+                  ...conversation,
+                  messages: upsertPrivateMessage(conversation.messages, message),
+                }
+              : conversation,
+          ),
+        );
+      } catch {
+        setDraft(body);
+      }
+      return;
+    }
     const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     setConversations((current) =>
       current.map((conversation) =>
@@ -7762,6 +8059,7 @@ function FeedView({
   communityEvents,
   jobs,
   socialGraph,
+  setSocialGraph,
   interestScores = {},
   recordFeedInterest,
   followProfile,
@@ -7885,7 +8183,9 @@ function FeedView({
       return true;
     })
     .sort(compareFeedItemsByNewest);
-  const sourcePeople = remotePeople.length || peopleQuery.trim() ? remotePeople : socialProfiles;
+  const graphPeople = mergeSocialProfiles(socialGraph.profiles ?? [], socialProfiles)
+    .filter((profile) => profile.id !== currentUser?.id);
+  const sourcePeople = mergeSocialProfiles(remotePeople, graphPeople);
   const peopleResults = sourcePeople.filter((profile) => {
     const query = peopleQuery.trim().toLowerCase();
     if (!query) return true;
@@ -8638,7 +8938,7 @@ function PeopleDiscovery({
             )}
           </div>
           <div className="people-result-list">
-            {peopleStatus ? (
+            {peopleStatus && peopleResults.length === 0 ? (
               <p className="empty-state">{peopleStatus}</p>
             ) : peopleResults.length === 0 ? (
               <p className="empty-state">Nenhuma pessoa encontrada ainda.</p>
@@ -8881,7 +9181,7 @@ function SocialProfileModal({
             className="light"
             type="button"
             onClick={() => {
-              openPrivateConversationWithProfile(profile);
+              void openPrivateConversationWithProfile(profile);
               onClose();
             }}
           >
@@ -14978,7 +15278,9 @@ function ProfileNotificationsCard({
         {notifications.length === 0 ? (
           <p className="empty-state">Nenhuma notificação nova.</p>
         ) : notifications.map((notice) => {
-          const actor = notice.actorHandle ? getSocialProfileByHandle(notice.actorHandle, socialGraph) : null;
+          const actor = notice.actor ?? (
+            notice.actorHandle ? getSocialProfileByHandle(notice.actorHandle, socialGraph) : null
+          );
           return (
             <article key={notice.id}>
               <strong>{notice.title}</strong>

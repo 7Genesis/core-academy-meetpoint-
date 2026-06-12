@@ -27,6 +27,7 @@ import {
   CreatePostCommentDto,
   CreatePostDto,
   CreatePostReactionDto,
+  CreatePrivateMessageDto,
   FriendRequestResponseDto,
   JoinCommunityDto,
   ListPostCommentsQueryDto,
@@ -53,6 +54,12 @@ export class SocialConnectionsController {
   @Get('graph')
   graph(@CurrentUser() user: AuthenticatedUser) {
     return this.socialService.getSocialGraph(user);
+  }
+
+  @RequireActiveSubscription()
+  @Sse('notifications/stream')
+  streamNotifications(@CurrentUser() user: AuthenticatedUser) {
+    return this.socialService.streamSocialNotifications(user);
   }
 
   @RequireActiveSubscription()
@@ -303,6 +310,55 @@ export class CommunitiesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.socialService.deleteCommunityMessage(id, messageId, user);
+  }
+}
+
+@Controller('private-conversations')
+export class PrivateConversationsController {
+  constructor(private readonly socialService: SocialService) {}
+
+  @RequireActiveSubscription()
+  @Get()
+  findAll(@CurrentUser() user: AuthenticatedUser) {
+    return this.socialService.listPrivateConversations(user);
+  }
+
+  @RequireActiveSubscription()
+  @Post()
+  start(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SocialTargetDto,
+  ) {
+    return this.socialService.startPrivateConversation(user, dto);
+  }
+
+  @RequireActiveSubscription()
+  @Get(':id/messages')
+  messages(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListCommunityMessagesQueryDto,
+  ) {
+    return this.socialService.listPrivateMessages(id, user, query);
+  }
+
+  @RequireActiveSubscription()
+  @Sse(':id/messages/stream')
+  streamMessages(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.socialService.streamPrivateMessages(id, user);
+  }
+
+  @RequireActiveSubscription()
+  @Post(':id/messages')
+  createMessage(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreatePrivateMessageDto,
+  ) {
+    return this.socialService.createPrivateMessage(id, user, dto);
   }
 }
 

@@ -18,7 +18,9 @@ import { map, mergeMap } from 'rxjs/operators';
 import { AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CommunityMessagesRealtimeService } from './community-messages-realtime.service';
+import { PrivateMessagesRealtimeService } from './private-messages-realtime.service';
 import { PostCommentsRealtimeService } from './post-comments-realtime.service';
+import { SocialNotificationsRealtimeService } from './social-notifications-realtime.service';
 import {
   ApplyOpportunityDto,
   CreateBenefitDto,
@@ -29,6 +31,7 @@ import {
   CreatePostCommentDto,
   CreatePostDto,
   CreatePostReactionDto,
+  CreatePrivateMessageDto,
   FriendRequestResponseDto,
   JoinCommunityDto,
   ListPostCommentsQueryDto,
@@ -51,11 +54,12 @@ type Pagination = {
 };
 
 const COMMUNITY_SECRET_HASH_ROUNDS = 12;
-const POST_REACTION_TYPES = ['like', 'love', 'fire'] as const;
+const POST_REACTION_TYPES = ['like', 'love', 'fire', 'clap'] as const;
 const POST_REACTION_LABELS: Record<PostReactionType, string> = {
   like: 'curtiu',
   love: 'amou',
   fire: 'destacou',
+  clap: 'aplaudiu',
 };
 
 type PostReactionType = (typeof POST_REACTION_TYPES)[number];
@@ -77,7 +81,9 @@ export class SocialService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly communityMessagesRealtime: CommunityMessagesRealtimeService,
+    private readonly privateMessagesRealtime: PrivateMessagesRealtimeService,
     private readonly postCommentsRealtime: PostCommentsRealtimeService,
+    private readonly socialNotificationsRealtime: SocialNotificationsRealtimeService,
   ) {}
 
   async createPost(tenantId: string, authorId: string, dto: CreatePostDto) {
@@ -100,6 +106,25 @@ export class SocialService {
 
   async getSocialGraph(user: AuthenticatedUser) {
     return this.prisma.withPlatformAdmin((tx) => this.buildSocialGraph(tx, user.sub));
+  }
+
+  streamSocialNotifications(user: AuthenticatedUser): Observable<MessageEvent> {
+    return merge(
+      this.socialNotificationsRealtime.stream(user.sub).pipe(
+        map((event) => ({
+          data: event,
+        })),
+      ),
+      interval(25_000).pipe(
+        map(() => ({
+          data: {
+            kind: 'keepalive',
+            recipientId: user.sub,
+            at: new Date().toISOString(),
+          },
+        })),
+      ),
+    );
   }
 
   async followUser(user: AuthenticatedUser, dto: SocialTargetDto) {
@@ -545,6 +570,164 @@ export class SocialService {
       });
       const [enrichedPost] = await this.withPostReactionMetadata(tx, [updatedPost], userId);
       return enrichedPost;
+    });
+  }
+
+  async listPrivateConversations(user: AuthenticatedUser) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const conversations = await tx.privateConversation.findMany({
+        where: {
+          OR: [{ firstUserId: user.sub }, { secondUserId: user.sub }],
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 100,
+        include: this.privateConversationInclude(),
+      });
+      const unreadCounts = await this.getPrivateUnreadCounts(
+        tx,
+        conversations.map((conversation) => conversation.id),
+        user.sub,
+      );
+      return conversations.map((conversation) =>
+        this.mapPrivateConversation(conversation, user.sub, unreadCounts),
+      );
+    });
+  }
+
+  async startPrivateConversation(user: AuthenticatedUser, dto: SocialTargetDto) {
+    await this.assertDifferentUsers(user.sub, dto.targetUserId);
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const [actor, target] = await Promise.all([
+        this.requireActiveUser(tx, user.sub),
+        this.requireActiveUser(tx, dto.targetUserId),
+      ]);
+      this.assertSameTenant(actor.tenantId, target.tenantId);
+      const [firstUserId, secondUserId] = this.orderPrivateConversationUsers(
+        user.sub,
+        dto.targetUserId,
+      );
+
+      const conversation = await tx.privateConversation.upsert({
+        where: {
+          firstUserId_secondUserId: {
+            firstUserId,
+            secondUserId,
+          },
+        },
+        create: {
+          tenantId: actor.tenantId,
+          firstUserId,
+          secondUserId,
+        },
+        update: {},
+        include: this.privateConversationInclude(),
+      });
+
+      return this.mapPrivateConversation(conversation, user.sub, new Map());
+    });
+  }
+
+  async listPrivateMessages(
+    conversationId: string,
+    user: AuthenticatedUser,
+    query: ListCommunityMessagesQueryDto,
+  ) {
+    const limit = query.limit ?? 100;
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      await this.ensurePrivateConversationAccess(tx, conversationId, user.sub);
+      await tx.privateMessage.updateMany({
+        where: {
+          conversationId,
+          senderId: { not: user.sub },
+          readAt: null,
+        },
+        data: { readAt: new Date() },
+      });
+      const messages = await tx.privateMessage.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: this.privateMessageInclude(),
+      });
+      return {
+        data: messages
+          .reverse()
+          .map((message) => this.mapPrivateMessage(message, user.sub)),
+      };
+    });
+  }
+
+  streamPrivateMessages(
+    conversationId: string,
+    user: AuthenticatedUser,
+  ): Observable<MessageEvent> {
+    return defer(() =>
+      from(
+        this.prisma.withPlatformAdmin((tx) =>
+          this.ensurePrivateConversationAccess(tx, conversationId, user.sub),
+        ),
+      ).pipe(
+        mergeMap(() =>
+          merge(
+            this.privateMessagesRealtime.stream(conversationId).pipe(
+              map((event) => ({
+                data: event,
+              })),
+            ),
+            interval(25_000).pipe(
+              map(() => ({
+                data: {
+                  kind: 'keepalive',
+                  conversationId,
+                  at: new Date().toISOString(),
+                },
+              })),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  async createPrivateMessage(
+    conversationId: string,
+    user: AuthenticatedUser,
+    dto: CreatePrivateMessageDto,
+  ) {
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const conversation = await this.ensurePrivateConversationAccess(
+        tx,
+        conversationId,
+        user.sub,
+      );
+      const recipientId = this.getPrivateConversationRecipient(conversation, user.sub);
+      const message = await tx.privateMessage.create({
+        data: {
+          conversationId,
+          tenantId: conversation.tenantId,
+          senderId: user.sub,
+          body: this.sanitizeRequiredText(dto.body, 'body'),
+        },
+        include: this.privateMessageInclude(),
+      });
+      await tx.privateConversation.update({
+        where: { id: conversationId },
+        data: { updatedAt: new Date() },
+      });
+      await this.createSocialNotification(tx, {
+        tenantId: conversation.tenantId,
+        recipientId,
+        actorId: user.sub,
+        type: 'private-message',
+        title: `${message.sender.name || 'Um membro'} enviou uma mensagem privada.`,
+        metadata: { conversationId },
+      });
+      this.privateMessagesRealtime.publish({
+        conversationId,
+        kind: 'message.created',
+        message,
+      });
+      return this.mapPrivateMessage(message, user.sub);
     });
   }
 
@@ -1246,7 +1429,7 @@ export class SocialService {
     },
   ) {
     if (data.recipientId === data.actorId) return null;
-    return tx.socialNotification.create({
+    const notification = await tx.socialNotification.create({
       data: {
         tenantId: data.tenantId,
         recipientId: data.recipientId,
@@ -1255,7 +1438,14 @@ export class SocialService {
         title: data.title,
         metadata: data.metadata,
       },
+      include: { actor: { select: this.socialUserSelect() } },
     });
+    this.socialNotificationsRealtime.publish({
+      recipientId: data.recipientId,
+      kind: 'notification.created',
+      notification: this.mapSocialNotification(notification),
+    });
+    return notification;
   }
 
   private async acceptFriendRequest(
@@ -1399,15 +1589,150 @@ export class SocialService {
         following: followingCount,
         friends: friendsCount,
       },
-      notifications: notifications.map((notice) => ({
-        id: notice.id,
-        title: notice.title,
-        channel: 'computador',
-        read: notice.read,
-        type: notice.type,
-        actorHandle: notice.actor ? this.mapSocialUser(notice.actor).handle : '',
-        createdAt: notice.createdAt,
-      })),
+      notifications: notifications.map((notice) =>
+        this.mapSocialNotification(notice),
+      ),
+    };
+  }
+
+  private mapSocialNotification(notification: {
+    id: string;
+    title: string;
+    read: boolean;
+    type: string;
+    createdAt: Date;
+    metadata?: Prisma.JsonValue | null;
+    actor?: Parameters<SocialService['mapSocialUser']>[0] | null;
+  }) {
+    const actor = notification.actor ? this.mapSocialUser(notification.actor) : null;
+    return {
+      id: notification.id,
+      title: notification.title,
+      channel: 'computador',
+      read: notification.read,
+      type: notification.type,
+      actorHandle: actor?.handle ?? '',
+      createdAt: notification.createdAt,
+      metadata: notification.metadata ?? undefined,
+      actor,
+    };
+  }
+
+  private orderPrivateConversationUsers(firstUserId: string, secondUserId: string) {
+    return [firstUserId, secondUserId].sort() as [string, string];
+  }
+
+  private async getPrivateUnreadCounts(
+    tx: Prisma.TransactionClient,
+    conversationIds: string[],
+    userId: string,
+  ) {
+    if (!conversationIds.length) return new Map<string, number>();
+    const counts = await tx.privateMessage.groupBy({
+      by: ['conversationId'],
+      where: {
+        conversationId: { in: conversationIds },
+        senderId: { not: userId },
+        readAt: null,
+      },
+      _count: { _all: true },
+    });
+    return new Map(counts.map((item) => [item.conversationId, item._count._all]));
+  }
+
+  private async ensurePrivateConversationAccess(
+    tx: Prisma.TransactionClient,
+    conversationId: string,
+    userId: string,
+  ) {
+    const conversation = await tx.privateConversation.findFirst({
+      where: {
+        id: conversationId,
+        OR: [{ firstUserId: userId }, { secondUserId: userId }],
+      },
+      include: {
+        firstUser: { select: this.socialUserSelect() },
+        secondUser: { select: this.socialUserSelect() },
+      },
+    });
+    if (!conversation) throw new NotFoundException('Private conversation not found');
+    return conversation;
+  }
+
+  private getPrivateConversationRecipient(
+    conversation: { firstUserId: string; secondUserId: string },
+    senderId: string,
+  ) {
+    return conversation.firstUserId === senderId
+      ? conversation.secondUserId
+      : conversation.firstUserId;
+  }
+
+  private mapPrivateConversation(
+    conversation: {
+      id: string;
+      firstUserId: string;
+      secondUserId: string;
+      updatedAt: Date;
+      firstUser: Parameters<SocialService['mapSocialUser']>[0];
+      secondUser: Parameters<SocialService['mapSocialUser']>[0];
+      messages?: Array<Parameters<SocialService['mapPrivateMessage']>[0]>;
+    },
+    userId: string,
+    unreadCounts: Map<string, number>,
+  ) {
+    const participant =
+      conversation.firstUserId === userId
+        ? this.mapSocialUser(conversation.secondUser)
+        : this.mapSocialUser(conversation.firstUser);
+    return {
+      id: conversation.id,
+      participantId: participant.id,
+      participantName: participant.name,
+      participantHandle: participant.handle,
+      participantInitials: participant.initials,
+      participantPhoto: participant.photo,
+      unread: unreadCounts.get(conversation.id) ?? 0,
+      updatedAt: conversation.updatedAt,
+      messages: [...(conversation.messages ?? [])]
+        .reverse()
+        .map((message) => this.mapPrivateMessage(message, userId)),
+    };
+  }
+
+  private mapPrivateMessage(
+    message: {
+      id: string;
+      conversationId: string;
+      tenantId: string;
+      senderId: string;
+      body: string;
+      readAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+      sender: {
+        id: string;
+        name: string;
+        city: string;
+        state: string;
+        profileImage: string | null;
+      };
+    },
+    userId: string,
+  ) {
+    return {
+      id: message.id,
+      conversationId: message.conversationId,
+      senderId: message.senderId,
+      from: message.sender.name || 'Membro MeetPoint',
+      body: message.body,
+      time: message.createdAt.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      createdAt: message.createdAt,
+      readAt: message.readAt,
+      mine: message.senderId === userId,
     };
   }
 
@@ -1512,7 +1837,7 @@ export class SocialService {
   }
 
   private emptyReactionSummary(): ReactionSummary {
-    return { like: 0, love: 0, fire: 0 };
+    return { like: 0, love: 0, fire: 0, clap: 0 };
   }
 
   private sanitizePostReactionType(type?: string): PostReactionType {
@@ -1871,6 +2196,24 @@ export class SocialService {
     return {
       author: { select: this.publicUserSelect() },
     } satisfies Prisma.PostCommentInclude;
+  }
+
+  private privateConversationInclude() {
+    return {
+      firstUser: { select: this.socialUserSelect() },
+      secondUser: { select: this.socialUserSelect() },
+      messages: {
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        include: this.privateMessageInclude(),
+      },
+    } satisfies Prisma.PrivateConversationInclude;
+  }
+
+  private privateMessageInclude() {
+    return {
+      sender: { select: this.publicUserSelect() },
+    } satisfies Prisma.PrivateMessageInclude;
   }
 
   private communityInclude() {
