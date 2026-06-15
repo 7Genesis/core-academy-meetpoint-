@@ -187,14 +187,19 @@ export class AuthService {
       throw new ForbiddenException('Account is not active');
     }
 
+    const accessAt = new Date();
     const profile = {
-      ...this.toPublicUser(refreshedUser),
+      ...this.toPublicUser({
+        ...refreshedUser,
+        lastLoginAt: accessAt,
+        lastActivityAt: accessAt,
+      }),
       ...(platformStaff ? { platformRole: platformStaff.role } : {}),
     };
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: { lastLoginAt: accessAt, lastActivityAt: accessAt },
     });
 
     const termsConsent = await this.recordTermsConsent(user.id, dto.termsVersion, consentMetadata);
@@ -451,6 +456,7 @@ export class AuthService {
     createdAt?: Date | null;
     updatedAt?: Date | null;
     lastLoginAt?: Date | null;
+    lastActivityAt?: Date | null;
     contactPhoneVerifiedAt?: Date | null;
   }) {
     return {
@@ -473,6 +479,7 @@ export class AuthService {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       lastLoginAt: user.lastLoginAt,
+      lastActivityAt: user.lastActivityAt,
     };
   }
 

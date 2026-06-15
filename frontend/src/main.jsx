@@ -17547,6 +17547,167 @@ function mapLocalSupportTicketToAdminTicket(ticket) {
   };
 }
 
+function createEmptySubscriptionDirectory() {
+  return {
+    generatedAt: '',
+    warningDays: 7,
+    filteredTotal: 0,
+    showing: 0,
+    summary: {
+      total: 0,
+      active: 0,
+      pending: 0,
+      inactive: 0,
+      suspended: 0,
+      expired: 0,
+      cancelled: 0,
+      expiringSoon: 0,
+      withoutSubscription: 0,
+      byStatus: {},
+    },
+    items: [],
+  };
+}
+
+function createEmptyAccessDirectory() {
+  return {
+    generatedAt: '',
+    onlineWindowMinutes: 5,
+    recentWindowHours: 24,
+    filteredTotal: 0,
+    showing: 0,
+    summary: {
+      total: 0,
+      online: 0,
+      recent: 0,
+      idle: 0,
+      never: 0,
+      blocked: 0,
+    },
+    items: [],
+  };
+}
+
+const subscriptionAdminFilters = [
+  ['all', 'Todas'],
+  ['active', 'Ativas'],
+  ['pending', 'Pendentes'],
+  ['expiring', 'Próximas do vencimento'],
+  ['inactive', 'Desativadas'],
+  ['expired', 'Vencidas'],
+  ['cancelled', 'Canceladas'],
+  ['suspended', 'Suspensas'],
+];
+
+const accessAdminFilters = [
+  ['all', 'Todos'],
+  ['online', 'Online agora'],
+  ['recent', 'Recentes 24h'],
+  ['idle', 'Inativos'],
+  ['never', 'Nunca acessou'],
+  ['blocked', 'Bloqueados'],
+];
+
+const platformAdminViewIds = new Set([
+  'dashboard',
+  'directory',
+  'support',
+  'ai',
+  'maintenance',
+  'finance',
+  'subscriptions',
+  'accesses',
+  'benefits',
+  'account',
+  'employees',
+]);
+
+function getRequestedPlatformAdminView() {
+  if (typeof window === 'undefined') return 'dashboard';
+  const params = new URLSearchParams(window.location.search);
+  const requestedView = params.get('adminView') || params.get('adminPreview') || 'dashboard';
+  return platformAdminViewIds.has(requestedView) ? requestedView : 'dashboard';
+}
+
+function getSubscriptionStatusLabel(status, statusGroup) {
+  if (statusGroup === 'expiring') return 'Próxima do vencimento';
+  return {
+    ACTIVE: 'Ativa',
+    PENDING_PAYMENT: 'Pendente de pagamento',
+    PAYMENT_PROCESSING: 'Pagamento em análise',
+    SUSPENDED: 'Suspensa',
+    EXPIRED: 'Vencida',
+    CANCELLED: 'Cancelada',
+  }[status] ?? status ?? 'Sem status';
+}
+
+function getSubscriptionStatusTone(statusGroup) {
+  if (statusGroup === 'active') return 'valid-note';
+  if (statusGroup === 'expiring') return 'policy-note';
+  if (statusGroup === 'pending') return 'policy-note';
+  return 'invalid-note';
+}
+
+function formatSubscriptionDate(value) {
+  if (!value) return 'Sem data';
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(value));
+}
+
+function formatSubscriptionDays(subscription) {
+  if (typeof subscription.daysRemaining !== 'number') return 'Sem vencimento cadastrado';
+  if (subscription.daysRemaining > 1) return `Faltam ${subscription.daysRemaining} dias`;
+  if (subscription.daysRemaining === 1) return 'Falta 1 dia';
+  if (subscription.daysRemaining === 0) return 'Vence hoje';
+  if (subscription.daysOverdue === 1) return 'Venceu há 1 dia';
+  return `Venceu há ${subscription.daysOverdue} dias`;
+}
+
+function getBillingCycleLabel(value) {
+  return {
+    monthly: 'Mensal',
+    semiannual: 'Semestral',
+    annual: 'Anual',
+  }[value] ?? value ?? 'Ciclo não informado';
+}
+
+function getAccessStatusLabel(statusGroup) {
+  return {
+    online: 'Online agora',
+    recent: 'Acessou recentemente',
+    idle: 'Inativo',
+    never: 'Nunca acessou',
+    blocked: 'Bloqueado',
+  }[statusGroup] ?? 'Sem atividade';
+}
+
+function getAccessStatusTone(statusGroup) {
+  if (statusGroup === 'online') return 'valid-note';
+  if (statusGroup === 'recent') return 'policy-note';
+  return 'invalid-note';
+}
+
+function formatAccessDate(value) {
+  if (!value) return 'Sem registro';
+  return formatDateTime(value);
+}
+
+function formatAccessDistance(access) {
+  if (typeof access.minutesSinceActivity !== 'number') return 'Sem atividade registrada';
+  if (access.minutesSinceActivity <= 0) return 'Agora';
+  if (access.minutesSinceActivity === 1) return 'Há 1 minuto';
+  if (access.minutesSinceActivity < 60) return `Há ${access.minutesSinceActivity} minutos`;
+  const hours = Math.floor(access.minutesSinceActivity / 60);
+  if (hours === 1) return 'Há 1 hora';
+  if (hours < 24) return `Há ${hours} horas`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Há 1 dia';
+  return `Há ${days} dias`;
+}
+
 // Admin central: operacao da plataforma, suporte, funcionarios, beneficios e conciliacao financeira.
 function PlatformProfile({
   addNotification,
@@ -17606,7 +17767,7 @@ function PlatformProfile({
   const [provisionedAccounts, setProvisionedAccounts] = useState([]);
   const [existingAccountResults, setExistingAccountResults] = useState([]);
   const [creatingManagedAccount, setCreatingManagedAccount] = useState(false);
-  const [platformView, setPlatformView] = useState('dashboard');
+  const [platformView, setPlatformView] = useState(() => getRequestedPlatformAdminView());
   const [directoryType, setDirectoryType] = useState('companies');
   const [selectedAccountType, setSelectedAccountType] = useState('student');
   const [notice, setNotice] = useState('Painel central pronto para operar.');
@@ -17654,6 +17815,14 @@ function PlatformProfile({
     platformPayoutsCents: 0,
     platformAvailableBalanceCents: 0,
   });
+  const [subscriptionDirectory, setSubscriptionDirectory] = useState(() => createEmptySubscriptionDirectory());
+  const [subscriptionFilter, setSubscriptionFilter] = useState('all');
+  const [subscriptionSearch, setSubscriptionSearch] = useState('');
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [accessDirectory, setAccessDirectory] = useState(() => createEmptyAccessDirectory());
+  const [accessFilter, setAccessFilter] = useState('all');
+  const [accessSearch, setAccessSearch] = useState('');
+  const [accessLoading, setAccessLoading] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [permissions, setPermissions] = useState({
     users: true,
@@ -17754,11 +17923,13 @@ function PlatformProfile({
     let ignore = false;
 
     async function loadAdminData() {
-      const [dashboardResult, staffResult, ticketsResult, accountsResult] = await Promise.allSettled([
+      const [dashboardResult, staffResult, ticketsResult, accountsResult, subscriptionsResult, accessesResult] = await Promise.allSettled([
         platformAdminRequest('/dashboard', authToken),
         platformAdminRequest('/staff', authToken),
         platformAdminRequest('/tickets', authToken),
         platformAdminRequest('/accounts', authToken),
+        platformAdminRequest('/subscriptions', authToken),
+        platformAdminRequest('/accesses', authToken),
       ]);
       if (ignore) return;
 
@@ -17785,8 +17956,14 @@ function PlatformProfile({
       if (accountsResult.status === 'fulfilled') {
         setProvisionedAccounts(accountsResult.value);
       }
+      if (subscriptionsResult.status === 'fulfilled') {
+        setSubscriptionDirectory(subscriptionsResult.value);
+      }
+      if (accessesResult.status === 'fulfilled') {
+        setAccessDirectory(accessesResult.value);
+      }
 
-      const failedCount = [dashboardResult, staffResult, ticketsResult, accountsResult]
+      const failedCount = [dashboardResult, staffResult, ticketsResult, accountsResult, subscriptionsResult, accessesResult]
         .filter((result) => result.status === 'rejected').length;
       setApiStatus(
         failedCount
@@ -17800,6 +17977,83 @@ function PlatformProfile({
       ignore = true;
     };
   }, [authToken]);
+
+  useEffect(() => {
+    if (platformView !== 'subscriptions') return undefined;
+    if (!authToken) return undefined;
+    const timeout = window.setTimeout(() => {
+      loadSubscriptions(subscriptionFilter, subscriptionSearch);
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [platformView, subscriptionFilter, subscriptionSearch, authToken]);
+
+  useEffect(() => {
+    if (platformView !== 'accesses') return undefined;
+    if (!authToken) return undefined;
+    const timeout = window.setTimeout(() => {
+      loadAccesses(accessFilter, accessSearch);
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [platformView, accessFilter, accessSearch, authToken]);
+
+  async function loadSubscriptions(status = subscriptionFilter, search = subscriptionSearch) {
+    if (!authToken) {
+      setNotice('Token administrativo ausente. Faça login novamente como admin para consultar assinaturas.');
+      return createEmptySubscriptionDirectory();
+    }
+
+    const params = new URLSearchParams({
+      status,
+      warningDays: '7',
+    });
+    const query = search.trim();
+    if (query) params.set('search', query);
+
+    setSubscriptionLoading(true);
+    try {
+      const result = await platformAdminRequest(`/subscriptions?${params.toString()}`, authToken);
+      setSubscriptionDirectory(result);
+      setApiStatus('Assinaturas carregadas da API administrativa.');
+      return result;
+    } catch (error) {
+      const message = `Não foi possível carregar assinaturas: ${String(error?.message ?? 'falha desconhecida')}`;
+      setApiStatus(message);
+      setNotice(message);
+      return subscriptionDirectory;
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  }
+
+  async function loadAccesses(status = accessFilter, search = accessSearch) {
+    if (!authToken) {
+      setNotice('Token administrativo ausente. Faça login novamente como admin para consultar acessos.');
+      return createEmptyAccessDirectory();
+    }
+
+    const params = new URLSearchParams({
+      status,
+      onlineMinutes: '5',
+      recentHours: '24',
+    });
+    const query = search.trim();
+    if (query) params.set('search', query);
+
+    setAccessLoading(true);
+    try {
+      const result = await platformAdminRequest(`/accesses?${params.toString()}`, authToken);
+      setAccessDirectory(result);
+      setApiStatus('Acessos carregados da API administrativa.');
+      return result;
+    } catch (error) {
+      const message = `Não foi possível carregar acessos: ${String(error?.message ?? 'falha desconhecida')}`;
+      setApiStatus(message);
+      setNotice(message);
+      return accessDirectory;
+    } finally {
+      setAccessLoading(false);
+    }
+  }
 
   function togglePermission(permission) {
     setPermissions((current) => ({
@@ -18388,6 +18642,12 @@ function PlatformProfile({
         <article><strong>{dashboard.companies}</strong><span>Empresas e parceiros</span></article>
         <article><strong>{dashboard.teachers}</strong><span>Pessoas Jurídicas</span></article>
         <article><strong>{dashboard.openTickets}</strong><span>Tickets</span></article>
+        <article><strong>{accessDirectory.summary.online}</strong><span>Acessando agora</span></article>
+        <article><strong>{accessDirectory.summary.recent}</strong><span>Acessos nas últimas {accessDirectory.recentWindowHours}h</span></article>
+        <article><strong>{subscriptionDirectory.summary.active}</strong><span>Assinaturas ativas</span></article>
+        <article><strong>{subscriptionDirectory.summary.pending}</strong><span>Assinaturas pendentes</span></article>
+        <article><strong>{subscriptionDirectory.summary.inactive}</strong><span>Assinaturas desativadas</span></article>
+        <article><strong>{subscriptionDirectory.summary.expiringSoon}</strong><span>Vencem em até {subscriptionDirectory.warningDays} dias</span></article>
         <article>
           <strong>{formatCurrency((dashboard.platformRevenueCents ?? 0) / 100)}</strong>
           <span>Taxas da plataforma</span>
@@ -18456,6 +18716,32 @@ function PlatformProfile({
           </button>
         </section>
         <section className="module-card">
+          <strong>Assinaturas</strong>
+          <p>Verifica ativas, pendentes, desativadas e próximas do vencimento com dias restantes.</p>
+          <button
+            onClick={() => {
+              setPlatformView('subscriptions');
+              setNotice('Painel de assinaturas aberto com vencimentos e status de cobrança.');
+              loadSubscriptions();
+            }}
+          >
+            Ver assinaturas
+          </button>
+        </section>
+        <section className="module-card">
+          <strong>Acessos</strong>
+          <p>Mostra quem está online, quem acessou recentemente e contas sem atividade.</p>
+          <button
+            onClick={() => {
+              setPlatformView('accesses');
+              setNotice('Painel de acessos aberto com atividade recente dos usuários.');
+              loadAccesses();
+            }}
+          >
+            Ver acessos
+          </button>
+        </section>
+        <section className="module-card">
           <strong>Benefícios</strong>
           <p>Admin central cadastra cupons, vouchers e anexos que serão enviados por email no resgate.</p>
           <button
@@ -18499,6 +18785,24 @@ function PlatformProfile({
         >
           Cadastrar benefício
         </button>
+        <button
+          onClick={() => {
+            setPlatformView('subscriptions');
+            setNotice('Assinaturas carregadas para auditoria de status e vencimento.');
+            loadSubscriptions();
+          }}
+        >
+          Ver assinaturas
+        </button>
+        <button
+          onClick={() => {
+            setPlatformView('accesses');
+            setNotice('Acessos carregados para auditoria de presença e atividade.');
+            loadAccesses();
+          }}
+        >
+          Ver acessos
+        </button>
       </div>
 
       <div className="platform-notice">{notice}</div>
@@ -18514,6 +18818,8 @@ function PlatformProfile({
               {platformView === 'ai' && 'Suporte de IA'}
               {platformView === 'maintenance' && 'Manutenção técnica'}
               {platformView === 'finance' && 'Financeiro da plataforma'}
+              {platformView === 'subscriptions' && 'Assinaturas e vencimentos'}
+              {platformView === 'accesses' && 'Acessos em tempo real'}
               {platformView === 'benefits' && 'Benefícios e envios por email'}
               {platformView === 'account' && 'Criar conta/cortesia'}
               {platformView === 'employees' && 'Funcionários internos'}
@@ -18654,6 +18960,208 @@ function PlatformProfile({
                 A plataforma não solicita chave Pix nem executa repasse manual.
               </p>
             </section>
+          </div>
+        )}
+
+        {platformView === 'subscriptions' && (
+          <div className="subscription-admin-panel">
+            <div className="finance-grid subscription-admin-summary">
+              <article>
+                <strong>{subscriptionDirectory.summary.active}</strong>
+                <span>Ativas</span>
+              </article>
+              <article>
+                <strong>{subscriptionDirectory.summary.pending}</strong>
+                <span>Pendentes/processando</span>
+              </article>
+              <article>
+                <strong>{subscriptionDirectory.summary.inactive}</strong>
+                <span>Desativadas</span>
+              </article>
+              <article>
+                <strong>{subscriptionDirectory.summary.expiringSoon}</strong>
+                <span>Próximas do vencimento</span>
+              </article>
+              <article>
+                <strong>{subscriptionDirectory.summary.withoutSubscription}</strong>
+                <span>Contas sem assinatura</span>
+              </article>
+            </div>
+
+            <div className="platform-tabs subscription-status-tabs">
+              {subscriptionAdminFilters.map(([value, label]) => (
+                <button
+                  className={subscriptionFilter === value ? 'active' : ''}
+                  key={value}
+                  type="button"
+                  onClick={() => setSubscriptionFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="platform-panel-header subscription-admin-toolbar">
+              <label>
+                Buscar assinatura
+                <input
+                  value={subscriptionSearch}
+                  onChange={(event) => setSubscriptionSearch(event.target.value)}
+                  placeholder="Nome, email, plano, NSU ou gateway"
+                />
+              </label>
+              <button type="button" onClick={() => loadSubscriptions()}>
+                {subscriptionLoading ? 'Atualizando...' : 'Atualizar'}
+              </button>
+            </div>
+
+            <p className="policy-note">
+              Mostrando {subscriptionDirectory.showing} de {subscriptionDirectory.filteredTotal} assinatura(s).
+              {' '}Próximo do vencimento = até {subscriptionDirectory.warningDays} dias.
+              {subscriptionDirectory.generatedAt && ` Atualizado em ${formatDateTime(subscriptionDirectory.generatedAt)}.`}
+            </p>
+
+            <div className="platform-directory subscription-admin-list">
+              {subscriptionDirectory.items.length === 0 ? (
+                <p className="empty-state">Nenhuma assinatura encontrada para esse filtro.</p>
+              ) : subscriptionDirectory.items.map((subscription) => (
+                <article className="platform-record subscription-record" key={subscription.id}>
+                  <span>{subscription.daysRemaining ?? '-'}</span>
+                  <div>
+                    <strong>{subscription.user.name || subscription.user.email}</strong>
+                    <small>
+                      {subscription.user.email} - {getAccountTypeLabel(subscription.user.accountSegment)}
+                      {' '}• {subscription.plan.name} ({getBillingCycleLabel(subscription.plan.billingCycle)})
+                    </small>
+                    <small>
+                      Status: {getSubscriptionStatusLabel(subscription.status, subscription.statusGroup)}
+                      {' '}• Conta: {subscription.user.status}
+                    </small>
+                    <small>
+                      Vencimento: {formatSubscriptionDate(subscription.expiresAt)}
+                      {' '}• {formatSubscriptionDays(subscription)}
+                    </small>
+                    <small>
+                      Valor: {subscription.checkoutAmountCents
+                        ? formatCurrency(subscription.checkoutAmountCents / 100)
+                        : formatCurrency((subscription.plan.priceCents ?? 0) / 100)}
+                      {' '}• Gateway: {subscription.paymentProvider ?? 'não informado'}
+                    </small>
+                  </div>
+                  <button
+                    className={getSubscriptionStatusTone(subscription.statusGroup)}
+                    type="button"
+                    onClick={() => {
+                      setNotice(
+                        `${subscription.user.name || subscription.user.email}: ${getSubscriptionStatusLabel(subscription.status, subscription.statusGroup)}. ${formatSubscriptionDays(subscription)}.`,
+                      );
+                    }}
+                  >
+                    {getSubscriptionStatusLabel(subscription.status, subscription.statusGroup)}
+                  </button>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {platformView === 'accesses' && (
+          <div className="access-admin-panel">
+            <div className="finance-grid access-admin-summary">
+              <article>
+                <strong>{accessDirectory.summary.online}</strong>
+                <span>Online agora</span>
+              </article>
+              <article>
+                <strong>{accessDirectory.summary.recent}</strong>
+                <span>Ativos nas últimas {accessDirectory.recentWindowHours}h</span>
+              </article>
+              <article>
+                <strong>{accessDirectory.summary.idle}</strong>
+                <span>Inativos</span>
+              </article>
+              <article>
+                <strong>{accessDirectory.summary.never}</strong>
+                <span>Nunca acessaram</span>
+              </article>
+              <article>
+                <strong>{accessDirectory.summary.blocked}</strong>
+                <span>Bloqueados</span>
+              </article>
+            </div>
+
+            <div className="platform-tabs access-status-tabs">
+              {accessAdminFilters.map(([value, label]) => (
+                <button
+                  className={accessFilter === value ? 'active' : ''}
+                  key={value}
+                  type="button"
+                  onClick={() => setAccessFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="platform-panel-header access-admin-toolbar">
+              <label>
+                Buscar acesso
+                <input
+                  value={accessSearch}
+                  onChange={(event) => setAccessSearch(event.target.value)}
+                  placeholder="Nome, email, tipo de conta, cidade ou empresa"
+                />
+              </label>
+              <button type="button" onClick={() => loadAccesses()}>
+                {accessLoading ? 'Atualizando...' : 'Atualizar'}
+              </button>
+            </div>
+
+            <p className="policy-note">
+              Mostrando {accessDirectory.showing} de {accessDirectory.filteredTotal} acesso(s).
+              {' '}Online = atividade nos últimos {accessDirectory.onlineWindowMinutes} minutos.
+              {accessDirectory.generatedAt && ` Atualizado em ${formatDateTime(accessDirectory.generatedAt)}.`}
+            </p>
+
+            <div className="platform-directory access-admin-list">
+              {accessDirectory.items.length === 0 ? (
+                <p className="empty-state">Nenhum acesso encontrado para esse filtro.</p>
+              ) : accessDirectory.items.map((access) => (
+                <article className="platform-record access-record" key={access.id}>
+                  <span>{access.isOnline ? 'ON' : access.minutesSinceActivity ?? '-'}</span>
+                  <div>
+                    <strong>{access.name || access.email}</strong>
+                    <small>
+                      {access.email} - {getAccountTypeLabel(access.accountSegment)}
+                      {' '}• {access.tenant?.name ?? 'MeetPoint'}
+                    </small>
+                    <small>
+                      Status: {getAccessStatusLabel(access.statusGroup)}
+                      {' '}• Conta: {access.status}
+                    </small>
+                    <small>
+                      Última atividade: {formatAccessDate(access.lastActivityAt)}
+                      {' '}• {formatAccessDistance(access)}
+                    </small>
+                    <small>
+                      Último login: {formatAccessDate(access.lastLoginAt)}
+                      {' '}• Local: {[access.city, access.state].filter(Boolean).join(' / ') || 'não informado'}
+                    </small>
+                  </div>
+                  <button
+                    className={getAccessStatusTone(access.statusGroup)}
+                    type="button"
+                    onClick={() => {
+                      setNotice(
+                        `${access.name || access.email}: ${getAccessStatusLabel(access.statusGroup)}. ${formatAccessDistance(access)}.`,
+                      );
+                    }}
+                  >
+                    {getAccessStatusLabel(access.statusGroup)}
+                  </button>
+                </article>
+              ))}
+            </div>
           </div>
         )}
 

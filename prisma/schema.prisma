@@ -184,6 +184,7 @@ model User {
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
   lastLoginAt            DateTime?
+  lastActivityAt         DateTime?
   blockedAt              DateTime?
   blockedReason          String?
   lastLoginIpEncrypted   String?
@@ -233,6 +234,7 @@ model User {
   @@index([contactEmailHash])
   @@index([contactPhoneHash])
   @@index([status])
+  @@index([lastActivityAt])
   @@map("users")
 }
 

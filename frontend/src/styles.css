@@ -28410,6 +28410,16 @@ html body .feed-page .mobile-hashtag-strip .empty-inline-note {
   line-height: 1.18;
 }
 
+html body .feed-page .feed-right .feed-widget :is(.trend-tag-list, .hashtag-list, .interest-chip-list) > .empty-state {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex: 1 1 100% !important;
+  grid-column: 1 / -1 !important;
+  justify-self: stretch !important;
+  box-sizing: border-box !important;
+}
+
 @media (max-width: 760px) {
   html body .topbar {
     grid-template-columns: minmax(0, 1fr) max-content;
@@ -28870,5 +28880,844 @@ html body .feed-page .mobile-hashtag-strip .empty-inline-note {
 
   html body header.topbar.topbar nav.main-window-nav.main-window-nav > .mp-button.main-window-tab.main-window-tab small {
     font-size: clamp(0.52rem, 0.72vw, 0.66rem) !important;
+  }
+}
+
+/* Auditoria responsiva global 2026-06:
+   camada de contencao estrutural para impedir corte, sobreposicao e alvos pequenos. */
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+@supports (overflow: clip) {
+  html,
+  body {
+    overflow-x: clip;
+  }
+}
+
+html body :is(
+  .app-shell,
+  .platform-shell,
+  .page-shell,
+  .workspace,
+  .workspace.with-rail,
+  .content-shell,
+  .feed-layout,
+  .community-layout,
+  .opportunity-layout,
+  .profile-grid,
+  .checkout-grid,
+  .course-builder-layout,
+  .reward-content-grid,
+  .support-grid,
+  .admin-grid,
+  .platform-control-grid,
+  .maintenance-grid,
+  .finance-grid
+) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+html body :is(
+  .feed-main,
+  .feed-column,
+  .side-panel,
+  .main-content,
+  .page-content,
+  .profile-panel,
+  .profile-main,
+  .community-panel,
+  .opportunity-panel,
+  .course-panel,
+  .benefit-panel,
+  .event-panel,
+  .product-card,
+  .job-card,
+  .benefit-card,
+  .event-card,
+  .compact-home-card,
+  .social-post,
+  .feed-composer,
+  .floating-modal,
+  .private-chat-window,
+  .notification-dock-window
+) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+html body :is(img, video, canvas, iframe, svg) {
+  max-width: 100%;
+}
+
+html body :is(
+  .product-card,
+  .job-card,
+  .benefit-card,
+  .event-card,
+  .social-post,
+  .compact-home-card,
+  .community-item,
+  .private-conversation-button,
+  .dock-item,
+  .notification-item,
+  .created-course-card,
+  .module-builder-card,
+  .reward-action-card
+) :is(h1, h2, h3, h4, strong, p, span, small, em, label, button) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+html body :is(
+  .product-grid,
+  .benefit-grid,
+  .event-grid,
+  .opportunity-grid,
+  .job-grid,
+  .community-bubble-grid,
+  .home-compact-grid,
+  .reward-action-grid,
+  .partner-plan-grid,
+  .permission-chip-grid,
+  .platform-control-grid,
+  .maintenance-grid,
+  .finance-grid,
+  .support-grid
+) {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)) !important;
+}
+
+html body :is(
+  .course-toolbar,
+  .feed-filter-row,
+  .feed-prompt-row,
+  .post-actions-bar,
+  .post-stats,
+  .profile-social-actions,
+  .profile-owner-actions,
+  .admin-actions,
+  .community-top-actions,
+  .event-card-actions,
+  .benefit-card-actions,
+  .job-card-actions,
+  .modal-actions,
+  .form-actions,
+  .private-chat-window-actions
+) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex-wrap: wrap !important;
+}
+
+html body :is(
+  .course-toolbar,
+  .feed-filter-row,
+  .feed-prompt-row,
+  .profile-social-actions,
+  .profile-owner-actions,
+  .admin-actions,
+  .modal-actions,
+  .form-actions
+) > * {
+  min-width: 0 !important;
+}
+
+html body .options-trigger.options-trigger {
+  width: 48px !important;
+  min-width: 48px !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  flex: 0 0 48px !important;
+}
+
+html body :is(
+  .feed-filter-row,
+  .rail-filter,
+  .segmented-row,
+  .event-toolbar > div,
+  .tag-row,
+  .interest-chip-list,
+  .trend-tag-list,
+  .hashtag-list,
+  .content-category-row
+) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  overflow: visible !important;
+}
+
+html body :is(
+  .feed-filter-row,
+  .rail-filter,
+  .segmented-row,
+  .event-toolbar > div,
+  .content-category-row
+) > button {
+  min-width: 0 !important;
+  min-height: 40px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding-block: 8px !important;
+  white-space: normal !important;
+  line-height: 1.15 !important;
+}
+
+html body .feed-page .content-category-row.content-category-row > button {
+  width: auto !important;
+  min-width: min(100%, 124px) !important;
+  min-height: 42px !important;
+  flex: 1 1 min(100%, 140px) !important;
+}
+
+html body :is(
+  .empty-state,
+  .page-empty-state,
+  .empty-card,
+  .inline-page-notice,
+  .resume-card,
+  .course-empty-state,
+  .community-empty-state,
+  .benefit-empty-state,
+  .event-empty-state
+) > button,
+html body :is(
+  .empty-state,
+  .page-empty-state,
+  .empty-card,
+  .inline-page-notice,
+  .resume-card,
+  .course-empty-state,
+  .community-empty-state,
+  .benefit-empty-state,
+  .event-empty-state
+) :is(a.button-link, button) {
+  min-height: 40px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+html body .options-menu-panel.options-menu-panel {
+  width: min(230px, calc(100vw - 20px)) !important;
+  max-width: calc(100vw - 20px) !important;
+}
+
+html body :is(
+  .floating-modal,
+  .signup-choice-modal,
+  .job-create-modal,
+  .job-detail-modal,
+  .resume-create-modal,
+  .application-modal,
+  .event-payment-modal,
+  .community-details-modal,
+  .community-access-modal,
+  .compact-event-actions-modal,
+  .social-profile-modal,
+  .system-customization-modal,
+  .image-crop-modal,
+  .profile-points-modal,
+  .subscription-required-modal,
+  .privacy-consent-modal
+) {
+  width: min(var(--modal-width, 920px), calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px) !important;
+  max-height: calc(100dvh - 24px) !important;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+}
+
+html body :is(
+  .floating-modal,
+  .signup-choice-modal,
+  .job-create-modal,
+  .job-detail-modal,
+  .resume-create-modal,
+  .application-modal,
+  .event-payment-modal,
+  .community-details-modal,
+  .community-access-modal,
+  .compact-event-actions-modal,
+  .social-profile-modal,
+  .system-customization-modal,
+  .image-crop-modal,
+  .profile-points-modal,
+  .subscription-required-modal,
+  .privacy-consent-modal
+) :is(input, select, textarea, button) {
+  max-width: 100%;
+}
+
+html body :is(
+  .opportunity-layout,
+  .community-layout,
+  .checkout-grid,
+  .course-builder-layout,
+  .profile-grid,
+  .reward-content-grid
+) {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+@media (min-width: 1024px) {
+  html body .community-layout.community-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px) !important;
+  }
+
+  html body .opportunity-layout.opportunity-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px) !important;
+  }
+
+  html body .profile-grid.profile-grid,
+  html body .reward-content-grid.reward-content-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px) !important;
+  }
+
+  html body .checkout-grid.checkout-grid,
+  html body .course-builder-layout.course-builder-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 420px) !important;
+  }
+}
+
+html[data-theme] body .private-chat-widget.as-page .private-chat-window.private-chat-window {
+  width: min(1040px, 100%) !important;
+  max-width: 100% !important;
+}
+
+html[data-theme] body .private-chat-window.private-chat-window {
+  width: min(680px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px) !important;
+}
+
+html[data-theme] body .private-chat-grid.private-chat-grid {
+  min-width: 0 !important;
+  grid-template-columns: minmax(180px, 250px) minmax(0, 1fr) !important;
+}
+
+html[data-theme] body :is(
+  .private-thread,
+  .private-thread-head,
+  .private-thread-messages,
+  .private-thread-form,
+  .private-conversation-list
+) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+@media (max-width: 900px) {
+  html body :is(
+    .product-grid,
+    .benefit-grid,
+    .event-grid,
+    .opportunity-grid,
+    .job-grid,
+    .partner-plan-grid,
+    .reward-action-grid,
+    .permission-chip-grid,
+    .support-grid
+  ) {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)) !important;
+  }
+
+  html[data-theme] body .private-chat-grid.private-chat-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 760px) {
+  html body :is(
+    .page-shell,
+    .workspace,
+    .workspace.with-rail,
+    .content-shell,
+    .feed-layout,
+    .communities-page,
+    .courses-page,
+    .opportunities-page,
+    .benefits-page,
+    .events-page,
+    .profile-authenticated-page
+  ) {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-inline: clamp(10px, 3.5vw, 18px) !important;
+  }
+
+  html body :is(
+    .product-grid,
+    .benefit-grid,
+    .event-grid,
+    .opportunity-grid,
+    .job-grid,
+    .community-bubble-grid,
+    .home-compact-grid,
+    .reward-action-grid,
+    .partner-plan-grid,
+    .permission-chip-grid,
+    .platform-control-grid,
+    .maintenance-grid,
+    .finance-grid,
+    .support-grid
+  ) {
+    grid-template-columns: 1fr !important;
+  }
+
+  html body :is(
+    .floating-modal,
+    .signup-choice-modal,
+    .job-create-modal,
+    .job-detail-modal,
+    .resume-create-modal,
+    .application-modal,
+    .event-payment-modal,
+    .community-details-modal,
+    .community-access-modal,
+    .compact-event-actions-modal,
+    .social-profile-modal,
+    .system-customization-modal,
+    .image-crop-modal,
+    .profile-points-modal,
+    .subscription-required-modal,
+    .privacy-consent-modal
+  ) {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    max-height: calc(100dvh - var(--mobile-nav-height, 72px) - var(--mobile-safe-bottom, 0px) - 22px) !important;
+  }
+
+  html[data-theme] body .private-chat-window.private-chat-window {
+    right: 0 !important;
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    max-height: calc(100dvh - var(--mobile-nav-height, 72px) - var(--mobile-safe-bottom, 0px) - 22px) !important;
+  }
+
+  html[data-theme] body .private-chat-window.private-chat-window header,
+  html[data-theme] body .private-thread-head.private-thread-head,
+  html[data-theme] body .private-thread-form.private-thread-form {
+    flex-wrap: wrap !important;
+  }
+
+  html[data-theme] body .private-conversation-list.private-conversation-list {
+    max-height: min(32dvh, 180px) !important;
+  }
+
+  html[data-theme] body .private-thread.private-thread {
+    min-height: min(420px, 52dvh) !important;
+  }
+
+  html body :is(
+    .course-toolbar,
+    .feed-filter-row,
+    .feed-prompt-row,
+    .profile-social-actions,
+    .profile-owner-actions,
+    .admin-actions,
+    .modal-actions,
+    .form-actions
+  ) > :is(button, a) {
+    flex: 1 1 min(100%, 180px) !important;
+  }
+}
+
+@media (max-width: 420px) {
+  html body :is(
+    .page-shell,
+    .workspace,
+    .workspace.with-rail,
+    .content-shell,
+    .feed-layout,
+    .communities-page,
+    .courses-page,
+    .opportunities-page,
+    .benefits-page,
+    .events-page,
+    .profile-authenticated-page
+  ) {
+    padding-inline: 10px !important;
+  }
+
+  html body :is(
+    .product-card,
+    .job-card,
+    .benefit-card,
+    .event-card,
+    .social-post,
+    .feed-composer,
+    .compact-home-card
+  ) {
+    border-radius: 16px !important;
+  }
+
+  html body .options-menu-panel.options-menu-panel {
+    left: 10px !important;
+    right: 10px !important;
+    width: auto !important;
+  }
+}
+
+/* Tablet retrato: usa a navegacao compacta para evitar abas desktop com 32px. */
+@media (min-width: 761px) and (max-width: 900px) {
+  :root {
+    --mobile-nav-height: var(--mobile-dock-height, 76px);
+  }
+
+  html body {
+    padding-bottom: calc(var(--mobile-nav-height) + var(--mobile-safe-bottom, 0px) + 24px) !important;
+  }
+
+  html body header.topbar.topbar {
+    grid-template-columns: minmax(0, max-content) max-content !important;
+    justify-content: space-between !important;
+  }
+
+  html body header.topbar.topbar nav.main-window-nav.main-window-nav {
+    display: none !important;
+  }
+
+  html body .page-shell,
+  html body .workspace {
+    padding-bottom: calc(var(--mobile-nav-height) + var(--mobile-safe-bottom, 0px) + 34px) !important;
+  }
+
+  html body .mobile-tabbar.mobile-bottom-dock.mobile-bottom-dock {
+    left: 50% !important;
+    right: auto !important;
+    bottom: calc(var(--mobile-safe-bottom, 0px) + 12px) !important;
+    width: min(calc(100vw - 24px), 560px) !important;
+    max-width: calc(100vw - 24px) !important;
+    min-height: var(--mobile-dock-height, 76px) !important;
+    display: grid !important;
+    grid-template-columns: 56px minmax(0, 1fr) 56px !important;
+    gap: 8px !important;
+    padding: 8px !important;
+    overflow: visible !important;
+    transform: translateX(-50%) !important;
+    border: 1px solid var(--mobile-dock-border) !important;
+    border-radius: 999px !important;
+    background: var(--mobile-dock-bg) !important;
+    box-shadow: var(--mobile-dock-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+    backdrop-filter: blur(18px) saturate(1.25) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(1.25) !important;
+  }
+
+  html body .mobile-bottom-dock.mobile-bottom-dock .dock-main-pill {
+    min-width: 0 !important;
+    height: 56px !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 4px !important;
+    padding: 4px !important;
+    border-radius: 999px !important;
+    background: rgba(255, 255, 255, 0.44) !important;
+  }
+
+  html body .mobile-bottom-dock.mobile-bottom-dock :is(.dock-side-button, .dock-item) {
+    min-width: 0 !important;
+    min-height: 44px !important;
+    height: 48px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: transparent !important;
+    color: var(--mobile-dock-icon) !important;
+    -webkit-text-fill-color: currentColor !important;
+    box-shadow: none !important;
+    white-space: nowrap !important;
+  }
+
+  html body .mobile-bottom-dock.mobile-bottom-dock :is(.dock-side-button, .dock-item) > svg {
+    width: 22px !important;
+    height: 22px !important;
+    min-width: 22px !important;
+  }
+
+  html body .mobile-bottom-dock.mobile-bottom-dock :is(.dock-side-button, .dock-item) > small {
+    display: none !important;
+  }
+
+  html body .mobile-bottom-dock.mobile-bottom-dock :is(.dock-side-button.active, .dock-item.active) {
+    background: var(--mobile-dock-active-bg) !important;
+    color: var(--mobile-dock-icon-active) !important;
+    box-shadow: 0 8px 20px rgba(17, 24, 39, 0.08) !important;
+  }
+
+  html body .mobile-bottom-dock.mobile-bottom-dock .dock-item.active > small {
+    display: inline-block !important;
+    max-width: 96px !important;
+    overflow: hidden !important;
+    color: currentColor !important;
+    -webkit-text-fill-color: currentColor !important;
+    font-size: 11px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  html body .mobile-more-backdrop {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: var(--layer-menu, 1200) !important;
+    background: rgba(17, 19, 24, 0.28) !important;
+  }
+
+  html body .mobile-more-sheet.mobile-more-sheet {
+    position: fixed !important;
+    left: 50% !important;
+    right: auto !important;
+    bottom: calc(var(--mobile-nav-height) + var(--mobile-safe-bottom, 0px) + 22px) !important;
+    width: min(calc(100vw - 24px), 560px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: min(78dvh, 620px) !important;
+    overflow: auto !important;
+    transform: translateX(-50%) !important;
+  }
+
+  html body .mobile-more-grid.mobile-more-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* Feed composer: details aberto ocupa linha inteira e seus controles nao colapsam. */
+html body .feed-page .composer-advanced.composer-advanced {
+  min-width: min(100%, 280px) !important;
+  flex: 1 1 min(100%, 320px) !important;
+}
+
+html body .feed-page .composer-advanced[open].composer-advanced {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex-basis: 100% !important;
+}
+
+html body .feed-page .composer-advanced[open].composer-advanced .content-category-row.content-category-row {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)) !important;
+}
+
+html body .feed-page .composer-advanced[open].composer-advanced .content-category-row.content-category-row > button {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+html body .feed-page .composer-advanced[open].composer-advanced .composer-meta.composer-meta {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: minmax(180px, 1fr) max-content max-content !important;
+  align-items: center !important;
+}
+
+html body .feed-page .composer-advanced[open].composer-advanced .composer-meta.composer-meta input {
+  width: 100% !important;
+  min-width: min(100%, 180px) !important;
+}
+
+/* Feed medio: quando a coluna esquerda sai, Encontrar pessoas entra no topo do feed. */
+@media (max-width: 1280px) {
+  html body .feed-page .feed-mobile-discovery.feed-mobile-discovery {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    display: block !important;
+    position: relative !important;
+    z-index: 60 !important;
+  }
+
+  html body .feed-page .feed-mobile-discovery.feed-mobile-discovery .people-discovery-card.people-discovery-card {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  html body .feed-page .feed-mobile-discovery.feed-mobile-discovery .people-discovery-trigger.people-discovery-trigger {
+    width: 100% !important;
+    min-height: 56px !important;
+    border-radius: 18px !important;
+    background: rgba(255, 253, 247, 0.96) !important;
+  }
+
+  html body .feed-page .feed-mobile-discovery.feed-mobile-discovery .people-discovery-body.people-discovery-body {
+    position: absolute !important;
+    top: calc(100% + 8px) !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 3200 !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: min(620px, calc(100dvh - 180px)) !important;
+    overflow: auto !important;
+  }
+}
+
+@media (min-width: 1281px) {
+  html body .feed-page .feed-mobile-discovery.feed-mobile-discovery {
+    display: none !important;
+  }
+}
+
+@media (max-width: 760px) {
+  html body .feed-page .composer-advanced[open].composer-advanced .composer-meta.composer-meta {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Admin: auditoria de assinaturas, acessos e vencimentos. */
+.subscription-admin-panel,
+.access-admin-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.subscription-admin-summary,
+.access-admin-summary {
+  align-items: stretch;
+}
+
+.subscription-status-tabs,
+.access-status-tabs {
+  align-items: stretch;
+}
+
+.subscription-status-tabs.subscription-status-tabs > button,
+.access-status-tabs.access-status-tabs > button {
+  width: auto;
+  min-width: max-content;
+  flex: 0 1 auto;
+  white-space: normal;
+}
+
+.subscription-admin-toolbar,
+.access-admin-toolbar {
+  align-items: end;
+}
+
+.subscription-admin-toolbar label,
+.access-admin-toolbar label {
+  min-width: min(100%, 280px);
+  display: grid;
+  gap: 6px;
+  flex: 1 1 320px;
+}
+
+.subscription-admin-list,
+.access-admin-list {
+  display: grid;
+  gap: 10px;
+}
+
+.subscription-record > span,
+.access-record > span {
+  min-width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  background: var(--yellow-soft);
+  color: var(--ink);
+  font-weight: 950;
+}
+
+.access-record > span {
+  background: #e3f8d8;
+}
+
+.subscription-record > button,
+.access-record > button {
+  min-width: 150px;
+}
+
+.subscription-record > button.valid-note,
+.subscription-record > button.policy-note,
+.subscription-record > button.invalid-note,
+.access-record > button.valid-note,
+.access-record > button.policy-note,
+.access-record > button.invalid-note {
+  margin: 0;
+  border-width: 1px !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 760px) {
+  .subscription-status-tabs.subscription-status-tabs,
+  .access-status-tabs.access-status-tabs {
+    flex-wrap: wrap;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .subscription-status-tabs.subscription-status-tabs > button,
+  .access-status-tabs.access-status-tabs > button {
+    min-width: min(100%, 128px);
+    flex: 1 1 min(100%, 132px);
+    width: auto;
+    white-space: normal;
+    line-height: 1.15;
+  }
+
+  .subscription-admin-toolbar,
+  .access-admin-toolbar {
+    align-items: stretch;
+  }
+
+  .subscription-record > span,
+  .access-record > span {
+    min-width: 46px;
+    height: 46px;
+    border-radius: 14px;
+  }
+
+  .subscription-record > button,
+  .access-record > button {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .platform-admin-card.platform-admin-card {
+    padding-inline: 10px;
+  }
+
+  .platform-admin-card .platform-panel.platform-panel {
+    padding: 10px;
+  }
+
+  .subscription-record.subscription-record,
+  .access-record.access-record {
+    grid-template-columns: 1fr;
+  }
+
+  .subscription-record.subscription-record > span,
+  .access-record.access-record > span {
+    width: 46px;
+    min-width: 46px;
   }
 }

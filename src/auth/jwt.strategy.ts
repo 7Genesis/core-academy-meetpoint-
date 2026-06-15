@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { PrismaService } from '../prisma/prisma.service';
 import { JwtKeyService } from './jwt-key.service';
 import { TokenRevocationService } from './token-revocation.service';
 
@@ -16,11 +17,15 @@ export type JwtPayload = {
   iat?: number;
 };
 
+const ACTIVITY_WRITE_THROTTLE_MS = 60_000;
+const activityWriteCache = new Map<string, number>();
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private readonly jwtKeyService: JwtKeyService,
     private readonly tokenRevocationService: TokenRevocationService,
+    private readonly prisma: PrismaService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -53,7 +58,24 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (await this.tokenRevocationService.isRevoked(payload.jti)) {
       throw new UnauthorizedException('JWT has been revoked');
     }
+    void this.touchUserActivity(payload.sub);
     return payload;
+  }
+
+  private async touchUserActivity(userId: string) {
+    const nowMs = Date.now();
+    const lastWrite = activityWriteCache.get(userId) ?? 0;
+    if (nowMs - lastWrite < ACTIVITY_WRITE_THROTTLE_MS) return;
+
+    activityWriteCache.set(userId, nowMs);
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lastActivityAt: new Date(nowMs) },
+      });
+    } catch {
+      activityWriteCache.delete(userId);
+    }
   }
 }
 

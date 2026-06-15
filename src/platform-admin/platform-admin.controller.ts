@@ -38,6 +38,22 @@ type PlatformRequest = Request & {
 };
 
 type DirectoryType = 'companies' | 'students' | 'teachers';
+type SubscriptionDirectoryStatus =
+  | 'all'
+  | 'active'
+  | 'pending'
+  | 'inactive'
+  | 'expiring'
+  | 'expired'
+  | 'cancelled'
+  | 'suspended';
+type AccessDirectoryStatus =
+  | 'all'
+  | 'online'
+  | 'recent'
+  | 'idle'
+  | 'never'
+  | 'blocked';
 
 @PlatformWide()
 @UseGuards(PlatformAdminGuard)
@@ -70,6 +86,36 @@ export class PlatformAdminController {
   @PlatformPermissions(PlatformPermission.PAYMENTS_READ)
   listPlatformFeePayouts() {
     return this.platformAdminService.listPlatformFeePayouts();
+  }
+
+  @Get('subscriptions')
+  @PlatformPermissions(PlatformPermission.PAYMENTS_READ)
+  listSubscriptions(
+    @Query('status') status: SubscriptionDirectoryStatus = 'all',
+    @Query('search') search = '',
+    @Query('warningDays') warningDays = '7',
+  ) {
+    return this.platformAdminService.listSubscriptions({
+      status,
+      search,
+      warningDays: Number(warningDays),
+    });
+  }
+
+  @Get('accesses')
+  @PlatformPermissions(PlatformPermission.USERS_WRITE)
+  listAccesses(
+    @Query('status') status: AccessDirectoryStatus = 'all',
+    @Query('search') search = '',
+    @Query('onlineMinutes') onlineMinutes = '5',
+    @Query('recentHours') recentHours = '24',
+  ) {
+    return this.platformAdminService.listAccesses({
+      status,
+      search,
+      onlineMinutes: Number(onlineMinutes),
+      recentHours: Number(recentHours),
+    });
   }
 
   @Get('accounts')

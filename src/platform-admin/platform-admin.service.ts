@@ -9,6 +9,7 @@ import {
   AccountStatus,
   PlatformPayoutStatus,
   Prisma,
+  SubscriptionStatus,
   SupportTicketStatus,
 } from '@prisma/client';
 import { hash } from 'bcryptjs';
@@ -27,6 +28,33 @@ import { UpdatePlatformStaffPermissionsDto } from './dto/update-platform-staff-p
 import { UpdateSupportTicketStatusDto } from './dto/update-support-ticket-status.dto';
 
 type DirectoryType = 'companies' | 'students' | 'teachers';
+type SubscriptionDirectoryStatus =
+  | 'all'
+  | 'active'
+  | 'pending'
+  | 'inactive'
+  | 'expiring'
+  | 'expired'
+  | 'cancelled'
+  | 'suspended';
+type AccessDirectoryStatus =
+  | 'all'
+  | 'online'
+  | 'recent'
+  | 'idle'
+  | 'never'
+  | 'blocked';
+type ListSubscriptionsOptions = {
+  status?: SubscriptionDirectoryStatus;
+  search?: string;
+  warningDays?: number;
+};
+type ListAccessesOptions = {
+  status?: AccessDirectoryStatus;
+  search?: string;
+  onlineMinutes?: number;
+  recentHours?: number;
+};
 const MANAGED_ACCOUNT_MAIN_MARKER = '[[managed-account:main]]';
 const MANAGED_ACCOUNT_LINKED_MARKER = '[[managed-account:linked]]';
 const MANAGED_ACCOUNT_SEGMENT_PREFIX = '[[managed-account-segment:';
@@ -34,6 +62,10 @@ const MANAGED_ACCOUNT_COMPANY_PREFIX = '[[managed-account-company:';
 const MANAGED_ACCOUNT_PARENT_PREFIX = '[[managed-account-parent:';
 const LEGACY_ACCOUNT_SEGMENT_PREFIX = '[[account-segment:';
 const LEGACY_COMPANY_LINK_PREFIX = '[[company-link:';
+const SUBSCRIPTION_WARNING_DAYS = 7;
+const DAY_MS = 1000 * 60 * 60 * 24;
+const ACCESS_ONLINE_WINDOW_MINUTES = 5;
+const ACCESS_RECENT_WINDOW_HOURS = 24;
 
 @Injectable()
 export class PlatformAdminService {
@@ -124,6 +156,290 @@ export class PlatformAdminService {
           }
         : null,
     }));
+  }
+
+  async listSubscriptions(options: ListSubscriptionsOptions = {}) {
+    const query = options.search?.trim() ?? '';
+    const status = options.status ?? 'all';
+    const warningDays = Number.isFinite(options.warningDays)
+      ? Math.min(Math.max(Math.trunc(options.warningDays ?? SUBSCRIPTION_WARNING_DAYS), 1), 90)
+      : SUBSCRIPTION_WARNING_DAYS;
+    const now = new Date();
+    const warningLimit = addDays(now, warningDays);
+    const statusWhere = buildSubscriptionStatusWhere(status, now, warningLimit);
+    const searchWhere = query ? buildSubscriptionSearchWhere(query) : undefined;
+    const where: Prisma.SubscriptionWhereInput = {
+      AND: [statusWhere, searchWhere].filter(Boolean) as Prisma.SubscriptionWhereInput[],
+    };
+
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const [
+        subscriptions,
+        filteredTotal,
+        groupedByStatus,
+        expiringSoon,
+        withoutSubscription,
+      ] = await Promise.all([
+        tx.subscription.findMany({
+          where,
+          orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+          take: 200,
+          include: {
+            plan: {
+              select: {
+                id: true,
+                name: true,
+                price: true,
+                billingCycle: true,
+                isActive: true,
+              },
+            },
+            user: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                city: true,
+                state: true,
+                role: true,
+                status: true,
+                bio: true,
+                tenant: {
+                  select: {
+                    id: true,
+                    name: true,
+                    subdomain: true,
+                  },
+                },
+              },
+            },
+          },
+        }),
+        tx.subscription.count({ where }),
+        tx.subscription.groupBy({
+          by: ['status'],
+          _count: { _all: true },
+        }),
+        tx.subscription.count({
+          where: {
+            status: SubscriptionStatus.ACTIVE,
+            expiresAt: { gte: now, lte: warningLimit },
+          },
+        }),
+        tx.user.count({
+          where: {
+            subscriptions: { none: {} },
+          },
+        }),
+      ]);
+
+      const statusCounts = groupedByStatus.reduce<Record<string, number>>(
+        (accumulator, item) => ({
+          ...accumulator,
+          [item.status]: item._count._all,
+        }),
+        {},
+      );
+      const active = statusCounts[SubscriptionStatus.ACTIVE] ?? 0;
+      const pending =
+        (statusCounts[SubscriptionStatus.PENDING_PAYMENT] ?? 0) +
+        (statusCounts[SubscriptionStatus.PAYMENT_PROCESSING] ?? 0);
+      const inactive =
+        (statusCounts[SubscriptionStatus.SUSPENDED] ?? 0) +
+        (statusCounts[SubscriptionStatus.EXPIRED] ?? 0) +
+        (statusCounts[SubscriptionStatus.CANCELLED] ?? 0);
+
+      return {
+        generatedAt: now.toISOString(),
+        warningDays,
+        filteredTotal,
+        showing: subscriptions.length,
+        summary: {
+          total: groupedByStatus.reduce((total, item) => total + item._count._all, 0),
+          active,
+          pending,
+          inactive,
+          suspended: statusCounts[SubscriptionStatus.SUSPENDED] ?? 0,
+          expired: statusCounts[SubscriptionStatus.EXPIRED] ?? 0,
+          cancelled: statusCounts[SubscriptionStatus.CANCELLED] ?? 0,
+          expiringSoon,
+          withoutSubscription,
+          byStatus: statusCounts,
+        },
+        items: subscriptions.map((subscription) => {
+          const expirationDate = resolveSubscriptionExpirationDate(subscription);
+          const daysRemaining = expirationDate
+            ? Math.ceil((expirationDate.getTime() - now.getTime()) / DAY_MS)
+            : null;
+          const accountSegment =
+            this.parseManagedAccountSegment(subscription.user.bio) ??
+            (subscription.user.role === 'ADMIN' ? 'teacher' : 'student');
+          const statusGroup = getSubscriptionStatusGroup(
+            subscription.status,
+            daysRemaining,
+            warningDays,
+          );
+
+          return {
+            id: subscription.id,
+            status: subscription.status,
+            statusGroup,
+            paymentProvider: subscription.paymentProvider,
+            externalSubscriptionId: subscription.externalSubscriptionId,
+            checkoutAmountCents: subscription.checkoutAmountCents,
+            checkoutBillingCycle: subscription.checkoutBillingCycle,
+            transactionNsu: subscription.transactionNsu,
+            receiptUrl: subscription.receiptUrl,
+            startedAt: subscription.startedAt,
+            paidAt: subscription.paidAt,
+            expiresAt: expirationDate,
+            renewalDate: subscription.renewalDate ?? expirationDate,
+            cancelledAt: subscription.cancelledAt,
+            createdAt: subscription.createdAt,
+            updatedAt: subscription.updatedAt,
+            daysRemaining,
+            daysUntilExpiration:
+              typeof daysRemaining === 'number' ? Math.max(daysRemaining, 0) : null,
+            daysOverdue:
+              typeof daysRemaining === 'number' && daysRemaining < 0
+                ? Math.abs(daysRemaining)
+                : 0,
+            isExpiringSoon: statusGroup === 'expiring',
+            plan: {
+              id: subscription.plan.id,
+              name: subscription.plan.name,
+              billingCycle: subscription.plan.billingCycle,
+              priceCents: Math.round(Number(subscription.plan.price) * 100),
+              isActive: subscription.plan.isActive,
+            },
+            user: {
+              id: subscription.user.id,
+              name: subscription.user.name,
+              email: this.dataMasking.maskEmail(subscription.user.email),
+              city: subscription.user.city,
+              state: subscription.user.state,
+              status: subscription.user.status,
+              accountSegment,
+              tenant: subscription.user.tenant,
+            },
+          };
+        }),
+      };
+    });
+  }
+
+  async listAccesses(options: ListAccessesOptions = {}) {
+    const query = options.search?.trim() ?? '';
+    const status = options.status ?? 'all';
+    const onlineMinutes = Number.isFinite(options.onlineMinutes)
+      ? Math.min(Math.max(Math.trunc(options.onlineMinutes ?? ACCESS_ONLINE_WINDOW_MINUTES), 1), 120)
+      : ACCESS_ONLINE_WINDOW_MINUTES;
+    const recentHours = Number.isFinite(options.recentHours)
+      ? Math.min(Math.max(Math.trunc(options.recentHours ?? ACCESS_RECENT_WINDOW_HOURS), 1), 168)
+      : ACCESS_RECENT_WINDOW_HOURS;
+    const now = new Date();
+    const onlineSince = new Date(now.getTime() - onlineMinutes * 60_000);
+    const recentSince = new Date(now.getTime() - recentHours * 60 * 60_000);
+    const statusWhere = buildAccessStatusWhere(status, onlineSince, recentSince);
+    const searchWhere = query ? buildAccessSearchWhere(query) : undefined;
+    const where: Prisma.UserWhereInput = {
+      AND: [statusWhere, searchWhere].filter(Boolean) as Prisma.UserWhereInput[],
+    };
+
+    return this.prisma.withPlatformAdmin(async (tx) => {
+      const [
+        users,
+        filteredTotal,
+        total,
+        online,
+        recent,
+        idle,
+        never,
+        blocked,
+      ] = await Promise.all([
+        tx.user.findMany({
+          where,
+          orderBy: [
+            { lastActivityAt: { sort: 'desc', nulls: 'last' } },
+            { lastLoginAt: { sort: 'desc', nulls: 'last' } },
+            { createdAt: 'desc' },
+          ],
+          take: 200,
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            status: true,
+            tenantId: true,
+            name: true,
+            city: true,
+            state: true,
+            bio: true,
+            createdAt: true,
+            updatedAt: true,
+            lastLoginAt: true,
+            lastActivityAt: true,
+            tenant: { select: { id: true, name: true, subdomain: true } },
+          },
+        }),
+        tx.user.count({ where }),
+        tx.user.count(),
+        tx.user.count({ where: { lastActivityAt: { gte: onlineSince } } }),
+        tx.user.count({ where: { lastActivityAt: { gte: recentSince } } }),
+        tx.user.count({ where: { lastActivityAt: { lt: recentSince } } }),
+        tx.user.count({ where: { lastActivityAt: null } }),
+        tx.user.count({ where: { status: AccountStatus.BLOCKED } }),
+      ]);
+
+      return {
+        generatedAt: now.toISOString(),
+        onlineWindowMinutes: onlineMinutes,
+        recentWindowHours: recentHours,
+        filteredTotal,
+        showing: users.length,
+        summary: {
+          total,
+          online,
+          recent,
+          idle,
+          never,
+          blocked,
+        },
+        items: users.map((user) => {
+          const lastActivityAt = user.lastActivityAt ?? user.lastLoginAt;
+          const accountSegment =
+            this.parseManagedAccountSegment(user.bio) ??
+            (user.role === 'ADMIN' ? 'teacher' : 'student');
+          const statusGroup = getAccessStatusGroup(
+            user.status,
+            lastActivityAt,
+            onlineSince,
+            recentSince,
+          );
+          const minutesSinceActivity = lastActivityAt
+            ? Math.max(0, Math.floor((now.getTime() - lastActivityAt.getTime()) / 60_000))
+            : null;
+
+          return {
+            id: user.id,
+            name: user.name,
+            email: this.dataMasking.maskEmail(user.email),
+            accountSegment,
+            status: user.status,
+            statusGroup,
+            city: user.city,
+            state: user.state,
+            tenant: user.tenant,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+            lastLoginAt: user.lastLoginAt,
+            lastActivityAt,
+            minutesSinceActivity,
+            isOnline: statusGroup === 'online',
+          };
+        }),
+      };
+    });
   }
 
   async createManagedAccount(dto: CreateManagedAccountDto, actorStaffId?: string) {
@@ -1665,6 +1981,178 @@ function escapeHtml(value: string) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function buildSubscriptionStatusWhere(
+  status: SubscriptionDirectoryStatus,
+  now: Date,
+  warningLimit: Date,
+): Prisma.SubscriptionWhereInput {
+  if (status === 'all') return {};
+  if (status === 'active') return { status: SubscriptionStatus.ACTIVE };
+  if (status === 'pending') {
+    return {
+      status: {
+        in: [
+          SubscriptionStatus.PENDING_PAYMENT,
+          SubscriptionStatus.PAYMENT_PROCESSING,
+        ],
+      },
+    };
+  }
+  if (status === 'inactive') {
+    return {
+      status: {
+        in: [
+          SubscriptionStatus.SUSPENDED,
+          SubscriptionStatus.EXPIRED,
+          SubscriptionStatus.CANCELLED,
+        ],
+      },
+    };
+  }
+  if (status === 'expiring') {
+    return {
+      status: SubscriptionStatus.ACTIVE,
+      expiresAt: { gte: now, lte: warningLimit },
+    };
+  }
+  if (status === 'expired') {
+    return {
+      OR: [
+        { status: SubscriptionStatus.EXPIRED },
+        { status: SubscriptionStatus.ACTIVE, expiresAt: { lt: now } },
+      ],
+    };
+  }
+  if (status === 'cancelled') return { status: SubscriptionStatus.CANCELLED };
+  if (status === 'suspended') return { status: SubscriptionStatus.SUSPENDED };
+
+  throw new BadRequestException('Invalid subscription status filter');
+}
+
+function buildSubscriptionSearchWhere(search: string): Prisma.SubscriptionWhereInput {
+  return {
+    OR: [
+      { externalSubscriptionId: { contains: search, mode: 'insensitive' } },
+      { transactionNsu: { contains: search, mode: 'insensitive' } },
+      { paymentProvider: { contains: search, mode: 'insensitive' } },
+      { user: { name: { contains: search, mode: 'insensitive' } } },
+      { user: { email: { contains: search, mode: 'insensitive' } } },
+      { user: { city: { contains: search, mode: 'insensitive' } } },
+      { user: { state: { contains: search, mode: 'insensitive' } } },
+      { user: { tenant: { name: { contains: search, mode: 'insensitive' } } } },
+      { plan: { name: { contains: search, mode: 'insensitive' } } },
+      { plan: { billingCycle: { contains: search, mode: 'insensitive' } } },
+    ],
+  };
+}
+
+function getSubscriptionStatusGroup(
+  status: SubscriptionStatus,
+  daysRemaining: number | null,
+  warningDays: number,
+) {
+  if (
+    status === SubscriptionStatus.ACTIVE &&
+    typeof daysRemaining === 'number' &&
+    daysRemaining >= 0 &&
+    daysRemaining <= warningDays
+  ) {
+    return 'expiring';
+  }
+  if (
+    status === SubscriptionStatus.PENDING_PAYMENT ||
+    status === SubscriptionStatus.PAYMENT_PROCESSING
+  ) {
+    return 'pending';
+  }
+  if (status === SubscriptionStatus.ACTIVE) {
+    return typeof daysRemaining === 'number' && daysRemaining < 0
+      ? 'expired'
+      : 'active';
+  }
+  if (status === SubscriptionStatus.EXPIRED) return 'expired';
+  return 'inactive';
+}
+
+function resolveSubscriptionExpirationDate(subscription: {
+  status: SubscriptionStatus;
+  startedAt: Date | null;
+  expiresAt: Date | null;
+  renewalDate: Date | null;
+  checkoutBillingCycle: string | null;
+  plan: { billingCycle: string };
+}) {
+  if (subscription.expiresAt) return subscription.expiresAt;
+  if (subscription.renewalDate) return subscription.renewalDate;
+  if (!subscription.startedAt) return null;
+  if (
+    subscription.status !== SubscriptionStatus.ACTIVE &&
+    subscription.status !== SubscriptionStatus.SUSPENDED
+  ) {
+    return null;
+  }
+  return addDays(
+    subscription.startedAt,
+    getAdminBillingCycleDays(
+      subscription.checkoutBillingCycle ?? subscription.plan.billingCycle,
+    ),
+  );
+}
+
+function buildAccessStatusWhere(
+  status: AccessDirectoryStatus,
+  onlineSince: Date,
+  recentSince: Date,
+): Prisma.UserWhereInput {
+  if (status === 'all') return {};
+  if (status === 'online') return { lastActivityAt: { gte: onlineSince } };
+  if (status === 'recent') return { lastActivityAt: { gte: recentSince } };
+  if (status === 'idle') return { lastActivityAt: { lt: recentSince } };
+  if (status === 'never') return { lastActivityAt: null };
+  if (status === 'blocked') return { status: AccountStatus.BLOCKED };
+
+  throw new BadRequestException('Invalid access status filter');
+}
+
+function buildAccessSearchWhere(search: string): Prisma.UserWhereInput {
+  return {
+    OR: [
+      { name: { contains: search, mode: 'insensitive' } },
+      { email: { contains: search, mode: 'insensitive' } },
+      { city: { contains: search, mode: 'insensitive' } },
+      { state: { contains: search, mode: 'insensitive' } },
+      { bio: { contains: search, mode: 'insensitive' } },
+      { tenant: { name: { contains: search, mode: 'insensitive' } } },
+      { tenant: { subdomain: { contains: search, mode: 'insensitive' } } },
+    ],
+  };
+}
+
+function getAccessStatusGroup(
+  accountStatus: AccountStatus,
+  lastActivityAt: Date | null,
+  onlineSince: Date,
+  recentSince: Date,
+) {
+  if (accountStatus === AccountStatus.BLOCKED) return 'blocked';
+  if (!lastActivityAt) return 'never';
+  if (lastActivityAt >= onlineSince) return 'online';
+  if (lastActivityAt >= recentSince) return 'recent';
+  return 'idle';
+}
+
+function getAdminBillingCycleDays(billingCycle: string) {
+  if (billingCycle === 'annual') return 365;
+  if (billingCycle === 'semiannual') return 180;
+  return 30;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
 }
 
 function isPrismaKnownRequestError(
