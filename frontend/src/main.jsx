@@ -3395,6 +3395,7 @@ function App() {
       '.comment-panel',
       '.private-chat-window',
       '.support-panel',
+      '.global-notification-panel',
       '.notification-dock-window',
       '.company-applications-panel',
       '.inline-page-notice',
@@ -7041,8 +7042,8 @@ function FloatingNotificationDock({
     window.addEventListener('resize', updatePanelPosition);
     window.addEventListener('orientationchange', updatePanelPosition);
     window.addEventListener('scroll', updatePanelPosition, true);
-    window.visualViewport?.addEventListener('resize', updatePanelPosition);
-    window.visualViewport?.addEventListener('scroll', updatePanelPosition);
+    window.visualViewport?.addEventListener?.('resize', updatePanelPosition);
+    window.visualViewport?.addEventListener?.('scroll', updatePanelPosition);
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener('pointerdown', closeOnOutsideClick, true);
@@ -7052,8 +7053,8 @@ function FloatingNotificationDock({
       window.removeEventListener('resize', updatePanelPosition);
       window.removeEventListener('orientationchange', updatePanelPosition);
       window.removeEventListener('scroll', updatePanelPosition, true);
-      window.visualViewport?.removeEventListener('resize', updatePanelPosition);
-      window.visualViewport?.removeEventListener('scroll', updatePanelPosition);
+      window.visualViewport?.removeEventListener?.('resize', updatePanelPosition);
+      window.visualViewport?.removeEventListener?.('scroll', updatePanelPosition);
     };
   }, [isOpen, onOpenChange]);
 
@@ -7065,7 +7066,7 @@ function FloatingNotificationDock({
   const panel = isOpen && typeof document !== 'undefined'
     ? createPortal(
         <section
-          className={panelPosition.mobile ? 'notification-dock-window mobile' : 'notification-dock-window'}
+          className={panelPosition.mobile ? 'global-notification-panel mobile' : 'global-notification-panel'}
           ref={panelRef}
           aria-label="Notificações"
           role="dialog"
