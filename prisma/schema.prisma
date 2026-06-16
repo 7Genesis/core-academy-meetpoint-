@@ -175,6 +175,7 @@ model User {
   city                   String        @default("")
   state                  String        @default("")
   profileImage           String?
+  profileCoverImage      String?
   bio                    String?
   acceptedTerms          Boolean       @default(false)
   acceptedPrivacyPolicy  Boolean       @default(false)

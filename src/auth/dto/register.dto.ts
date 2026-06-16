@@ -43,6 +43,10 @@ export class RegisterDto {
 
   @IsOptional()
   @IsString()
+  profileCoverImage?: string;
+
+  @IsOptional()
+  @IsString()
   bio?: string;
 
   @IsBoolean()

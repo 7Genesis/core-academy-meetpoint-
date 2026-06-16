@@ -1380,6 +1380,13 @@ function authenticatedUserRequest() {
   return apiRequest('/auth/me');
 }
 
+function updatePublicProfileRequest(payload = {}) {
+  return apiRequest('/auth/profile', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 function peopleDiscoveryRequest(search = '') {
   const query = search.trim();
   const suffix = query ? `?search=${encodeURIComponent(query)}` : '';
@@ -1811,7 +1818,7 @@ function mapBackendCommunityToCommunity(community = {}) {
 }
 
 function mapBackendCommunityMessageToMessage(message = {}) {
-  const createdAt = message.createdAt ? new Date(message.createdAt) : new Date();
+  const createdAt = resolveMessageDate(message);
   const editedAt = message.editedAt ? new Date(message.editedAt) : null;
   const deletedAt = message.deletedAt ? new Date(message.deletedAt) : null;
   const authorName = message.author?.name ?? 'Membro';
@@ -1819,10 +1826,7 @@ function mapBackendCommunityMessageToMessage(message = {}) {
     id: message.id,
     author: authorName,
     role: message.mine ? 'Você' : 'Membro',
-    time: message.time ?? createdAt.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
+    time: formatMessageClock(createdAt, message.time),
     createdAt: createdAt.getTime(),
     body: message.body ?? '',
     mine: Boolean(message.mine),
@@ -1839,21 +1843,33 @@ function mapBackendCommunityMessageToMessage(message = {}) {
 }
 
 function mapBackendPrivateMessageToMessage(message = {}) {
-  const createdAt = message.createdAt ? new Date(message.createdAt) : new Date();
+  const createdAt = resolveMessageDate(message);
   return {
     id: message.id,
     conversationId: message.conversationId,
     senderId: message.senderId ?? '',
     from: message.from ?? 'Membro MeetPoint',
     body: message.body ?? '',
-    time: message.time ?? createdAt.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
+    time: formatMessageClock(createdAt, message.time),
     createdAt: createdAt.getTime(),
     mine: Boolean(message.mine),
     readAt: message.readAt ?? null,
   };
+}
+
+function resolveMessageDate(message = {}) {
+  if (typeof message.createdAtMs === 'number') return new Date(message.createdAtMs);
+  const candidate = message.createdAt ? new Date(message.createdAt) : null;
+  return candidate && !Number.isNaN(candidate.getTime()) ? candidate : new Date();
+}
+
+function formatMessageClock(date, fallback = '') {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return fallback || '';
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  }).format(date);
 }
 
 function mapBackendPrivateConversationToConversation(conversation = {}) {
@@ -2004,6 +2020,7 @@ function mapBackendUserToAccount(user = {}, extra = {}) {
     state: user.state ?? '',
     bio: user.bio ?? '',
     profilePhoto: user.profileImage ?? '',
+    profileCoverImage: user.profileCoverImage ?? user.coverPhoto ?? '',
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
     platformRole: user.platformRole,
@@ -2195,6 +2212,8 @@ function normalizeProfilePublicInfo(account, profileInfo = {}) {
     profileInfo.coverUrl ||
     profileInfo.bannerImage ||
     profileInfo.bannerUrl ||
+    account?.profileCoverImage ||
+    account?.coverPhoto ||
     '';
   return resolveProfileInfo(account, {
     ...profileInfo,
@@ -2292,6 +2311,8 @@ function normalizeSocialProfile(profile = {}) {
     friends: Number(profile.friends ?? 0),
     posts: Number(profile.posts ?? 0),
     photo: profile.photo ?? profile.profileImage ?? '',
+    coverPhoto: profile.coverPhoto ?? profile.profileCoverImage ?? profile.coverImage ?? '',
+    profileCoverImage: profile.profileCoverImage ?? profile.coverPhoto ?? profile.coverImage ?? '',
     accountSegment: profile.accountSegment ?? 'student',
     isFollowing: Boolean(profile.isFollowing),
     friendRequestSent: Boolean(profile.friendRequestSent),
@@ -2640,7 +2661,7 @@ function createDefaultProfileInfo(account) {
     linkedin: '',
     instagram: '',
     github: '',
-    coverPhoto: '',
+    coverPhoto: account?.profileCoverImage ?? account?.coverPhoto ?? '',
   };
 }
 
@@ -2711,7 +2732,7 @@ function createAccountWorkspace(account) {
     courseProgress: {},
     coursePaymentStatus: {},
     courseCompletionStep: {},
-    profilePhoto: '',
+    profilePhoto: account.profilePhoto ?? '',
     userPoints: 0,
     jobApplications: [],
     benefitRedemptions: [],
@@ -3696,7 +3717,7 @@ function App() {
     setCourseProgress(normalizedSnapshot.courseProgress ?? {});
     setCoursePaymentStatus(normalizedSnapshot.coursePaymentStatus ?? {});
     setCourseCompletionStep(normalizedSnapshot.courseCompletionStep ?? {});
-    setProfilePhoto(normalizedSnapshot.profilePhoto ?? '');
+    setProfilePhoto(normalizedSnapshot.profilePhoto || accountForDefaults?.profilePhoto || '');
     setUserPoints(normalizedSnapshot.userPoints ?? 0);
     setJobApplications(normalizedSnapshot.jobApplications ?? []);
     setBenefitRedemptions(normalizedSnapshot.benefitRedemptions ?? []);
@@ -3715,6 +3736,38 @@ function App() {
       normalizeVisualPreferences({
         ...(normalizedSnapshot.visualPreferences ?? {}),
         ...readStoredVisualPreferences(accountForDefaults),
+      }),
+    );
+  }
+
+  function applyAuthenticatedProfileUpdate(user = {}) {
+    const mappedAccount = mapBackendUserToAccount(user);
+    const nextAccount = {
+      ...currentUser,
+      ...mappedAccount,
+      subscriptionActive: currentUser?.subscriptionActive ?? mappedAccount.subscriptionActive,
+      subscription: currentUser?.subscription ?? mappedAccount.subscription,
+      subscriptionStatus: currentUser?.subscriptionStatus ?? mappedAccount.subscriptionStatus,
+      subscriptionWarning: currentUser?.subscriptionWarning ?? mappedAccount.subscriptionWarning,
+      subscriptionShouldBlockAccount:
+        currentUser?.subscriptionShouldBlockAccount ?? mappedAccount.subscriptionShouldBlockAccount,
+      subscriptionLifecycle: currentUser?.subscriptionLifecycle ?? mappedAccount.subscriptionLifecycle,
+      backendUser: {
+        ...(currentUser?.backendUser ?? {}),
+        ...user,
+      },
+    };
+    setCurrentUser(nextAccount);
+    setProfilePhoto(nextAccount.profilePhoto || '');
+    setProfilePublicInfo((current) =>
+      normalizeProfilePublicInfo(nextAccount, {
+        ...current,
+        displayName: nextAccount.name,
+        bio: nextAccount.bio,
+        city: nextAccount.city && nextAccount.state
+          ? `${nextAccount.city}, ${nextAccount.state}`
+          : nextAccount.city,
+        coverPhoto: nextAccount.profileCoverImage || current.coverPhoto,
       }),
     );
   }
@@ -6095,6 +6148,7 @@ function App() {
               currentUser={currentUser}
               authToken={authToken}
               activateUserSession={activateUserSession}
+              applyAuthenticatedProfileUpdate={applyAuthenticatedProfileUpdate}
               authMode={authMode}
               setAuthMode={setAuthMode}
               openPage={openPage}
@@ -8031,6 +8085,8 @@ function mapBackendPersonToSocialProfile(person = {}) {
     friends: person.friends ?? 0,
     posts: person.posts ?? 0,
     photo: person.photo ?? person.profileImage ?? '',
+    coverPhoto: person.coverPhoto ?? person.profileCoverImage ?? '',
+    profileCoverImage: person.profileCoverImage ?? person.coverPhoto ?? '',
     accountSegment: person.accountSegment ?? 'student',
     isFollowing: person.isFollowing,
     friendRequestSent: person.friendRequestSent,
@@ -9132,7 +9188,10 @@ function SocialProfileModal({
         <button className="modal-close-button" type="button" onClick={onClose}>
           Fechar
         </button>
-        <div className="social-profile-cover" />
+        <div
+          className={profile.coverPhoto ? 'social-profile-cover has-cover' : 'social-profile-cover'}
+          style={profile.coverPhoto ? { '--social-profile-cover-image': `url(${profile.coverPhoto})` } : undefined}
+        />
         <div className="social-profile-head">
           <Avatar initials={profile.initials} photo={profile.photo} />
           <div>
@@ -14905,6 +14964,7 @@ function ProfileView({
   currentUser,
   authToken,
   activateUserSession,
+  applyAuthenticatedProfileUpdate,
   authMode,
   setAuthMode,
   openPage,
@@ -14949,6 +15009,19 @@ function ProfileView({
     : { friends: 0, followers: 0, following: 0, posts: 0, events: 0, opportunities: 0 };
   const ownSocialProfile = getCurrentUserSocialProfile(currentUser, profilePublicInfo, profilePhoto);
   const isOperationalProfile = ['platform', 'employee'].includes(currentUser?.segment);
+
+  async function savePublicProfile(patch = {}) {
+    const updatedUser = await updatePublicProfileRequest({
+      name: profilePublicInfo.displayName || currentUser?.name,
+      bio: profilePublicInfo.bio || '',
+      city: profilePublicInfo.city || currentUser?.city || '',
+      profileImage: profilePhoto || undefined,
+      profileCoverImage: profilePublicInfo.coverPhoto || undefined,
+      ...patch,
+    });
+    applyAuthenticatedProfileUpdate?.(updatedUser);
+    return updatedUser;
+  }
 
   useEffect(() => {
     if (currentUser) return;
@@ -15016,6 +15089,8 @@ function ProfileView({
           setProfilePhoto={setProfilePhoto}
           profilePublicInfo={profilePublicInfo}
           setProfilePublicInfo={setProfilePublicInfo}
+          savePublicProfile={savePublicProfile}
+          addNotification={addNotification}
           userPoints={userPoints}
           socialStats={ownSocialStats}
           onOpenSocialPanel={setActiveProfilePanel}
@@ -15099,8 +15174,10 @@ function ProfileView({
           <PublicProfileEditor
             profilePublicInfo={profilePublicInfo}
             setProfilePublicInfo={setProfilePublicInfo}
+            profilePhoto={profilePhoto}
             profileResumeName={profileResumeName}
             setProfileResumeName={setProfileResumeName}
+            savePublicProfile={savePublicProfile}
           />
         )}
 
@@ -15452,18 +15529,35 @@ function ProfileSocialPanel({
 function PublicProfileEditor({
   profilePublicInfo,
   setProfilePublicInfo,
+  profilePhoto,
   profileResumeName,
   setProfileResumeName,
+  savePublicProfile,
 }) {
   const [saveNotice, setSaveNotice] = useState('');
+  const [saving, setSaving] = useState(false);
 
   function update(field, value) {
     setProfilePublicInfo((current) => ({ ...current, [field]: value }));
     setSaveNotice('');
   }
 
-  function saveProfile() {
-    setSaveNotice('Perfil atualizado na prévia e salvo nesta sessão.');
+  async function saveProfile() {
+    setSaving(true);
+    try {
+      await savePublicProfile?.({
+        name: profilePublicInfo.displayName,
+        bio: profilePublicInfo.bio,
+        city: profilePublicInfo.city,
+        profileImage: profilePhoto || undefined,
+        profileCoverImage: profilePublicInfo.coverPhoto || undefined,
+      });
+      setSaveNotice('Perfil salvo na API e publicado para outros usuários.');
+    } catch (error) {
+      setSaveNotice(`Perfil não foi salvo na API: ${String(error?.message ?? 'falha desconhecida')}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -15532,8 +15626,8 @@ function PublicProfileEditor({
           placeholder="github.com/usuario"
         />
       </label>
-      <button type="button" onClick={saveProfile}>
-        Salvar perfil
+      <button type="button" onClick={saveProfile} disabled={saving}>
+        {saving ? 'Salvando...' : 'Salvar perfil'}
       </button>
     </section>
   );
@@ -15546,6 +15640,8 @@ function ProfileHero({
   setProfilePhoto,
   profilePublicInfo,
   setProfilePublicInfo,
+  savePublicProfile,
+  addNotification,
   userPoints,
   socialStats,
   onOpenSocialPanel,
@@ -15604,9 +15700,17 @@ function ProfileHero({
     });
   }
 
-  function applyCroppedImage(dataUrl) {
+  async function applyCroppedImage(dataUrl) {
     if (cropEditor?.target === 'photo') {
       setProfilePhoto(dataUrl);
+      try {
+        await savePublicProfile?.({ profileImage: dataUrl });
+      } catch (error) {
+        addNotification?.({
+          title: `A foto não foi salva na API: ${String(error?.message ?? 'falha desconhecida')}`,
+          type: 'profile-image-failed',
+        });
+      }
       closeCropEditor();
       return;
     }
@@ -15615,6 +15719,14 @@ function ProfileHero({
       ...current,
       coverPhoto: dataUrl,
     }));
+    try {
+      await savePublicProfile?.({ profileCoverImage: dataUrl });
+    } catch (error) {
+      addNotification?.({
+        title: `A capa não foi salva na API: ${String(error?.message ?? 'falha desconhecida')}`,
+        type: 'profile-cover-failed',
+      });
+    }
     closeCropEditor();
   }
 
@@ -16624,6 +16736,7 @@ function SignupView({ setAuthMode, loginWithEmail, openPrivacyCenter, openPage }
         city: form.city.trim(),
         state: form.state.trim(),
         profileImage: form.profilePhoto || undefined,
+        profileCoverImage: form.coverPhoto || undefined,
         bio: form.bio.trim() || undefined,
         acceptedTerms: form.termsAccepted,
         acceptedPrivacyPolicy: form.privacyAccepted && form.dataProcessingAccepted,

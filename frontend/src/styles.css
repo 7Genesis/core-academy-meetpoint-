@@ -29721,3 +29721,64 @@ html body .feed-page .composer-advanced[open].composer-advanced .composer-meta.c
     min-width: 46px;
   }
 }
+
+/* Feed: corrige coluna lateral estreita em breakpoints intermediarios. */
+@media (max-width: 1180px) {
+  html body .feed-page.feed-page {
+    width: 100%;
+    max-width: min(760px, 100%);
+    overflow-x: hidden;
+  }
+
+  html body .feed-page .feed-layout.feed-layout.feed-layout-3 {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    gap: 14px !important;
+    justify-content: stretch !important;
+  }
+
+  html body .feed-page .feed-left.feed-sidebar {
+    display: none !important;
+  }
+
+  html body .feed-page .feed-center.feed-center {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    order: 1 !important;
+  }
+
+  html body .feed-page .feed-right.feed-sidebar {
+    position: static !important;
+    top: auto !important;
+    order: 2 !important;
+    display: grid !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)) !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+
+  html body .feed-page .feed-right.feed-sidebar > .feed-widget {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+}
+
+@media (max-width: 760px) {
+  html body .feed-page .feed-right.feed-sidebar {
+    display: none !important;
+  }
+}
+
+html body .social-profile-modal .social-profile-cover.has-cover {
+  background-image: var(--social-profile-cover-image) !important;
+  background-size: cover !important;
+  background-position: center !important;
+}

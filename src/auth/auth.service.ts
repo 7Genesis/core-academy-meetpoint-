@@ -18,6 +18,7 @@ import { TokenRevocationService } from './token-revocation.service';
 import { LoginDto } from './dto/login.dto';
 import { PrivacyConsentDto } from './dto/privacy-consent.dto';
 import { RegisterDto } from './dto/register.dto';
+import { UpdatePublicProfileDto } from './dto/update-public-profile.dto';
 import { ContactNotificationService } from './contact-notification.service';
 import { EmailVerificationService } from './email-verification.service';
 
@@ -114,6 +115,7 @@ export class AuthService {
         city: normalizedCity,
         state: normalizedState,
         profileImage: dto.profileImage?.trim() || null,
+        profileCoverImage: dto.profileCoverImage?.trim() || null,
         bio: this.decorateAccountBio(dto.bio?.trim() || '', 'student'),
         acceptedTerms: true,
         acceptedPrivacyPolicy: true,
@@ -296,6 +298,7 @@ export class AuthService {
           city: true,
           state: true,
           profileImage: true,
+          profileCoverImage: true,
           bio: true,
           createdAt: true,
         },
@@ -406,6 +409,8 @@ export class AuthService {
       city: [user.city, user.state].filter(Boolean).join(', ') || 'MeetPoint',
       bio: stripAccountMetadata(user.bio) || 'Perfil cadastrado na plataforma.',
       photo: user.profileImage ?? '',
+      coverPhoto: user.profileCoverImage ?? '',
+      profileCoverImage: user.profileCoverImage ?? '',
       accountSegment: parseAccountSegmentFromBio(user.bio),
       createdAt: user.createdAt,
       followers: followerCountByUser.get(user.id) ?? 0,
@@ -450,6 +455,7 @@ export class AuthService {
     city?: string | null;
     state?: string | null;
     profileImage?: string | null;
+    profileCoverImage?: string | null;
     bio?: string | null;
     acceptedTerms?: boolean | null;
     acceptedPrivacyPolicy?: boolean | null;
@@ -472,6 +478,8 @@ export class AuthService {
       city: user.city ?? '',
       state: user.state ?? '',
       profileImage: user.profileImage ?? '',
+      profileCoverImage: user.profileCoverImage ?? '',
+      coverPhoto: user.profileCoverImage ?? '',
       bio: stripAccountMetadata(user.bio),
       acceptedTerms: Boolean(user.acceptedTerms),
       acceptedPrivacyPolicy: Boolean(user.acceptedPrivacyPolicy),
@@ -594,6 +602,40 @@ export class AuthService {
     return this.recordPrivacyConsent(userId, dto, metadata);
   }
 
+  async updatePublicProfile(payload: JwtPayload, dto: UpdatePublicProfileDto) {
+    const existing = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
+    if (!existing) {
+      throw new UnauthorizedException('Authenticated user is required');
+    }
+
+    const publicName = sanitizeProfileText(dto.displayName ?? dto.name, 120);
+    const publicBio = dto.bio === undefined
+      ? undefined
+      : sanitizeProfileText(dto.bio, 1200) ?? '';
+    const parsedLocation = parseProfileLocation(dto.city, dto.state, existing);
+    const accountSegment = parseAccountSegmentFromBio(existing.bio);
+    const profileImage = sanitizeProfileImage(dto.profileImage);
+    const profileCoverImage = sanitizeProfileImage(dto.profileCoverImage);
+
+    const updated = await this.prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        ...(publicName !== undefined ? { name: publicName } : {}),
+        ...(parsedLocation.city !== undefined ? { city: parsedLocation.city } : {}),
+        ...(parsedLocation.state !== undefined ? { state: parsedLocation.state } : {}),
+        ...(publicBio !== undefined
+          ? { bio: mergePublicBioWithMetadata(publicBio, existing.bio, accountSegment) }
+          : {}),
+        ...(profileImage !== undefined ? { profileImage } : {}),
+        ...(profileCoverImage !== undefined ? { profileCoverImage } : {}),
+      },
+    });
+
+    return this.toPublicUser(updated);
+  }
+
   async logout(user?: Pick<JwtPayload, 'jti' | 'exp'>) {
     await this.tokenRevocationService.revokeJti(user?.jti, user?.exp);
     return { ok: true };
@@ -606,6 +648,62 @@ export class AuthService {
 
 function buildAccountSegmentMarker(segment: string) {
   return `[[account-segment:${segment}]]`;
+}
+
+function sanitizeProfileText(value: string | null | undefined, maxLength: number) {
+  if (value === undefined) return undefined;
+  const normalized = (value ?? '').trim().replace(/\s+/g, ' ');
+  return normalized.slice(0, maxLength);
+}
+
+function sanitizeProfileImage(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  const normalized = (value ?? '').trim();
+  if (!normalized) return null;
+  if (normalized.length > 2_500_000) {
+    throw new BadRequestException('Profile image is too large');
+  }
+  if (
+    normalized.startsWith('data:image/') ||
+    normalized.startsWith('https://') ||
+    normalized.startsWith('http://')
+  ) {
+    return normalized;
+  }
+  throw new BadRequestException('Profile image must be a valid image URL');
+}
+
+function parseProfileLocation(
+  cityInput: string | null | undefined,
+  stateInput: string | null | undefined,
+  fallback: { city: string; state: string },
+) {
+  if (cityInput === undefined && stateInput === undefined) {
+    return {};
+  }
+
+  const cityText = sanitizeProfileText(cityInput ?? fallback.city, 120) ?? '';
+  const [cityPart, statePart = ''] = cityText.split(',').map((part) => part.trim());
+  const state = sanitizeProfileText(stateInput ?? (statePart || fallback.state), 4)?.toUpperCase() ?? '';
+  return {
+    city: cityPart || fallback.city,
+    state: state || fallback.state,
+  };
+}
+
+function mergePublicBioWithMetadata(publicBio: string, existingBio: string | null | undefined, segment: string) {
+  const markers = extractBioMarkers(existingBio);
+  const segmentMarker = buildAccountSegmentMarker(segment);
+  if (!markers.includes(segmentMarker)) {
+    markers.push(segmentMarker);
+  }
+  return [publicBio.trim(), ...markers].filter(Boolean).join(' ').trim();
+}
+
+function extractBioMarkers(bio: string | null | undefined) {
+  return [...(bio?.matchAll(/\[\[[^\]]+\]\]/g) ?? [])]
+    .map((match) => match[0])
+    .filter(Boolean);
 }
 
 function parseAccountSegmentFromBio(bio: string | null | undefined) {

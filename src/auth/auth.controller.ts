@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Query, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { CookieOptions, Request, Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
@@ -7,6 +7,7 @@ import { LoginDto } from './dto/login.dto';
 import { PrivacyConsentDto } from './dto/privacy-consent.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RequestEmailVerificationDto } from './dto/request-email-verification.dto';
+import { UpdatePublicProfileDto } from './dto/update-public-profile.dto';
 import { EmailVerificationService } from './email-verification.service';
 import { JwtPayload } from './jwt.strategy';
 
@@ -64,6 +65,18 @@ export class AuthController {
     }
 
     return this.authService.getAuthenticatedUser(request.user);
+  }
+
+  @Patch('profile')
+  updateProfile(
+    @Body() dto: UpdatePublicProfileDto,
+    @Req() request: Request & { user?: JwtPayload },
+  ) {
+    if (!request.user?.sub) {
+      throw new UnauthorizedException('Authenticated user is required');
+    }
+
+    return this.authService.updatePublicProfile(request.user, dto);
   }
 
   @Get('people')

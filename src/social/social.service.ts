@@ -1726,10 +1726,8 @@ export class SocialService {
       senderId: message.senderId,
       from: message.sender.name || 'Membro MeetPoint',
       body: message.body,
-      time: message.createdAt.toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      time: formatMessageTime(message.createdAt),
+      createdAtMs: message.createdAt.getTime(),
       createdAt: message.createdAt,
       readAt: message.readAt,
       mine: message.senderId === userId,
@@ -2107,10 +2105,8 @@ export class SocialService {
       mine: message.authorId === user.sub,
       deleted,
       deletedByAdmin: message.deletedByAdmin,
-      time: message.createdAt.toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      time: formatMessageTime(message.createdAt),
+      createdAtMs: message.createdAt.getTime(),
       edited: Boolean(message.editedAt),
     };
   }
@@ -2122,6 +2118,7 @@ export class SocialService {
       city: true,
       state: true,
       profileImage: true,
+      profileCoverImage: true,
     } satisfies Prisma.UserSelect;
   }
 
@@ -2134,6 +2131,7 @@ export class SocialService {
       city: true,
       state: true,
       profileImage: true,
+      profileCoverImage: true,
       bio: true,
       createdAt: true,
     } satisfies Prisma.UserSelect;
@@ -2147,6 +2145,7 @@ export class SocialService {
     city: string | null;
     state: string | null;
     profileImage: string | null;
+    profileCoverImage?: string | null;
     bio?: string | null;
     createdAt?: Date | null;
   }) {
@@ -2159,6 +2158,8 @@ export class SocialService {
       city: [user.city, user.state].filter(Boolean).join(', ') || 'MeetPoint',
       bio: stripAccountMetadata(user.bio) || 'Perfil cadastrado na plataforma.',
       photo: user.profileImage ?? '',
+      coverPhoto: user.profileCoverImage ?? '',
+      profileCoverImage: user.profileCoverImage ?? '',
       accountSegment: parseAccountSegmentFromBio(user.bio),
       createdAt: user.createdAt,
     };
@@ -2340,4 +2341,12 @@ function stripAccountMetadata(bio: string | null | undefined) {
     .replace(/\s*\[\[company-link:[^\]]+\]\]\s*/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function formatMessageTime(value: Date) {
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  }).format(value);
 }
