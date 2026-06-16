@@ -1687,6 +1687,33 @@ function getReactionSummaryTotal(summary = {}) {
   );
 }
 
+function getPublicUserPhoto(user = {}) {
+  if (!user || typeof user !== 'object') return '';
+  return (
+    user.photo ||
+    user.profilePhoto ||
+    user.profileImage ||
+    user.participantPhoto ||
+    user.avatarUrl ||
+    user.avatar ||
+    user.image ||
+    ''
+  );
+}
+
+function getPublicUserCover(user = {}) {
+  if (!user || typeof user !== 'object') return '';
+  return (
+    user.coverPhoto ||
+    user.profileCoverImage ||
+    user.coverImage ||
+    user.coverUrl ||
+    user.bannerUrl ||
+    user.bannerImage ||
+    ''
+  );
+}
+
 function mapBackendPostCommentToComment(comment = {}) {
   const authorName = comment.author?.name ?? 'Membro';
   return {
@@ -1694,7 +1721,7 @@ function mapBackendPostCommentToComment(comment = {}) {
     authorId: comment.authorId ?? comment.author?.id ?? '',
     author: authorName,
     initials: getInitials(authorName || 'MP'),
-    photo: comment.author?.profileImage ?? '',
+    photo: getPublicUserPhoto(comment.author),
     createdAt: getIsoDateParts(comment.createdAt).createdAt,
     createdAtRaw: comment.createdAt ?? '',
     body: comment.body ?? '',
@@ -1726,7 +1753,7 @@ function mapBackendPostToFeedPost(post = {}) {
     authorEmail: '',
     role: 'Membro',
     initials: getInitials(authorName || 'MP'),
-    photo: post.author?.profileImage ?? '',
+    photo: getPublicUserPhoto(post.author),
     city: post.city || post.author?.city || 'Regional',
     tag: post.tag || 'Atualização',
     createdAt: getIsoDateParts(post.createdAt).createdAt,
@@ -1824,7 +1851,9 @@ function mapBackendCommunityMessageToMessage(message = {}) {
   const authorName = message.author?.name ?? 'Membro';
   return {
     id: message.id,
+    authorId: message.authorId ?? message.author?.id ?? '',
     author: authorName,
+    photo: getPublicUserPhoto(message.author),
     role: message.mine ? 'Você' : 'Membro',
     time: formatMessageClock(createdAt, message.time),
     createdAt: createdAt.getTime(),
@@ -1873,13 +1902,19 @@ function formatMessageClock(date, fallback = '') {
 }
 
 function mapBackendPrivateConversationToConversation(conversation = {}) {
+  const participantMedia =
+    conversation.participant ??
+    conversation.user ??
+    conversation.member ??
+    conversation;
+
   return {
     id: conversation.id,
     participantId: conversation.participantId ?? '',
     participantName: conversation.participantName ?? 'Membro MeetPoint',
     participantHandle: conversation.participantHandle ?? getUserHandle({ name: conversation.participantName }),
     participantInitials: conversation.participantInitials ?? getInitials(conversation.participantName ?? 'MP'),
-    participantPhoto: conversation.participantPhoto ?? '',
+    participantPhoto: conversation.participantPhoto ?? getPublicUserPhoto(participantMedia),
     unread: Number(conversation.unread ?? 0),
     updatedAt: conversation.updatedAt ?? '',
     messages: Array.isArray(conversation.messages)
@@ -1994,6 +2029,8 @@ const DOCUMENT_VALIDATION_ENDPOINT = import.meta.env?.VITE_DOCUMENT_VALIDATION_E
 function mapBackendUserToAccount(user = {}, extra = {}) {
   const email = user.email ?? '';
   const name = user.name ?? email.split('@')[0] ?? 'Conta MeetPoint';
+  const profilePhoto = getPublicUserPhoto(user);
+  const profileCoverImage = getPublicUserCover(user);
   const pendingSignupEmail =
     typeof localStorage === 'undefined' ? '' : localStorage.getItem(LAST_SIGNUP_LOGIN_KEY);
   const pendingSignupSegment =
@@ -2019,8 +2056,8 @@ function mapBackendUserToAccount(user = {}, extra = {}) {
     city: user.city ?? '',
     state: user.state ?? '',
     bio: user.bio ?? '',
-    profilePhoto: user.profileImage ?? '',
-    profileCoverImage: user.profileCoverImage ?? user.coverPhoto ?? '',
+    profilePhoto,
+    profileCoverImage,
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
     platformRole: user.platformRole,
@@ -2298,6 +2335,7 @@ function uniqueItems(items = []) {
 
 function normalizeSocialProfile(profile = {}) {
   const name = profile.name || 'Perfil MeetPoint';
+  const coverPhoto = getPublicUserCover(profile);
   return {
     id: profile.id ?? profile.handle ?? name,
     name,
@@ -2310,9 +2348,9 @@ function normalizeSocialProfile(profile = {}) {
     following: Number(profile.following ?? 0),
     friends: Number(profile.friends ?? 0),
     posts: Number(profile.posts ?? 0),
-    photo: profile.photo ?? profile.profileImage ?? '',
-    coverPhoto: profile.coverPhoto ?? profile.profileCoverImage ?? profile.coverImage ?? '',
-    profileCoverImage: profile.profileCoverImage ?? profile.coverPhoto ?? profile.coverImage ?? '',
+    photo: getPublicUserPhoto(profile),
+    coverPhoto,
+    profileCoverImage: coverPhoto,
     accountSegment: profile.accountSegment ?? 'student',
     isFollowing: Boolean(profile.isFollowing),
     friendRequestSent: Boolean(profile.friendRequestSent),
@@ -2661,7 +2699,7 @@ function createDefaultProfileInfo(account) {
     linkedin: '',
     instagram: '',
     github: '',
-    coverPhoto: account?.profileCoverImage ?? account?.coverPhoto ?? '',
+    coverPhoto: getPublicUserCover(account),
   };
 }
 
@@ -3767,7 +3805,7 @@ function App() {
         city: nextAccount.city && nextAccount.state
           ? `${nextAccount.city}, ${nextAccount.state}`
           : nextAccount.city,
-        coverPhoto: nextAccount.profileCoverImage || current.coverPhoto,
+        coverPhoto: getPublicUserCover(nextAccount) || current.coverPhoto,
       }),
     );
   }
@@ -6907,7 +6945,15 @@ function FloatingNotificationDock({
   setNotifications,
   setEventCreatorAlerts,
 }) {
-  const dockRef = React.useRef(null);
+  const triggerRef = React.useRef(null);
+  const panelRef = React.useRef(null);
+  const [panelPosition, setPanelPosition] = useState({
+    top: 0,
+    left: 0,
+    width: 360,
+    maxHeight: 420,
+    mobile: false,
+  });
   const rawNotificationItems = [
     ...(notifications ?? []).map((notice) => ({
       id: notice.id,
@@ -6937,13 +6983,78 @@ function FloatingNotificationDock({
   useEffect(() => {
     if (!isOpen) return undefined;
 
+    function updatePanelPosition() {
+      const triggerRect = triggerRef.current?.getBoundingClientRect();
+      if (!triggerRect) return;
+
+      const viewport = window.visualViewport;
+      const viewportWidth = Math.floor(viewport?.width ?? window.innerWidth ?? document.documentElement.clientWidth ?? 360);
+      const viewportHeight = Math.floor(viewport?.height ?? window.innerHeight ?? document.documentElement.clientHeight ?? 640);
+      const viewportOffsetTop = Math.floor(viewport?.offsetTop ?? 0);
+      const viewportOffsetLeft = Math.floor(viewport?.offsetLeft ?? 0);
+      const gap = 10;
+      const safeInset = 12;
+      const minimumPanelHeight = 260;
+      const isMobileViewport = viewportWidth <= 640;
+      const width = isMobileViewport
+        ? Math.max(280, viewportWidth - safeInset * 2)
+        : Math.min(390, viewportWidth - safeInset * 2);
+      const preferredLeft = triggerRect.right - width;
+      const left = isMobileViewport
+        ? safeInset + viewportOffsetLeft
+        : viewportOffsetLeft + Math.min(viewportWidth - width - safeInset, Math.max(safeInset, preferredLeft));
+      const availableBelow = viewportHeight - triggerRect.bottom - gap - safeInset;
+      const preferredTop = !isMobileViewport && availableBelow >= minimumPanelHeight
+        ? triggerRect.bottom + gap
+        : safeInset;
+      const maxTop = Math.max(safeInset, viewportHeight - safeInset - minimumPanelHeight);
+      const top = isMobileViewport
+        ? safeInset + viewportOffsetTop
+        : viewportOffsetTop + Math.min(maxTop, Math.max(safeInset, preferredTop));
+      const maxHeight = Math.max(minimumPanelHeight, viewportHeight - (top - viewportOffsetTop) - safeInset);
+
+      setPanelPosition({
+        top,
+        left,
+        width,
+        maxHeight,
+        mobile: isMobileViewport,
+      });
+    }
+
     function closeOnOutsideClick(event) {
-      if (dockRef.current?.contains(event.target)) return;
+      if (triggerRef.current?.contains(event.target)) return;
+      if (panelRef.current?.contains(event.target)) return;
       onOpenChange(false);
     }
 
-    document.addEventListener('pointerdown', closeOnOutsideClick);
-    return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
+    function closeOnEscape(event) {
+      if (event.key === 'Escape') onOpenChange(false);
+    }
+
+    updatePanelPosition();
+    const frame = window.requestAnimationFrame(updatePanelPosition);
+    document.addEventListener('pointerdown', closeOnOutsideClick, true);
+    document.addEventListener('mousedown', closeOnOutsideClick, true);
+    document.addEventListener('touchstart', closeOnOutsideClick, true);
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', updatePanelPosition);
+    window.addEventListener('orientationchange', updatePanelPosition);
+    window.addEventListener('scroll', updatePanelPosition, true);
+    window.visualViewport?.addEventListener('resize', updatePanelPosition);
+    window.visualViewport?.addEventListener('scroll', updatePanelPosition);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('pointerdown', closeOnOutsideClick, true);
+      document.removeEventListener('mousedown', closeOnOutsideClick, true);
+      document.removeEventListener('touchstart', closeOnOutsideClick, true);
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', updatePanelPosition);
+      window.removeEventListener('orientationchange', updatePanelPosition);
+      window.removeEventListener('scroll', updatePanelPosition, true);
+      window.visualViewport?.removeEventListener('resize', updatePanelPosition);
+      window.visualViewport?.removeEventListener('scroll', updatePanelPosition);
+    };
   }, [isOpen, onOpenChange]);
 
   function markAllRead() {
@@ -6951,10 +7062,21 @@ function FloatingNotificationDock({
     setEventCreatorAlerts((current) => current.map((alert) => ({ ...alert, read: true })));
   }
 
-  return (
-    <aside className={isOpen ? 'floating-notification-widget open' : 'floating-notification-widget'} ref={dockRef}>
-      {isOpen && (
-        <section className="notification-dock-window" aria-label="Notificações">
+  const panel = isOpen && typeof document !== 'undefined'
+    ? createPortal(
+        <section
+          className={panelPosition.mobile ? 'notification-dock-window mobile' : 'notification-dock-window'}
+          ref={panelRef}
+          aria-label="Notificações"
+          role="dialog"
+          aria-modal="false"
+          style={{
+            top: `${panelPosition.top}px`,
+            left: `${panelPosition.left}px`,
+            '--notification-panel-width': `${panelPosition.width}px`,
+            '--notification-panel-max-height': `${panelPosition.maxHeight}px`,
+          }}
+        >
           <header>
             <div>
               <span className="section-kicker">Notificações</span>
@@ -6979,17 +7101,26 @@ function FloatingNotificationDock({
               </article>
             ))}
           </div>
-        </section>
-      )}
+        </section>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <aside className={isOpen ? 'floating-notification-widget open' : 'floating-notification-widget'}>
       <button
         className={unreadNotifications > 0 && !isOpen ? 'floating-notification-fab has-unread' : 'floating-notification-fab'}
         type="button"
+        ref={triggerRef}
         onClick={() => onOpenChange((current) => !current)}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         aria-label="Abrir notificações"
       >
         🔔
         {unreadNotifications > 0 && <em>{unreadNotifications}</em>}
       </button>
+      {panel}
     </aside>
   );
 }
@@ -8084,9 +8215,9 @@ function mapBackendPersonToSocialProfile(person = {}) {
     following: person.following ?? 0,
     friends: person.friends ?? 0,
     posts: person.posts ?? 0,
-    photo: person.photo ?? person.profileImage ?? '',
-    coverPhoto: person.coverPhoto ?? person.profileCoverImage ?? '',
-    profileCoverImage: person.profileCoverImage ?? person.coverPhoto ?? '',
+    photo: getPublicUserPhoto(person),
+    coverPhoto: getPublicUserCover(person),
+    profileCoverImage: getPublicUserCover(person),
     accountSegment: person.accountSegment ?? 'student',
     isFollowing: person.isFollowing,
     friendRequestSent: person.friendRequestSent,
@@ -13869,7 +14000,7 @@ function CommunitiesView({
               <header>
 	                <Avatar
 	                  initials={message.mine ? getInitials(currentUser?.name ?? 'Visitante') : getInitials(message.author)}
-	                  photo={message.mine ? profilePhoto : ''}
+	                  photo={message.mine ? profilePhoto : message.photo}
 	                />
                 <strong>{message.mine ? currentUser?.name ?? 'Visitante' : message.author}</strong>
                 <span>{message.role}</span>

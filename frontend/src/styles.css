@@ -29782,3 +29782,62 @@ html body .social-profile-modal .social-profile-cover.has-cover {
   background-size: cover !important;
   background-position: center !important;
 }
+
+/* Global notifications: portal-safe panel, independent from page/header overflow. */
+html body .notification-dock-window.notification-dock-window {
+  position: fixed !important;
+  right: auto !important;
+  bottom: auto !important;
+  box-sizing: border-box !important;
+  width: min(var(--notification-panel-width, 390px), calc(100vw - 24px)) !important;
+  min-width: min(280px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px) !important;
+  max-height: min(var(--notification-panel-max-height, 520px), calc(100vh - 24px)) !important;
+  max-height: min(var(--notification-panel-max-height, 520px), calc(100svh - 24px)) !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  overflow: hidden !important;
+  z-index: 2147483000 !important;
+  transform: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  isolation: isolate !important;
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+  -webkit-text-fill-color: var(--ink) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html body .notification-dock-window.notification-dock-window.mobile {
+  width: calc(100vw - 24px) !important;
+  min-width: 0 !important;
+  max-width: calc(100vw - 24px) !important;
+}
+
+html body .notification-dock-window.notification-dock-window header {
+  min-width: 0 !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+}
+
+html body .notification-dock-window.notification-dock-window header > div {
+  min-width: 0 !important;
+  flex: 1 1 150px !important;
+}
+
+html body .notification-dock-window.notification-dock-window header button,
+html body .notification-dock-window.notification-dock-window header em {
+  flex: 0 0 auto !important;
+}
+
+html body .notification-dock-list.notification-dock-list {
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+}
