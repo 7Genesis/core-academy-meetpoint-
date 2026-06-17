@@ -1573,10 +1573,18 @@ export class SocialService {
         notice.actor ? this.mapSocialUser(notice.actor) : null,
       ),
     ]);
+    const currentUserProfile = this.mapSocialUser(user);
+    const countedProfiles = await this.withSocialProfileCounts(tx, [
+      currentUserProfile,
+      ...profiles,
+    ]);
+    const currentUserWithCounts =
+      countedProfiles.find((profile) => profile.id === userId) ?? currentUserProfile;
+    const profilesWithCounts = countedProfiles.filter((profile) => profile.id !== userId);
 
     return {
-      currentUser: this.mapSocialUser(user),
-      profiles,
+      currentUser: currentUserWithCounts,
+      profiles: profilesWithCounts,
       followingHandles: followingProfiles.map((profile) => profile.handle),
       followerHandles: followerProfiles.map((profile) => profile.handle),
       sentFriendRequestHandles: sentProfiles.map((profile) => profile.handle),
@@ -1744,6 +1752,85 @@ export class SocialService {
         byHandle.set(profile.handle, profile);
       });
     return [...byHandle.values()];
+  }
+
+  private async withSocialProfileCounts<
+    T extends {
+      id: string;
+      followers?: number;
+      following?: number;
+      friends?: number;
+    },
+  >(
+    tx: Prisma.TransactionClient,
+    profiles: T[],
+  ): Promise<Array<T & { followers: number; following: number; friends: number }>> {
+    const userIds = [...new Set(profiles.map((profile) => profile.id).filter(Boolean))];
+    if (!userIds.length) {
+      return profiles.map((profile) => ({
+        ...profile,
+        followers: Number(profile.followers ?? 0),
+        following: Number(profile.following ?? 0),
+        friends: Number(profile.friends ?? 0),
+      }));
+    }
+
+    const [followers, following, friendships] = await Promise.all([
+      tx.userFollow.groupBy({
+        by: ['followingId'],
+        where: { followingId: { in: userIds } },
+        _count: { _all: true },
+      }),
+      tx.userFollow.groupBy({
+        by: ['followerId'],
+        where: { followerId: { in: userIds } },
+        _count: { _all: true },
+      }),
+      tx.friendRequest.findMany({
+        where: {
+          status: FriendRequestStatus.ACCEPTED,
+          OR: [
+            { requesterId: { in: userIds } },
+            { recipientId: { in: userIds } },
+          ],
+        },
+        select: {
+          requesterId: true,
+          recipientId: true,
+        },
+      }),
+    ]);
+
+    const userIdSet = new Set(userIds);
+    const followerCountByUser = new Map(
+      followers.map((item) => [item.followingId, item._count._all]),
+    );
+    const followingCountByUser = new Map(
+      following.map((item) => [item.followerId, item._count._all]),
+    );
+    const friendCountByUser = new Map<string, number>();
+
+    friendships.forEach((request) => {
+      if (userIdSet.has(request.requesterId)) {
+        friendCountByUser.set(
+          request.requesterId,
+          (friendCountByUser.get(request.requesterId) ?? 0) + 1,
+        );
+      }
+      if (userIdSet.has(request.recipientId)) {
+        friendCountByUser.set(
+          request.recipientId,
+          (friendCountByUser.get(request.recipientId) ?? 0) + 1,
+        );
+      }
+    });
+
+    return profiles.map((profile) => ({
+      ...profile,
+      followers: followerCountByUser.get(profile.id) ?? Number(profile.followers ?? 0),
+      following: followingCountByUser.get(profile.id) ?? Number(profile.following ?? 0),
+      friends: friendCountByUser.get(profile.id) ?? Number(profile.friends ?? 0),
+    }));
   }
 
   private async withPostReactionMetadata<T extends { id: string }>(

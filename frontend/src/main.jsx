@@ -2648,11 +2648,13 @@ function getOwnProfileOpportunities(currentUser, jobs = []) {
 }
 
 function getViewedProfileStats(profile, socialGraph, profilePosts = [], profileEvents = [], profileOpportunities = []) {
-  const followerDelta = socialGraph?.followerDeltas?.[profile?.handle] ?? 0;
+  const graphProfile = getSocialProfileByHandle(profile?.handle, socialGraph);
+  const sourceProfile = graphProfile ?? profile;
+  const followerDelta = graphProfile ? 0 : socialGraph?.followerDeltas?.[profile?.handle] ?? 0;
   return {
-    friends: profile?.friends ?? 0,
-    followers: Math.max((profile?.followers ?? 0) + followerDelta, 0),
-    following: profile?.following ?? 0,
+    friends: sourceProfile?.friends ?? 0,
+    followers: Math.max((sourceProfile?.followers ?? 0) + followerDelta, 0),
+    following: sourceProfile?.following ?? 0,
     posts: profilePosts.length,
     events: profileEvents.length,
     opportunities: profileOpportunities.length,
@@ -3278,6 +3280,12 @@ function App() {
       }
       return true;
     }
+    requestAuthentication(actionLabel);
+    return false;
+  }
+
+  function requireLoggedInSocialAction(actionLabel) {
+    if (currentUser) return true;
     requestAuthentication(actionLabel);
     return false;
   }
@@ -4697,7 +4705,7 @@ function App() {
 
   // Rede social: seguir, amizade, bloqueio e notificacoes ficam no App para valer em Feed e Perfil.
   async function followProfile(target) {
-    if (!requireAuthenticatedAction('seguir perfil')) return;
+    if (!requireLoggedInSocialAction('seguir perfil')) return;
     const profile = resolveSocialProfileTarget(target);
     if (!profile) return;
     const handle = profile.handle;
@@ -4752,7 +4760,7 @@ function App() {
   }
 
   async function requestFriendship(target) {
-    if (!requireAuthenticatedAction('enviar solicitação de amizade')) return;
+    if (!requireLoggedInSocialAction('enviar solicitação de amizade')) return;
     const profile = resolveSocialProfileTarget(target);
     if (!profile) return;
     const handle = profile.handle;
@@ -4790,7 +4798,7 @@ function App() {
   }
 
   async function resolveFriendship(target, accepted) {
-    if (!requireAuthenticatedAction(accepted ? 'aceitar amizade' : 'recusar amizade')) return;
+    if (!requireLoggedInSocialAction(accepted ? 'aceitar amizade' : 'recusar amizade')) return;
     const profile = resolveSocialProfileTarget(target);
     if (!profile) return;
     const handle = profile.handle;
@@ -4814,7 +4822,7 @@ function App() {
   }
 
   async function acceptIncomingFriendRequest(target) {
-    if (!requireAuthenticatedAction('aceitar amizade')) return;
+    if (!requireLoggedInSocialAction('aceitar amizade')) return;
     const profile = resolveSocialProfileTarget(target);
     if (!profile) return;
     const handle = profile.handle;
@@ -4851,7 +4859,7 @@ function App() {
   }
 
   async function rejectIncomingFriendRequest(target) {
-    if (!requireAuthenticatedAction('recusar amizade')) return;
+    if (!requireLoggedInSocialAction('recusar amizade')) return;
     const profile = resolveSocialProfileTarget(target);
     if (!profile) return;
     const handle = profile.handle;
@@ -4886,7 +4894,7 @@ function App() {
   }
 
   function blockProfile(handle) {
-    if (!requireAuthenticatedAction('bloquear perfil')) return;
+    if (!requireLoggedInSocialAction('bloquear perfil')) return;
     const profile = getSocialProfileByHandle(handle, socialGraph) ?? getFallbackSocialProfile(handle);
     const wasFollowing = socialGraph.followingHandles.includes(handle);
     setSocialGraph((current) => ({
@@ -4910,7 +4918,7 @@ function App() {
   }
 
   function unblockProfile(handle) {
-    if (!requireAuthenticatedAction('desbloquear perfil')) return;
+    if (!requireLoggedInSocialAction('desbloquear perfil')) return;
     const profile = getSocialProfileByHandle(handle, socialGraph) ?? getFallbackSocialProfile(handle);
     setSocialGraph((current) => ({
       ...current,
@@ -4924,7 +4932,7 @@ function App() {
   }
 
   function removeFollower(handle) {
-    if (!requireAuthenticatedAction('remover seguidor')) return;
+    if (!requireLoggedInSocialAction('remover seguidor')) return;
     const profile = getSocialProfileByHandle(handle, socialGraph) ?? getFallbackSocialProfile(handle);
     setSocialGraph((current) => ({
       ...current,

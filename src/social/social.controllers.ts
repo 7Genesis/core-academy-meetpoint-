@@ -50,25 +50,21 @@ type TenantRequest = Request & { tenantId: string };
 export class SocialConnectionsController {
   constructor(private readonly socialService: SocialService) {}
 
-  @RequireActiveSubscription()
   @Get('graph')
   graph(@CurrentUser() user: AuthenticatedUser) {
     return this.socialService.getSocialGraph(user);
   }
 
-  @RequireActiveSubscription()
   @Sse('notifications/stream')
   streamNotifications(@CurrentUser() user: AuthenticatedUser) {
     return this.socialService.streamSocialNotifications(user);
   }
 
-  @RequireActiveSubscription()
   @Post('follows')
   follow(@CurrentUser() user: AuthenticatedUser, @Body() dto: SocialTargetDto) {
     return this.socialService.followUser(user, dto);
   }
 
-  @RequireActiveSubscription()
   @Delete('follows/:targetUserId')
   unfollow(
     @CurrentUser() user: AuthenticatedUser,
@@ -77,7 +73,6 @@ export class SocialConnectionsController {
     return this.socialService.unfollowUser(user, targetUserId);
   }
 
-  @RequireActiveSubscription()
   @Post('friend-requests')
   requestFriendship(
     @CurrentUser() user: AuthenticatedUser,
@@ -86,7 +81,6 @@ export class SocialConnectionsController {
     return this.socialService.requestFriendship(user, dto);
   }
 
-  @RequireActiveSubscription()
   @Patch('friend-requests/:requesterId')
   respondFriendship(
     @CurrentUser() user: AuthenticatedUser,
