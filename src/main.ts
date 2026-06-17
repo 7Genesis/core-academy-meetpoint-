@@ -1,5 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { randomUUID } from 'crypto';
 import { existsSync } from 'node:fs';
@@ -13,7 +14,10 @@ async function bootstrap() {
   await loadRuntimeEnv();
   validateRuntimeConfig();
   const isProduction = process.env.NODE_ENV === 'production';
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  const jsonBodyLimit = process.env.JSON_BODY_LIMIT || '8mb';
+  app.useBodyParser('json', { limit: jsonBodyLimit });
+  app.useBodyParser('urlencoded', { limit: jsonBodyLimit, extended: true });
   const appBasePath = resolveAppBasePath();
   if (appBasePath) {
     app.use((request: Request, _response: Response, next: NextFunction) => {

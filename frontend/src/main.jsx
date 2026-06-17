@@ -1732,6 +1732,18 @@ function mapBackendPostCommentToComment(comment = {}) {
 
 function mapBackendPostToFeedPost(post = {}) {
   const authorName = post.author?.name ?? 'MeetPoint';
+  const authorProfile = post.author
+    ? normalizeSocialProfile({
+        id: post.author.id,
+        name: authorName,
+        handle: getUserHandle(post.author),
+        initials: getInitials(authorName || 'MP'),
+        city: [post.author.city, post.author.state].filter(Boolean).join(', ') || post.city || 'Regional',
+        photo: getPublicUserPhoto(post.author),
+        coverPhoto: getPublicUserCover(post.author),
+        profileCoverImage: getPublicUserCover(post.author),
+      })
+    : null;
   const youtube = post.mediaType === 'youtube' ? getYouTubeVideo(post.mediaUrl) : null;
   const comments = (post.comments ?? []).map(mapBackendPostCommentToComment);
   const sharedAuthorName = post.sharedFrom?.author?.name ?? '';
@@ -1748,8 +1760,10 @@ function mapBackendPostToFeedPost(post = {}) {
     : [];
   return {
     id: post.id,
+    authorId: post.authorId ?? post.author?.id ?? '',
     author: authorName,
     authorHandle: getUserHandle(post.author),
+    authorProfile,
     authorEmail: '',
     role: 'Membro',
     initials: getInitials(authorName || 'MP'),
@@ -2357,6 +2371,21 @@ function normalizeSocialProfile(profile = {}) {
     incomingFriendRequest: Boolean(profile.incomingFriendRequest),
     isFriend: Boolean(profile.isFriend),
   };
+}
+
+function getFeedPostAuthorProfile(post = {}) {
+  if (post.authorProfile) return normalizeSocialProfile(post.authorProfile);
+  const authorName = post.author || 'Perfil MeetPoint';
+  return normalizeSocialProfile({
+    id: post.authorId || post.authorHandle || authorName,
+    name: authorName,
+    handle: post.authorHandle || getUserHandle({ name: authorName }),
+    initials: post.initials || getInitials(authorName),
+    city: post.city || 'Regional',
+    bio: 'Perfil público com publicações, conexões, eventos e oportunidades.',
+    photo: post.photo || '',
+    posts: 0,
+  });
 }
 
 function normalizeSocialGraph(graph = {}) {
@@ -3032,6 +3061,15 @@ function App() {
             current.filter((post) => post.syncStatus === 'syncing'),
           ),
         );
+        const postAuthorProfiles = remotePosts
+          .map(getFeedPostAuthorProfile)
+          .filter((profile) => profile.handle && profile.handle !== '@visitante');
+        if (postAuthorProfiles.length) {
+          setSocialGraph((current) => normalizeSocialGraph({
+            ...current,
+            profiles: mergeSocialProfiles(postAuthorProfiles, current.profiles),
+          }));
+        }
       }
       if (coursesResult.status === 'fulfilled') {
         setPublicCourses(unwrapApiList(coursesResult.value).map(mapBackendCourseToCourse));
@@ -3798,6 +3836,7 @@ function App() {
     };
     setCurrentUser(nextAccount);
     setProfilePhoto(nextAccount.profilePhoto || '');
+    applyLoadedPublicUserUpdate(nextAccount);
     setProfilePublicInfo((current) =>
       normalizeProfilePublicInfo(nextAccount, {
         ...current,
@@ -4545,10 +4584,110 @@ function App() {
     setPrivateConversations((current) => mergePrivateConversations(mapped, current));
   }
 
+  function applyLoadedPublicUserUpdate(account = {}) {
+    const profile = normalizeSocialProfile({
+      id: account.id,
+      name: account.name,
+      handle: getUserHandle(account),
+      initials: account.initials ?? getInitials(account.name),
+      city: [account.city, account.state].filter(Boolean).join(', ') || account.city || 'Regional',
+      bio: account.bio || 'Perfil cadastrado na plataforma.',
+      photo: account.profilePhoto,
+      coverPhoto: account.profileCoverImage,
+      profileCoverImage: account.profileCoverImage,
+      accountSegment: account.segment,
+    });
+    const identityIds = new Set([
+      account.id,
+      account.sub,
+      account.backendUser?.id,
+      account.backendUser?.sub,
+    ].filter(Boolean));
+    const identityHandles = new Set([
+      profile.handle,
+      getUserHandle(account),
+      account.backendUser ? getUserHandle(account.backendUser) : '',
+    ].filter(Boolean));
+    const identityNames = new Set([profile.name, account.name].filter(Boolean));
+
+    const matchesUser = ({ id, authorId, handle, authorHandle, name, author } = {}) =>
+      identityIds.has(id) ||
+      identityIds.has(authorId) ||
+      identityHandles.has(handle) ||
+      identityHandles.has(authorHandle) ||
+      identityNames.has(name) ||
+      identityNames.has(author);
+
+    setSocialGraph((current) => normalizeSocialGraph({
+      ...current,
+      currentUser: profile,
+      profiles: mergeSocialProfiles([profile], current.profiles),
+    }));
+    setFeedPosts((current) =>
+      current.map((post) => {
+        const authorMatches = matchesUser({
+          id: post.authorId,
+          authorId: post.authorId,
+          handle: post.authorHandle,
+          authorHandle: post.authorHandle,
+          author: post.author,
+        });
+        return {
+          ...post,
+          ...(authorMatches
+            ? {
+                authorId: account.id,
+                author: profile.name,
+                authorHandle: profile.handle,
+                authorProfile: profile,
+                initials: profile.initials,
+                photo: profile.photo,
+              }
+            : {}),
+          comments: (post.comments ?? []).map((comment) =>
+            matchesUser({
+              id: comment.authorId,
+              authorId: comment.authorId,
+              author: comment.author,
+            })
+              ? {
+                  ...comment,
+                  authorId: account.id,
+                  author: profile.name,
+                  initials: profile.initials,
+                  photo: profile.photo,
+                }
+              : comment,
+          ),
+        };
+      }),
+    );
+    setNotifications((current) =>
+      current.map((notice) =>
+        notice.actor && matchesUser({
+          id: notice.actor.id,
+          handle: notice.actor.handle,
+          name: notice.actor.name,
+        })
+          ? { ...notice, actor: profile, actorHandle: profile.handle }
+          : notice,
+      ),
+    );
+  }
+
   function resolveSocialProfileTarget(target) {
     if (!target) return null;
     if (typeof target === 'object') {
-      return normalizeSocialProfile(target);
+      const normalizedTarget = normalizeSocialProfile(target);
+      const graphProfile = getSocialProfileByHandle(normalizedTarget.handle, socialGraph);
+      return normalizeSocialProfile({
+        ...normalizedTarget,
+        ...(graphProfile ?? {}),
+        id: graphProfile?.id ?? normalizedTarget.id,
+        photo: graphProfile?.photo || normalizedTarget.photo,
+        coverPhoto: graphProfile?.coverPhoto || normalizedTarget.coverPhoto,
+        profileCoverImage: graphProfile?.profileCoverImage || normalizedTarget.profileCoverImage,
+      });
     }
     if (isBackendUserId(target)) {
       return normalizeSocialProfile({ id: target, handle: target, name: 'Perfil MeetPoint' });
@@ -8162,7 +8301,11 @@ function getUserHandle(user) {
 
 function getFeedPriority(post, followingHandles, interests, interestScores = {}) {
   const profile = getSocialProfileByName(post.author);
-  const isFollowing = Boolean(profile && followingHandles.includes(profile.handle));
+  const authorHandle = post.authorHandle || profile?.handle || getUserHandle({ name: post.author });
+  const isFollowing = Boolean(
+    followingHandles.includes(authorHandle) ||
+    (profile && followingHandles.includes(profile.handle)),
+  );
   const haystack = `${post.tag} ${post.body} ${post.role}`.toLowerCase();
   const hasBaseInterest = interests.some((interest) => haystack.includes(interest.toLowerCase()));
   const adaptiveScore = getPostInterestScore(post, interestScores);
@@ -8528,20 +8671,32 @@ function FeedView({
     setLocationStatus(`Cidade aplicada manualmente: ${manualCity}.`);
   }
 
-  function openAuthorProfile(authorName) {
-    setSelectedProfile(
-      getSocialProfileByName(authorName) ?? {
-        id: `profile-${authorName}`,
-        name: authorName,
-        handle: getUserHandle({ name: authorName }),
-        initials: getInitials(authorName),
-        city: 'Regional',
-        bio: 'Perfil público com publicações, conexões, eventos e oportunidades.',
-        interests: ['Publicações', 'Eventos', 'Oportunidades'],
-        followers: 0,
-        posts: posts.filter((post) => post.author === authorName).length,
-      },
-    );
+  function openAuthorProfile(authorTarget) {
+    const postAuthor = typeof authorTarget === 'object' ? authorTarget : null;
+    const authorName = postAuthor?.author ?? authorTarget;
+    const authorHandle = postAuthor?.authorHandle || getUserHandle({ name: authorName });
+    const graphProfile = getSocialProfileByHandle(authorHandle, socialGraph);
+    const staticProfile = getSocialProfileByName(authorName);
+    setSelectedProfile(normalizeSocialProfile({
+      id: postAuthor?.authorId || graphProfile?.id || staticProfile?.id || authorHandle,
+      name: graphProfile?.name || staticProfile?.name || authorName,
+      handle: authorHandle,
+      initials: graphProfile?.initials || staticProfile?.initials || postAuthor?.initials || getInitials(authorName),
+      city: graphProfile?.city || staticProfile?.city || postAuthor?.city || 'Regional',
+      bio: graphProfile?.bio || staticProfile?.bio || 'Perfil público com publicações, conexões, eventos e oportunidades.',
+      interests: graphProfile?.interests || staticProfile?.interests || ['Publicações', 'Eventos', 'Oportunidades'],
+      followers: graphProfile?.followers ?? staticProfile?.followers ?? 0,
+      following: graphProfile?.following ?? staticProfile?.following ?? 0,
+      friends: graphProfile?.friends ?? staticProfile?.friends ?? 0,
+      posts: posts.filter((post) => post.authorHandle === authorHandle || post.author === authorName).length,
+      photo: graphProfile?.photo || staticProfile?.photo || postAuthor?.photo || '',
+      coverPhoto: graphProfile?.coverPhoto || staticProfile?.coverPhoto || postAuthor?.authorProfile?.coverPhoto || '',
+      profileCoverImage:
+        graphProfile?.profileCoverImage ||
+        staticProfile?.profileCoverImage ||
+        postAuthor?.authorProfile?.profileCoverImage ||
+        '',
+    }));
   }
 
   function refreshVisibleFeed() {
@@ -9701,7 +9856,7 @@ async function sharePost() {
         <button
           className="social-post-author profile-open-link"
           type="button"
-          onClick={() => openAuthorProfile(post.author)}
+          onClick={() => openAuthorProfile(post)}
         >
           <div className="post-author-line">
             <strong>{post.author}</strong>
@@ -15807,8 +15962,9 @@ function ProfileHero({
     setCropEditor({
       target: 'photo',
       sourceUrl: URL.createObjectURL(file),
-      outputWidth: 720,
-      outputHeight: 720,
+      outputWidth: 512,
+      outputHeight: 512,
+      imageQuality: 0.86,
       shape: 'avatar',
       kicker: 'Foto de perfil',
       title: 'Ajustar corte da foto',
@@ -15823,8 +15979,9 @@ function ProfileHero({
     setCropEditor({
       target: 'cover',
       sourceUrl: URL.createObjectURL(file),
-      outputWidth: 1800,
-      outputHeight: 560,
+      outputWidth: 1440,
+      outputHeight: 448,
+      imageQuality: 0.84,
       shape: 'cover',
       kicker: 'Capa do perfil',
       title: 'Ajustar corte da capa',
@@ -20091,7 +20248,7 @@ function ImageCropModal({ editor, onCancel, onConfirm }) {
   function confirmCrop() {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    onConfirm(canvas.toDataURL('image/jpeg', 0.92));
+    onConfirm(canvas.toDataURL('image/jpeg', editor.imageQuality ?? 0.86));
   }
 
   return createPortal(
