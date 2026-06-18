@@ -2127,6 +2127,8 @@ function createPendingSubscriptionRecord(planId = '') {
     planId,
     paymentProvider: '',
     externalSubscriptionId: '',
+    checkoutPaymentMode: 'one_time',
+    checkoutBillingCycle: 'monthly',
     createdAt: now,
     updatedAt: now,
   };
@@ -3266,6 +3268,8 @@ function App() {
         status: intent.status ?? 'PENDING_PAYMENT',
         paymentProvider: intent.paymentProvider ?? 'infinitepay',
         externalSubscriptionId: intent.externalSubscriptionId ?? '',
+        checkoutPaymentMode: intent.paymentMode ?? intent.checkoutPaymentMode ?? 'one_time',
+        checkoutBillingCycle: intent.billingCycle ?? intent.checkoutBillingCycle ?? 'monthly',
       },
     };
     setCurrentUser(nextUser);
@@ -11772,18 +11776,20 @@ function SubscriptionCheckoutView({
   onSubscriptionPending,
 }) {
   const [billingCycle, setBillingCycle] = useState('monthly');
+  const [paymentMode, setPaymentMode] = useState('one_time');
   const [paymentNotice, setPaymentNotice] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   if (!plan) return null;
 
-  const cycleMultiplier = billingCycle === 'annual' ? 10 : billingCycle === 'semiannual' ? 5.5 : 1;
+  const selectedBillingCycle = paymentMode === 'recurring' ? 'monthly' : billingCycle;
+  const cycleMultiplier = selectedBillingCycle === 'annual' ? 10 : selectedBillingCycle === 'semiannual' ? 5.5 : 1;
   const basePrice = plan.price > 0 ? plan.price : 0;
   const total = Math.round(basePrice * cycleMultiplier * 100) / 100;
   const cycleLabel = {
     monthly: 'Mensal',
     semiannual: 'Semestral com desconto',
     annual: 'Anual com maior desconto',
-  }[billingCycle];
+  }[selectedBillingCycle];
   const subscriptionWarning = currentUser?.subscriptionWarning ?? '';
   async function confirmSubscription() {
     if (!currentUser) {
@@ -11823,13 +11829,15 @@ function SubscriptionCheckoutView({
         body: JSON.stringify({
           planId: plan.subscriptionPlanId,
           paymentProvider: plan.price > 0 ? 'infinitepay' : 'internal',
-          billingCycle,
+          billingCycle: selectedBillingCycle,
+          paymentMode,
         }),
       });
 
       onSubscriptionPending?.(plan, {
         ...intent,
         paymentProvider: plan.price > 0 ? 'infinitepay' : 'internal',
+        paymentMode,
       });
 
       if (plan.price > 0) {
@@ -11846,7 +11854,9 @@ function SubscriptionCheckoutView({
         setPaymentNotice(
           useCurrentTabCheckout
             ? 'Redirecionando para o checkout InfinitePay.'
-            : 'Checkout InfinitePay aberto em uma nova janela. Conclua o pagamento para liberar a conta.',
+            : paymentMode === 'recurring'
+              ? 'Inscrição recorrente InfinitePay aberta em uma nova janela. Conclua a adesão para liberar a conta.'
+              : 'Checkout InfinitePay aberto em uma nova janela. Conclua o pagamento para liberar a conta.',
         );
         return;
       }
@@ -11869,7 +11879,7 @@ function SubscriptionCheckoutView({
       <PageHeader
         label="Assinatura"
         title={`Assinar ${plan.name}`}
-        description="Preencha os dados, escolha ciclo de cobrança e confirme o pagamento da assinatura da plataforma."
+        description="Preencha os dados, escolha a modalidade de cobrança e confirme o pagamento da assinatura da plataforma."
       />
       <div className="checkout-grid subscription-grid">
         <section className="profile-card checkout-card buyer-card">
@@ -11885,6 +11895,24 @@ function SubscriptionCheckoutView({
           <span className="section-kicker">Pagamento</span>
           <h3>{plan.price > 0 ? formatCurrency(total) : 'Sem cobrança inicial'}</h3>
           {plan.price > 0 && (
+            <div className="billing-options subscription-mode-options">
+              {[
+                ['one_time', 'Pagamento direto', 'Assinatura fechada'],
+                ['recurring', 'Recorrência', 'Cobrança automática'],
+              ].map(([mode, label, detail]) => (
+                <button
+                  className={`billing-cycle-button${paymentMode === mode ? ' active' : ''}`}
+                  key={mode}
+                  onClick={() => setPaymentMode(mode)}
+                  type="button"
+                >
+                  <strong>{label}</strong>
+                  <small>{detail}</small>
+                </button>
+              ))}
+            </div>
+          )}
+          {plan.price > 0 && paymentMode === 'one_time' && (
             <div className="billing-options">
               {[
                 ['monthly', 'Mensal', formatCurrency(plan.price)],
@@ -11895,6 +11923,7 @@ function SubscriptionCheckoutView({
                   className={`billing-cycle-button${billingCycle === cycle ? ' active' : ''}`}
                   key={cycle}
                   onClick={() => setBillingCycle(cycle)}
+                  type="button"
                 >
                   <strong>{label}</strong>
                   <small>{price}</small>
@@ -11911,15 +11940,21 @@ function SubscriptionCheckoutView({
 
           {plan.price > 0 ? (
             <div className="payment-state infinitepay-state">
-              <strong>Checkout InfinitePay</strong>
+              <strong>
+                {paymentMode === 'recurring'
+                  ? 'Recorrência InfinitePay'
+                  : 'Checkout InfinitePay'}
+              </strong>
               <p>
-                Ao continuar, você será redirecionado para a página segura da InfinitePay.
-                A assinatura só libera depois da confirmação automática do pagamento.
+                {paymentMode === 'recurring'
+                  ? 'Ao continuar, você será enviado para o plano recorrente configurado na InfinitePay. A assinatura libera depois da confirmação do pagamento.'
+                  : 'Ao continuar, você será redirecionado para a página segura da InfinitePay. A assinatura só libera depois da confirmação automática do pagamento.'}
               </p>
               <ul>
                 <li>Conta recebedora: InfinitePay configurada no checkout</li>
                 <li>Valor: {formatCurrency(total)}</li>
                 <li>Ciclo: {cycleLabel}</li>
+                <li>Modalidade: {paymentMode === 'recurring' ? 'Recorrente' : 'Pagamento fechado'}</li>
               </ul>
             </div>
           ) : (
@@ -11934,7 +11969,9 @@ function SubscriptionCheckoutView({
             {checkoutLoading
               ? 'Abrindo checkout...'
               : plan.price > 0
-                ? 'Pagar com InfinitePay'
+                ? paymentMode === 'recurring'
+                  ? 'Assinar recorrente'
+                  : 'Pagar com InfinitePay'
                 : 'Enviar cadastro'}
           </button>
         </section>
@@ -11945,7 +11982,11 @@ function SubscriptionCheckoutView({
           <p>{plan.description}</p>
           <div>
             <strong>{plan.price > 0 ? formatCurrency(total) : 'Comissão'}</strong>
-            <span>{plan.price > 0 ? cycleLabel : 'Sem mensalidade inicial'}</span>
+            <span>
+              {plan.price > 0
+                ? `${cycleLabel} • ${paymentMode === 'recurring' ? 'Recorrente' : 'Pagamento direto'}`
+                : 'Sem mensalidade inicial'}
+            </span>
           </div>
           <button onClick={() => openPage('partners')}>Trocar plano</button>
         </aside>
@@ -18058,6 +18099,10 @@ function getSubscriptionStatusTone(statusGroup) {
   return 'invalid-note';
 }
 
+function getSubscriptionPaymentModeLabel(value) {
+  return value === 'recurring' ? 'Recorrente' : 'Pagamento direto';
+}
+
 function formatSubscriptionDate(value) {
   if (!value) return 'Sem data';
   return new Intl.DateTimeFormat('pt-BR', {
@@ -19456,6 +19501,7 @@ function PlatformProfile({
                         ? formatCurrency(subscription.checkoutAmountCents / 100)
                         : formatCurrency((subscription.plan.priceCents ?? 0) / 100)}
                       {' '}• Gateway: {subscription.paymentProvider ?? 'não informado'}
+                      {' '}• Modo: {getSubscriptionPaymentModeLabel(subscription.checkoutPaymentMode)}
                     </small>
                   </div>
                   <button

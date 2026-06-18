@@ -33,6 +33,7 @@ type CheckoutIntentDto = {
   planId: string;
   paymentProvider?: string;
   billingCycle?: string;
+  paymentMode?: SubscriptionPaymentMode;
 };
 
 type SubscriptionWebhookDto = {
@@ -41,6 +42,7 @@ type SubscriptionWebhookDto = {
   externalSubscriptionId: string;
   eventType: string;
   status: 'PENDING_PAYMENT' | 'PAYMENT_PROCESSING' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'CANCELLED';
+  paymentMode?: SubscriptionPaymentMode;
 };
 
 type InfinitePaySubscriptionWebhookDto = {
@@ -72,6 +74,8 @@ type InfinitePayCheckoutItem = {
   name: string;
   description: string;
 };
+
+type SubscriptionPaymentMode = 'one_time' | 'recurring';
 
 const fallbackPlans: PlanRecord[] = [
   {
@@ -181,9 +185,12 @@ export class SubscriptionsService {
     }
     const persistedPlan = await this.ensureSubscriptionPlan(plan);
 
-    const billingCycle = normalizeBillingCycle(dto.billingCycle);
+    const paymentMode = normalizeSubscriptionPaymentMode(dto.paymentMode);
+    const billingCycle = paymentMode === 'recurring'
+      ? 'monthly'
+      : normalizeBillingCycle(dto.billingCycle);
     const amountCents = calculatePlanAmountCents(persistedPlan, billingCycle);
-    const externalSubscriptionId = `meetpoint-subscription-${randomUUID()}`;
+    const externalSubscriptionId = `meetpoint-subscription-${paymentMode}-${randomUUID()}`;
 
     const subscription = await (this.prisma as unknown as {
       subscription?: {
@@ -198,6 +205,7 @@ export class SubscriptionsService {
         externalSubscriptionId,
         checkoutAmountCents: amountCents,
         checkoutBillingCycle: billingCycle,
+        checkoutPaymentMode: paymentMode,
       },
     });
 
@@ -205,7 +213,9 @@ export class SubscriptionsService {
       await this.writeAuditLog({
         userId,
         subscriptionId: String(subscription.id),
-        eventType: 'CHECKOUT_CREATED',
+        eventType: paymentMode === 'recurring'
+          ? 'RECURRING_CHECKOUT_CREATED'
+          : 'ONE_TIME_CHECKOUT_CREATED',
         oldStatus: null,
         newStatus: 'PENDING_PAYMENT',
         paymentReference: externalSubscriptionId,
@@ -214,18 +224,29 @@ export class SubscriptionsService {
 
     const checkoutSession =
       amountCents > 0
-        ? await this.createInfinitePayCheckoutLink({
-            amountCents,
-            customerEmail: await this.findUserEmail(userId),
-            customerName: await this.findUserName(userId),
-            description: `Assinatura ${persistedPlan.name} - ${getBillingCycleLabel(billingCycle)}`,
-            orderNsu: externalSubscriptionId,
-          })
+        ? paymentMode === 'recurring'
+          ? await this.createInfinitePayRecurringCheckoutSession({
+              amountCents,
+              billingCycle,
+              customerEmail: await this.findUserEmail(userId),
+              customerName: await this.findUserName(userId),
+              orderNsu: externalSubscriptionId,
+              plan: persistedPlan,
+            })
+          : await this.createInfinitePayCheckoutLink({
+              amountCents,
+              customerEmail: await this.findUserEmail(userId),
+              customerName: await this.findUserName(userId),
+              description: `Assinatura ${persistedPlan.name} - ${getBillingCycleLabel(billingCycle)}`,
+              orderNsu: externalSubscriptionId,
+            })
         : null;
 
     return {
       status: 'PENDING_PAYMENT',
       externalSubscriptionId,
+      billingCycle,
+      paymentMode,
       subscription,
       checkoutSession,
       webhookRequiredToActivateAccount: true,
@@ -268,6 +289,9 @@ export class SubscriptionsService {
     const billingCycle = normalizeBillingCycle(
       String(subscription.checkoutBillingCycle ?? 'monthly'),
     );
+    const paymentMode = normalizeSubscriptionPaymentMode(
+      String(subscription.checkoutPaymentMode ?? 'one_time'),
+    );
     await this.verifyInfinitePayPayment({
       amountCents: expectedAmount,
       invoiceSlug,
@@ -280,8 +304,11 @@ export class SubscriptionsService {
         userId: String(subscription.userId),
         planId: String(subscription.planId),
         externalSubscriptionId: orderNsu,
-        eventType: 'INFINITEPAY_SUBSCRIPTION_PAID',
+        eventType: paymentMode === 'recurring'
+          ? 'INFINITEPAY_RECURRING_SUBSCRIPTION_PAID'
+          : 'INFINITEPAY_ONE_TIME_SUBSCRIPTION_PAID',
         status: 'ACTIVE',
+        paymentMode,
       },
       transactionNsu,
       {
@@ -289,6 +316,7 @@ export class SubscriptionsService {
         receiptUrl: event.receipt_url,
         transactionNsu,
         cycle: billingCycle,
+        paymentMode,
       },
     );
 
@@ -391,10 +419,14 @@ export class SubscriptionsService {
       receiptUrl?: string;
       transactionNsu?: string;
       cycle?: string;
+      paymentMode?: SubscriptionPaymentMode;
     },
   ) {
     const now = new Date();
     const billingCycle = normalizeBillingCycle(paymentData?.cycle);
+    const paymentMode = normalizeSubscriptionPaymentMode(
+      paymentData?.paymentMode ?? dto.paymentMode,
+    );
     const lifecycle = buildSubscriptionLifecycle(billingCycle, now);
     const activationData =
       dto.status === 'ACTIVE'
@@ -414,6 +446,7 @@ export class SubscriptionsService {
         ? { transactionNsu: paymentData.transactionNsu }
         : {}),
       paymentProvider: 'infinitepay',
+      checkoutPaymentMode: paymentMode,
     };
 
     try {
@@ -624,6 +657,56 @@ export class SubscriptionsService {
     return subscription;
   }
 
+  private async createInfinitePayRecurringCheckoutSession(params: {
+    amountCents: number;
+    billingCycle: string;
+    customerEmail: string;
+    customerName: string;
+    orderNsu: string;
+    plan: PlanRecord;
+  }) {
+    assertPositiveIntegerCents(params.amountCents);
+    const configuredUrl = getInfinitePayRecurringCheckoutUrl(params.plan, params.billingCycle);
+    if (!configuredUrl) {
+      throw new ServiceUnavailableException({
+        message: 'InfinitePay recurring checkout URL is not configured',
+        details: {
+          requiredEnv: [
+            `INFINITEPAY_RECURRING_${toEnvKey(params.plan.name)}_${params.billingCycle.toUpperCase()}_URL`,
+            'INFINITEPAY_RECURRING_CHECKOUT_URL',
+          ],
+        },
+      });
+    }
+
+    const checkoutUrl = new URL(configuredUrl);
+    checkoutUrl.searchParams.set('order_nsu', params.orderNsu);
+    checkoutUrl.searchParams.set('external_subscription_id', params.orderNsu);
+    checkoutUrl.searchParams.set('billing_cycle', params.billingCycle);
+    checkoutUrl.searchParams.set('payment_mode', 'recurring');
+    checkoutUrl.searchParams.set('plan_id', params.plan.id);
+    checkoutUrl.searchParams.set('customer_email', params.customerEmail);
+    checkoutUrl.searchParams.set('customer_name', params.customerName);
+    checkoutUrl.searchParams.set('redirect_url', getInfinitePaySuccessUrl());
+    checkoutUrl.searchParams.set('webhook_url', getInfinitePaySubscriptionWebhookUrl());
+
+    return {
+      id: params.orderNsu,
+      url: checkoutUrl.toString(),
+      successUrl: getInfinitePaySuccessUrl(),
+      webhookUrl: getInfinitePaySubscriptionWebhookUrl(),
+      live: true,
+      mode: 'recurring',
+      raw: {
+        configuredUrl,
+        orderNsu: params.orderNsu,
+        billingCycle: params.billingCycle,
+        amountCents: params.amountCents,
+        planId: params.plan.id,
+      },
+    };
+  }
+
   private async createInfinitePayCheckoutLink(params: {
     amountCents: number;
     customerEmail: string;
@@ -824,6 +907,12 @@ function normalizeBillingCycle(candidate: string | undefined) {
   return 'monthly';
 }
 
+function normalizeSubscriptionPaymentMode(
+  candidate: string | undefined,
+): SubscriptionPaymentMode {
+  return candidate === 'recurring' ? 'recurring' : 'one_time';
+}
+
 function calculatePlanAmountCents(plan: PlanRecord, billingCycle: string) {
   const price = Number(plan.price);
   const multiplier =
@@ -935,6 +1024,28 @@ function getInfinitePayHandle() {
   return handle || 'meetpoint';
 }
 
+function getInfinitePayRecurringCheckoutUrl(plan: PlanRecord, billingCycle: string) {
+  const planKey = toEnvKey(plan.name);
+  const planIdKey = toEnvKey(plan.id);
+  const cycleKey = billingCycle.toUpperCase();
+  const candidates = [
+    process.env[`INFINITEPAY_RECURRING_${planKey}_${cycleKey}_URL`],
+    process.env[`INFINITEPAY_RECURRING_${planIdKey}_${cycleKey}_URL`],
+    process.env[`INFINITEPAY_RECURRING_${cycleKey}_URL`],
+    process.env.INFINITEPAY_RECURRING_CHECKOUT_URL,
+  ];
+  return candidates.map(optionalUrl).find(Boolean);
+}
+
+function toEnvKey(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase();
+}
+
 function assertPositiveIntegerCents(amountCents: number) {
   if (!Number.isInteger(amountCents) || amountCents <= 0) {
     throw new BadRequestException(
@@ -946,7 +1057,7 @@ function assertPositiveIntegerCents(amountCents: number) {
 function optionalUrl(candidate: string | undefined) {
   if (!candidate) return undefined;
   try {
-    const parsed = new URL(candidate);
+    const parsed = new URL(candidate.trim());
     if (!['http:', 'https:'].includes(parsed.protocol)) return undefined;
     return parsed.toString();
   } catch {

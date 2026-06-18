@@ -310,6 +310,7 @@ model Subscription {
   externalSubscriptionId String?
   checkoutAmountCents    Int?
   checkoutBillingCycle   String?
+  checkoutPaymentMode    String?            @default("one_time")
   transactionNsu         String?
   receiptUrl             String?
   startedAt              DateTime?
@@ -328,6 +329,7 @@ model Subscription {
   @@index([planId])
   @@index([status])
   @@index([externalSubscriptionId])
+  @@index([checkoutPaymentMode])
   @@map("subscriptions")
 }
 

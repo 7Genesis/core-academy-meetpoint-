@@ -288,6 +288,7 @@ export class PlatformAdminService {
             externalSubscriptionId: subscription.externalSubscriptionId,
             checkoutAmountCents: subscription.checkoutAmountCents,
             checkoutBillingCycle: subscription.checkoutBillingCycle,
+            checkoutPaymentMode: subscription.checkoutPaymentMode,
             transactionNsu: subscription.transactionNsu,
             receiptUrl: subscription.receiptUrl,
             startedAt: subscription.startedAt,

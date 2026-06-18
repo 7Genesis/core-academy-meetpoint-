@@ -29,7 +29,12 @@ export class SubscriptionsController {
 
   @Post('checkout-intent')
   checkoutIntent(
-    @Body() dto: { planId: string; paymentProvider?: string; billingCycle?: string },
+    @Body() dto: {
+      planId: string;
+      paymentProvider?: string;
+      billingCycle?: string;
+      paymentMode?: 'one_time' | 'recurring';
+    },
     @Req() request: Request & { user?: JwtPayload },
   ) {
     return this.subscriptionsService.createCheckoutIntent(request.user!.sub, dto);
@@ -57,6 +62,7 @@ export class SubscriptionsController {
       externalSubscriptionId: string;
       eventType: string;
       status: 'PENDING_PAYMENT' | 'PAYMENT_PROCESSING' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'CANCELLED';
+      paymentMode?: 'one_time' | 'recurring';
     },
     @Req() request: RawBodyRequest<Request>,
   ) {
